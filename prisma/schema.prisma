@@ -1,5 +1,6 @@
 // ===========================================
 // E-Visa Portal - Prisma Schema
+// Production-ready database schema
 // ===========================================
 
 generator client {
@@ -12,56 +13,197 @@ datasource db {
 }
 
 // ===========================================
-// Core Models - Minimal for Foundation Stage
+// ENUMS
+// ===========================================
+
+enum VisaEntryType {
+  SINGLE
+  DOUBLE
+  MULTIPLE
+}
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+enum OtpPurpose {
+  LOGIN
+  VERIFICATION
+  PASSWORD_RESET
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum ApplicationStatus {
+  DRAFT
+  UNPAID
+  SUBMITTED
+  IN_REVIEW
+  NEED_DOCS
+  APPROVED
+  REJECTED
+  READY_TO_DOWNLOAD
+  CANCELLED
+}
+
+enum ApplicantStatus {
+  DRAFT
+  SUBMITTED
+  IN_REVIEW
+  NEED_DOCS
+  APPROVED
+  REJECTED
+  READY_TO_DOWNLOAD
+}
+
+enum DocumentReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  NEEDS_REUPLOAD
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  DELIVERED
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum JobExecutionStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ActorType {
+  USER
+  SYSTEM
+  PORTAL_IDENTITY
+}
+
+enum TransactionType {
+  INITIALIZATION
+  AUTHORIZATION
+  CAPTURE
+  REFUND
+  VOID
+  CALLBACK
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum CallbackProcessingStatus {
+  PENDING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum SignatureValidationStatus {
+  VALID
+  INVALID
+  NOT_CHECKED
+}
+
+enum ReconciliationStatus {
+  PENDING
+  MATCHED
+  MISMATCHED
+  MANUAL_REVIEW
+}
+
+// ===========================================
+// ACCESS CONTROL ENTITIES
 // ===========================================
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  firstName String?  @map("first_name")
-  lastName  String?  @map("last_name")
-  isActive  Boolean  @default(true) @map("is_active")
-  roleId    String?  @map("role_id")
-  
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
+  id           String    @id @default(uuid())
+  fullName     String    @map("full_name")
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  roleId       String?   @map("role_id")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
 
-  role      Role?    @relation(fields: [roleId], references: [id])
+  role                      Role?                      @relation(fields: [roleId], references: [id])
+  sessions                  Session[]
+  userPermissions           UserPermission[]
+  applicationStatusHistory  ApplicationStatusHistory[] @relation("ChangedByUser")
+  applicantStatusHistory    ApplicantStatusHistory[]   @relation("ChangedByUser")
+  documentReviews           Document[]                 @relation("ReviewedByUser")
+  paymentStatusHistory      PaymentStatusHistory[]     @relation("ChangedByUser")
+  auditLogs                 AuditLog[]
 
+  @@index([email])
+  @@index([roleId])
+  @@index([isActive])
+  @@index([deletedAt])
   @@map("users")
 }
 
 model Role {
-  id          String   @id @default(uuid())
-  name        String   @unique
+  id          String    @id @default(uuid())
+  name        String    @unique
+  key         String    @unique
   description String?
-  isActive    Boolean  @default(true) @map("is_active")
-  
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  isSystem    Boolean   @default(false) @map("is_system")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
-  users       User[]
-  permissions RolePermission[]
+  users           User[]
+  rolePermissions RolePermission[]
 
+  @@index([key])
+  @@index([isSystem])
+  @@index([deletedAt])
   @@map("roles")
 }
 
 model Permission {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  description String?
-  resource    String
-  action      String
-  
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid())
+  moduleKey     String   @map("module_key")
+  actionKey     String   @map("action_key")
+  permissionKey String   @unique @map("permission_key")
+  description   String?
+  createdAt     DateTime @default(now()) @map("created_at")
 
-  roles       RolePermission[]
+  rolePermissions RolePermission[]
+  userPermissions UserPermission[]
 
-  @@unique([resource, action])
+  @@unique([moduleKey, actionKey])
+  @@index([moduleKey])
+  @@index([permissionKey])
   @@map("permissions")
 }
 
@@ -69,12 +211,719 @@ model RolePermission {
   id           String   @id @default(uuid())
   roleId       String   @map("role_id")
   permissionId String   @map("permission_id")
-  
   createdAt    DateTime @default(now()) @map("created_at")
 
-  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
   @@map("role_permissions")
+}
+
+model UserPermission {
+  id           String           @id @default(uuid())
+  userId       String           @map("user_id")
+  permissionId String           @map("permission_id")
+  effect       PermissionEffect @default(ALLOW)
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@index([userId])
+  @@index([permissionId])
+  @@map("user_permissions")
+}
+
+model Session {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  refreshTokenHash String    @map("refresh_token_hash")
+  ipAddress        String?   @map("ip_address")
+  userAgent        String?   @map("user_agent")
+  expiresAt        DateTime  @map("expires_at")
+  lastActivityAt   DateTime  @default(now()) @map("last_activity_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  revokedAt        DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("sessions")
+}
+
+// ===========================================
+// PORTAL AUTH ENTITIES
+// ===========================================
+
+model PortalIdentity {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  isActive       Boolean   @default(true) @map("is_active")
+  lastVerifiedAt DateTime? @map("last_verified_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  portalSessions PortalSession[]
+  applications   Application[]
+
+  @@index([email])
+  @@index([isActive])
+  @@map("portal_identities")
+}
+
+model PortalSession {
+  id               String    @id @default(uuid())
+  portalIdentityId String    @map("portal_identity_id")
+  refreshTokenHash String    @map("refresh_token_hash")
+  ipAddress        String?   @map("ip_address")
+  userAgent        String?   @map("user_agent")
+  expiresAt        DateTime  @map("expires_at")
+  lastActivityAt   DateTime  @default(now()) @map("last_activity_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  revokedAt        DateTime? @map("revoked_at")
+
+  portalIdentity PortalIdentity @relation(fields: [portalIdentityId], references: [id], onDelete: Cascade)
+
+  @@index([portalIdentityId])
+  @@index([refreshTokenHash])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("portal_sessions")
+}
+
+model OtpCode {
+  id        String     @id @default(uuid())
+  email     String
+  codeHash  String     @map("code_hash")
+  purpose   OtpPurpose
+  expiresAt DateTime   @map("expires_at")
+  usedAt    DateTime?  @map("used_at")
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  @@index([email])
+  @@index([codeHash])
+  @@index([purpose])
+  @@index([expiresAt])
+  @@map("otp_codes")
+}
+
+// ===========================================
+// CONFIGURATION ENTITIES
+// ===========================================
+
+model Country {
+  id             String    @id @default(uuid())
+  name           String
+  slug           String    @unique
+  isoCode        String    @unique @map("iso_code")
+  isActive       Boolean   @default(true) @map("is_active")
+  seoTitle       String?   @map("seo_title")
+  seoDescription String?   @map("seo_description")
+  isPublished    Boolean   @default(false) @map("is_published")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  sections                     CountrySection[]
+  templateBindingsDestination  TemplateBinding[]        @relation("DestinationCountry")
+  bindingNationalityFees       BindingNationalityFee[]  @relation("NationalityCountry")
+  applicationsNationality      Application[]            @relation("NationalityCountry")
+  applicationsDestination      Application[]            @relation("DestinationCountry")
+
+  @@index([slug])
+  @@index([isoCode])
+  @@index([isActive])
+  @@index([isPublished])
+  @@index([deletedAt])
+  @@map("countries")
+}
+
+model CountrySection {
+  id        String    @id @default(uuid())
+  countryId String    @map("country_id")
+  title     String
+  content   String
+  sortOrder Int       @default(0) @map("sort_order")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@index([countryId])
+  @@index([sortOrder])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("country_sections")
+}
+
+model VisaType {
+  id           String        @id @default(uuid())
+  purpose      String
+  validityDays Int           @map("validity_days")
+  maxStay      Int           @map("max_stay")
+  entries      VisaEntryType @default(SINGLE)
+  label        String
+  description  String?
+  isActive     Boolean       @default(true) @map("is_active")
+  sortOrder    Int           @default(0) @map("sort_order")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  deletedAt    DateTime?     @map("deleted_at")
+
+  templateBindings TemplateBinding[]
+  applications     Application[]
+
+  @@index([purpose])
+  @@index([isActive])
+  @@index([sortOrder])
+  @@index([deletedAt])
+  @@map("visa_types")
+}
+
+model Template {
+  id          String    @id @default(uuid())
+  name        String
+  key         String    @unique
+  description String?
+  version     Int       @default(1)
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  sections         TemplateSection[]
+  templateBindings TemplateBinding[]
+  applications     Application[]
+
+  @@index([key])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("templates")
+}
+
+model TemplateSection {
+  id          String    @id @default(uuid())
+  templateId  String    @map("template_id")
+  title       String
+  key         String
+  description String?
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  template Template        @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  fields   TemplateField[]
+
+  @@unique([templateId, key])
+  @@index([templateId])
+  @@index([sortOrder])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("template_sections")
+}
+
+model TemplateField {
+  id                  String    @id @default(uuid())
+  templateSectionId   String    @map("template_section_id")
+  fieldKey            String    @map("field_key")
+  fieldType           String    @map("field_type")
+  label               String
+  placeholder         String?
+  helpText            String?   @map("help_text")
+  defaultValue        String?   @map("default_value")
+  isRequired          Boolean   @default(false) @map("is_required")
+  sortOrder           Int       @default(0) @map("sort_order")
+  isActive            Boolean   @default(true) @map("is_active")
+  optionsJson         Json?     @map("options_json")
+  validationRulesJson Json?     @map("validation_rules_json")
+  visibilityRulesJson Json?     @map("visibility_rules_json")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  deletedAt           DateTime? @map("deleted_at")
+
+  templateSection TemplateSection @relation(fields: [templateSectionId], references: [id], onDelete: Cascade)
+
+  @@unique([templateSectionId, fieldKey])
+  @@index([templateSectionId])
+  @@index([fieldKey])
+  @@index([sortOrder])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("template_fields")
+}
+
+model TemplateBinding {
+  id                   String    @id @default(uuid())
+  destinationCountryId String    @map("destination_country_id")
+  visaTypeId           String    @map("visa_type_id")
+  templateId           String    @map("template_id")
+  isActive             Boolean   @default(true) @map("is_active")
+  validFrom            DateTime? @map("valid_from")
+  validTo              DateTime? @map("valid_to")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  deletedAt            DateTime? @map("deleted_at")
+
+  destinationCountry Country                 @relation("DestinationCountry", fields: [destinationCountryId], references: [id])
+  visaType           VisaType                @relation(fields: [visaTypeId], references: [id])
+  template           Template                @relation(fields: [templateId], references: [id])
+  nationalityFees    BindingNationalityFee[]
+  applications       Application[]
+
+  @@unique([destinationCountryId, visaTypeId])
+  @@index([destinationCountryId])
+  @@index([visaTypeId])
+  @@index([templateId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("template_bindings")
+}
+
+model BindingNationalityFee {
+  id                   String    @id @default(uuid())
+  templateBindingId    String    @map("template_binding_id")
+  nationalityCountryId String    @map("nationality_country_id")
+  governmentFeeAmount  Decimal   @map("government_fee_amount") @db.Decimal(10, 2)
+  serviceFeeAmount     Decimal   @map("service_fee_amount") @db.Decimal(10, 2)
+  expeditedFeeAmount   Decimal?  @map("expedited_fee_amount") @db.Decimal(10, 2)
+  currencyCode         String    @map("currency_code")
+  expeditedEnabled     Boolean   @default(false) @map("expedited_enabled")
+  isActive             Boolean   @default(true) @map("is_active")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  deletedAt            DateTime? @map("deleted_at")
+
+  templateBinding    TemplateBinding @relation(fields: [templateBindingId], references: [id], onDelete: Cascade)
+  nationalityCountry Country         @relation("NationalityCountry", fields: [nationalityCountryId], references: [id])
+
+  @@unique([templateBindingId, nationalityCountryId])
+  @@index([templateBindingId])
+  @@index([nationalityCountryId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("binding_nationality_fees")
+}
+
+model PaymentPageConfig {
+  id           String   @id @default(uuid())
+  title        String
+  description  String?
+  sectionsJson Json     @map("sections_json")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@map("payment_page_configs")
+}
+
+model EmailTemplate {
+  id          String    @id @default(uuid())
+  templateKey String    @unique @map("template_key")
+  subject     String
+  bodyHtml    String    @map("body_html")
+  bodyText    String?   @map("body_text")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@index([templateKey])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("email_templates")
+}
+
+model Setting {
+  id                  String   @id @default(uuid())
+  siteName            String   @map("site_name")
+  supportEmail        String   @map("support_email")
+  defaultCurrency     String   @default("USD") @map("default_currency")
+  paymentTimeoutHours Int      @default(3) @map("payment_timeout_hours")
+  maintenanceMode     Boolean  @default(false) @map("maintenance_mode")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+// ===========================================
+// APPLICATION DOMAIN ENTITIES
+// ===========================================
+
+model Application {
+  id                   String            @id @default(uuid())
+  portalIdentityId     String            @map("portal_identity_id")
+  nationalityCountryId String            @map("nationality_country_id")
+  destinationCountryId String            @map("destination_country_id")
+  visaTypeId           String            @map("visa_type_id")
+  templateId           String            @map("template_id")
+  templateBindingId    String            @map("template_binding_id")
+  totalFeeAmount       Decimal           @map("total_fee_amount") @db.Decimal(10, 2)
+  currencyCode         String            @map("currency_code")
+  expedited            Boolean           @default(false)
+  paymentStatus        PaymentStatus     @default(PENDING) @map("payment_status")
+  paymentDeadlineAt    DateTime?         @map("payment_deadline_at")
+  resumeToken          String            @unique @map("resume_token")
+  currentStatus        ApplicationStatus @default(DRAFT) @map("current_status")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+  deletedAt            DateTime?         @map("deleted_at")
+
+  portalIdentity     PortalIdentity             @relation(fields: [portalIdentityId], references: [id])
+  nationalityCountry Country                    @relation("NationalityCountry", fields: [nationalityCountryId], references: [id])
+  destinationCountry Country                    @relation("DestinationCountry", fields: [destinationCountryId], references: [id])
+  visaType           VisaType                   @relation(fields: [visaTypeId], references: [id])
+  template           Template                   @relation(fields: [templateId], references: [id])
+  templateBinding    TemplateBinding            @relation(fields: [templateBindingId], references: [id])
+  applicants         ApplicationApplicant[]
+  statusHistory      ApplicationStatusHistory[]
+  payments           Payment[]
+
+  @@index([portalIdentityId])
+  @@index([nationalityCountryId])
+  @@index([destinationCountryId])
+  @@index([visaTypeId])
+  @@index([templateId])
+  @@index([templateBindingId])
+  @@index([resumeToken])
+  @@index([currentStatus])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("applications")
+}
+
+model ApplicationApplicant {
+  id                        String          @id @default(uuid())
+  applicationId             String          @map("application_id")
+  isMainApplicant           Boolean         @default(false) @map("is_main_applicant")
+  email                     String
+  phone                     String?
+  formDataJson              Json            @map("form_data_json")
+  status                    ApplicantStatus @default(DRAFT)
+  applicationCode           String?         @unique @map("application_code")
+  resultFileName            String?         @map("result_file_name")
+  resultStorageKey          String?         @map("result_storage_key")
+  requiredDocumentsJson     Json?           @map("required_documents_json")
+  additionalDocsRequestedJson Json?         @map("additional_docs_requested_json")
+  createdAt                 DateTime        @default(now()) @map("created_at")
+  updatedAt                 DateTime        @updatedAt @map("updated_at")
+  deletedAt                 DateTime?       @map("deleted_at")
+
+  application   Application              @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  statusHistory ApplicantStatusHistory[]
+  documents     Document[]
+
+  @@index([applicationId])
+  @@index([applicationCode])
+  @@index([email])
+  @@index([status])
+  @@index([isMainApplicant])
+  @@index([deletedAt])
+  @@map("application_applicants")
+}
+
+model ApplicationStatusHistory {
+  id              String            @id @default(uuid())
+  applicationId   String            @map("application_id")
+  oldStatus       ApplicationStatus @map("old_status")
+  newStatus       ApplicationStatus @map("new_status")
+  note            String?
+  changedByUserId String?           @map("changed_by_user_id")
+  changedBySystem Boolean           @default(false) @map("changed_by_system")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  changedByUser User?       @relation("ChangedByUser", fields: [changedByUserId], references: [id])
+
+  @@index([applicationId])
+  @@index([changedByUserId])
+  @@index([createdAt])
+  @@map("application_status_history")
+}
+
+model ApplicantStatusHistory {
+  id                     String          @id @default(uuid())
+  applicationApplicantId String          @map("application_applicant_id")
+  oldStatus              ApplicantStatus @map("old_status")
+  newStatus              ApplicantStatus @map("new_status")
+  note                   String?
+  changedByUserId        String?         @map("changed_by_user_id")
+  changedBySystem        Boolean         @default(false) @map("changed_by_system")
+  createdAt              DateTime        @default(now()) @map("created_at")
+
+  applicationApplicant ApplicationApplicant @relation(fields: [applicationApplicantId], references: [id], onDelete: Cascade)
+  changedByUser        User?                @relation("ChangedByUser", fields: [changedByUserId], references: [id])
+
+  @@index([applicationApplicantId])
+  @@index([changedByUserId])
+  @@index([createdAt])
+  @@map("applicant_status_history")
+}
+
+model Document {
+  id                     String               @id @default(uuid())
+  applicationApplicantId String               @map("application_applicant_id")
+  documentTypeKey        String               @map("document_type_key")
+  originalFileName       String               @map("original_file_name")
+  storageFileName        String               @map("storage_file_name")
+  storagePath            String               @map("storage_path")
+  mimeType               String               @map("mime_type")
+  fileSize               Int                  @map("file_size")
+  reviewStatus           DocumentReviewStatus @default(PENDING) @map("review_status")
+  reviewNote             String?              @map("review_note")
+  uploadedAt             DateTime             @default(now()) @map("uploaded_at")
+  reviewedAt             DateTime?            @map("reviewed_at")
+  reviewedByUserId       String?              @map("reviewed_by_user_id")
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
+  deletedAt              DateTime?            @map("deleted_at")
+
+  applicationApplicant ApplicationApplicant @relation(fields: [applicationApplicantId], references: [id], onDelete: Cascade)
+  reviewedByUser       User?                @relation("ReviewedByUser", fields: [reviewedByUserId], references: [id])
+
+  @@index([applicationApplicantId])
+  @@index([documentTypeKey])
+  @@index([reviewStatus])
+  @@index([reviewedByUserId])
+  @@index([deletedAt])
+  @@map("documents")
+}
+
+// ===========================================
+// PAYMENT ENTITIES
+// ===========================================
+
+model Payment {
+  id                   String        @id @default(uuid())
+  applicationId        String        @map("application_id")
+  paymentReference     String        @unique @map("payment_reference")
+  paymentProviderKey   String        @map("payment_provider_key")
+  paymentMethodKey     String?       @map("payment_method_key")
+  currencyCode         String        @map("currency_code")
+  governmentFeeAmount  Decimal       @map("government_fee_amount") @db.Decimal(10, 2)
+  serviceFeeAmount     Decimal       @map("service_fee_amount") @db.Decimal(10, 2)
+  expeditedFeeAmount   Decimal?      @map("expedited_fee_amount") @db.Decimal(10, 2)
+  totalAmount          Decimal       @map("total_amount") @db.Decimal(10, 2)
+  payableAmount        Decimal       @map("payable_amount") @db.Decimal(10, 2)
+  paymentStatus        PaymentStatus @default(PENDING) @map("payment_status")
+  providerPaymentId    String?       @map("provider_payment_id")
+  providerSessionId    String?       @map("provider_session_id")
+  providerOrderId      String?       @map("provider_order_id")
+  idempotencyKey       String?       @unique @map("idempotency_key")
+  expiresAt            DateTime?     @map("expires_at")
+  paidAt               DateTime?     @map("paid_at")
+  failedAt             DateTime?     @map("failed_at")
+  cancelledAt          DateTime?     @map("cancelled_at")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+  deletedAt            DateTime?     @map("deleted_at")
+
+  application    Application              @relation(fields: [applicationId], references: [id])
+  transactions   PaymentTransaction[]
+  statusHistory  PaymentStatusHistory[]
+  callbacks      PaymentCallback[]
+  reconciliation PaymentReconciliation[]
+
+  @@index([applicationId])
+  @@index([paymentReference])
+  @@index([paymentProviderKey])
+  @@index([paymentStatus])
+  @@index([idempotencyKey])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("payments")
+}
+
+model PaymentTransaction {
+  id                           String            @id @default(uuid())
+  paymentId                    String            @map("payment_id")
+  transactionType              TransactionType   @map("transaction_type")
+  transactionStatus            TransactionStatus @map("transaction_status")
+  internalTransactionReference String            @unique @map("internal_transaction_reference")
+  providerTransactionReference String?           @map("provider_transaction_reference")
+  providerEventKey             String?           @map("provider_event_key")
+  requestPayloadJson           Json?             @map("request_payload_json")
+  responsePayloadJson          Json?             @map("response_payload_json")
+  errorCode                    String?           @map("error_code")
+  errorMessage                 String?           @map("error_message")
+  processedAt                  DateTime?         @map("processed_at")
+  createdAt                    DateTime          @default(now()) @map("created_at")
+
+  payment   Payment           @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  callbacks PaymentCallback[]
+
+  @@index([paymentId])
+  @@index([internalTransactionReference])
+  @@index([transactionType])
+  @@index([transactionStatus])
+  @@index([createdAt])
+  @@map("payment_transactions")
+}
+
+model PaymentStatusHistory {
+  id              String        @id @default(uuid())
+  paymentId       String        @map("payment_id")
+  oldStatus       PaymentStatus @map("old_status")
+  newStatus       PaymentStatus @map("new_status")
+  changeReason    String?       @map("change_reason")
+  changedByUserId String?       @map("changed_by_user_id")
+  changedBySystem Boolean       @default(false) @map("changed_by_system")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  payment       Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  changedByUser User?   @relation("ChangedByUser", fields: [changedByUserId], references: [id])
+
+  @@index([paymentId])
+  @@index([changedByUserId])
+  @@index([createdAt])
+  @@map("payment_status_history")
+}
+
+model PaymentCallback {
+  id                       String                     @id @default(uuid())
+  paymentId                String                     @map("payment_id")
+  paymentTransactionId     String?                    @map("payment_transaction_id")
+  providerKey              String                     @map("provider_key")
+  callbackType             String                     @map("callback_type")
+  providerEventId          String?                    @map("provider_event_id")
+  headersJson              Json?                      @map("headers_json")
+  payloadJson              Json                       @map("payload_json")
+  signatureValidationStatus SignatureValidationStatus @default(NOT_CHECKED) @map("signature_validation_status")
+  processingStatus         CallbackProcessingStatus  @default(PENDING) @map("processing_status")
+  errorMessage             String?                    @map("error_message")
+  receivedAt               DateTime                   @default(now()) @map("received_at")
+  processedAt              DateTime?                  @map("processed_at")
+
+  payment            Payment             @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id])
+
+  @@index([paymentId])
+  @@index([paymentTransactionId])
+  @@index([providerKey])
+  @@index([processingStatus])
+  @@index([receivedAt])
+  @@map("payment_callbacks")
+}
+
+model PaymentReconciliation {
+  id                           String               @id @default(uuid())
+  paymentId                    String               @map("payment_id")
+  reconciliationStatus         ReconciliationStatus @default(PENDING) @map("reconciliation_status")
+  providerReportedAmount       Decimal?             @map("provider_reported_amount") @db.Decimal(10, 2)
+  providerReportedCurrencyCode String?              @map("provider_reported_currency_code")
+  providerReportedStatus       String?              @map("provider_reported_status")
+  checkedAt                    DateTime?            @map("checked_at")
+  note                         String?
+  createdAt                    DateTime             @default(now()) @map("created_at")
+  updatedAt                    DateTime             @updatedAt @map("updated_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([reconciliationStatus])
+  @@index([checkedAt])
+  @@map("payment_reconciliations")
+}
+
+// ===========================================
+// SUPPORT ENTITIES
+// ===========================================
+
+model Notification {
+  id           String             @id @default(uuid())
+  channel      NotificationChannel
+  templateKey  String             @map("template_key")
+  recipient    String
+  subject      String?
+  payloadJson  Json               @map("payload_json")
+  status       NotificationStatus @default(PENDING)
+  sentAt       DateTime?          @map("sent_at")
+  failedAt     DateTime?          @map("failed_at")
+  errorMessage String?            @map("error_message")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  @@index([channel])
+  @@index([templateKey])
+  @@index([recipient])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model Job {
+  id            String    @id @default(uuid())
+  jobType       String    @map("job_type")
+  payloadJson   Json      @map("payload_json")
+  status        JobStatus @default(PENDING)
+  scheduledAt   DateTime? @map("scheduled_at")
+  startedAt     DateTime? @map("started_at")
+  finishedAt    DateTime? @map("finished_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  maxRetryCount Int       @default(3) @map("max_retry_count")
+  errorMessage  String?   @map("error_message")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  executions JobExecution[]
+
+  @@index([jobType])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([createdAt])
+  @@map("jobs")
+}
+
+model JobExecution {
+  id              String             @id @default(uuid())
+  jobId           String             @map("job_id")
+  executionStatus JobExecutionStatus @map("execution_status")
+  startedAt       DateTime           @default(now()) @map("started_at")
+  finishedAt      DateTime?          @map("finished_at")
+  errorMessage    String?            @map("error_message")
+  createdAt       DateTime           @default(now()) @map("created_at")
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([executionStatus])
+  @@index([startedAt])
+  @@map("job_executions")
+}
+
+model AuditLog {
+  id           String    @id @default(uuid())
+  actorUserId  String?   @map("actor_user_id")
+  actorType    ActorType @map("actor_type")
+  actionKey    String    @map("action_key")
+  entityType   String    @map("entity_type")
+  entityId     String    @map("entity_id")
+  oldValueJson Json?     @map("old_value_json")
+  newValueJson Json?     @map("new_value_json")
+  ipAddress    String?   @map("ip_address")
+  userAgent    String?   @map("user_agent")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  actorUser User? @relation(fields: [actorUserId], references: [id])
+
+  @@index([actorUserId])
+  @@index([actorType])
+  @@index([actionKey])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

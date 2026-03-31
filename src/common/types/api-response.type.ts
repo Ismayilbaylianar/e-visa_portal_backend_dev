@@ -45,3 +45,14 @@ export interface ApiErrorResponse extends ApiResponse<null> {
   data: null;
   error: ApiError;
 }
+
+export interface PaginatedData<T> {
+  items: T[];
+  pagination: PaginationMeta;
+}
+
+export interface PaginatedResponse<T> extends ApiSuccessResponse<T[]> {
+  meta: ApiResponseMeta & {
+    pagination: PaginationMeta;
+  };
+}

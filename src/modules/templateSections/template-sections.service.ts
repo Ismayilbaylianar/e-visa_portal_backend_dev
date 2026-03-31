@@ -1,0 +1,156 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  CreateTemplateSectionDto,
+  UpdateTemplateSectionDto,
+  TemplateSectionResponseDto,
+} from './dto';
+import { NotFoundException, ConflictException } from '@/common/exceptions';
+
+@Injectable()
+export class TemplateSectionsService {
+  private readonly logger = new Logger(TemplateSectionsService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(
+    templateId: string,
+    dto: CreateTemplateSectionDto,
+  ): Promise<TemplateSectionResponseDto> {
+    const template = await this.prisma.template.findFirst({
+      where: { id: templateId, deletedAt: null },
+    });
+
+    if (!template) {
+      throw new NotFoundException('Template not found');
+    }
+
+    const existingSection = await this.prisma.templateSection.findFirst({
+      where: {
+        templateId,
+        key: dto.key,
+        deletedAt: null,
+      },
+    });
+
+    if (existingSection) {
+      throw new ConflictException('Section with this key already exists in the template');
+    }
+
+    const section = await this.prisma.templateSection.create({
+      data: {
+        templateId,
+        title: dto.title,
+        key: dto.key,
+        description: dto.description,
+        sortOrder: dto.sortOrder ?? 0,
+        isActive: dto.isActive ?? true,
+      },
+      include: {
+        fields: {
+          where: { deletedAt: null },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+
+    this.logger.log(`Template section created: ${section.id} for template: ${templateId}`);
+    return this.mapToResponse(section);
+  }
+
+  async update(
+    sectionId: string,
+    dto: UpdateTemplateSectionDto,
+  ): Promise<TemplateSectionResponseDto> {
+    const section = await this.prisma.templateSection.findFirst({
+      where: { id: sectionId, deletedAt: null },
+    });
+
+    if (!section) {
+      throw new NotFoundException('Template section not found');
+    }
+
+    if (dto.key && dto.key !== section.key) {
+      const existingSection = await this.prisma.templateSection.findFirst({
+        where: {
+          templateId: section.templateId,
+          key: dto.key,
+          deletedAt: null,
+          id: { not: sectionId },
+        },
+      });
+
+      if (existingSection) {
+        throw new ConflictException('Section with this key already exists in the template');
+      }
+    }
+
+    const updatedSection = await this.prisma.templateSection.update({
+      where: { id: sectionId },
+      data: dto,
+      include: {
+        fields: {
+          where: { deletedAt: null },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+
+    this.logger.log(`Template section updated: ${sectionId}`);
+    return this.mapToResponse(updatedSection);
+  }
+
+  async delete(sectionId: string): Promise<void> {
+    const section = await this.prisma.templateSection.findFirst({
+      where: { id: sectionId, deletedAt: null },
+    });
+
+    if (!section) {
+      throw new NotFoundException('Template section not found');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.templateField.updateMany({
+        where: { templateSectionId: sectionId, deletedAt: null },
+        data: { deletedAt: new Date() },
+      }),
+      this.prisma.templateSection.update({
+        where: { id: sectionId },
+        data: { deletedAt: new Date() },
+      }),
+    ]);
+
+    this.logger.log(`Template section deleted: ${sectionId}`);
+  }
+
+  private mapToResponse(section: any): TemplateSectionResponseDto {
+    return {
+      id: section.id,
+      templateId: section.templateId,
+      title: section.title,
+      key: section.key,
+      description: section.description || undefined,
+      sortOrder: section.sortOrder,
+      isActive: section.isActive,
+      fields: section.fields?.map((field: any) => ({
+        id: field.id,
+        fieldKey: field.fieldKey,
+        fieldType: field.fieldType,
+        label: field.label,
+        placeholder: field.placeholder || undefined,
+        helpText: field.helpText || undefined,
+        defaultValue: field.defaultValue || undefined,
+        isRequired: field.isRequired,
+        sortOrder: field.sortOrder,
+        isActive: field.isActive,
+        optionsJson: field.optionsJson || undefined,
+        validationRulesJson: field.validationRulesJson || undefined,
+        visibilityRulesJson: field.visibilityRulesJson || undefined,
+        createdAt: field.createdAt,
+        updatedAt: field.updatedAt,
+      })),
+      createdAt: section.createdAt,
+      updatedAt: section.updatedAt,
+    };
+  }
+}

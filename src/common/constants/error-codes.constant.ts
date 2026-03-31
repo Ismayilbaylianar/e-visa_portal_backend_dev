@@ -3,7 +3,9 @@
  * Used for consistent error identification across the API
  */
 export const ErrorCodes = {
-  // Client errors (4xx)
+  // ==========================================
+  // Common errors (4xx/5xx)
+  // ==========================================
   BAD_REQUEST: 'badRequest',
   VALIDATION_ERROR: 'validationError',
   UNAUTHORIZED: 'unauthorized',
@@ -12,27 +14,113 @@ export const ErrorCodes = {
   CONFLICT: 'conflict',
   UNPROCESSABLE_ENTITY: 'unprocessableEntity',
   TOO_MANY_REQUESTS: 'tooManyRequests',
-
-  // Server errors (5xx)
   INTERNAL_SERVER_ERROR: 'internalServerError',
   SERVICE_UNAVAILABLE: 'serviceUnavailable',
   DATABASE_ERROR: 'databaseError',
-  EXTERNAL_SERVICE_ERROR: 'externalServiceError',
 
+  // ==========================================
   // Authentication errors
+  // ==========================================
   INVALID_CREDENTIALS: 'invalidCredentials',
+  INVALID_TOKEN: 'invalidToken',
   TOKEN_EXPIRED: 'tokenExpired',
-  TOKEN_INVALID: 'tokenInvalid',
-  REFRESH_TOKEN_EXPIRED: 'refreshTokenExpired',
-  REFRESH_TOKEN_INVALID: 'refreshTokenInvalid',
+  SESSION_EXPIRED: 'sessionExpired',
+  OTP_INVALID: 'otpInvalid',
+  OTP_EXPIRED: 'otpExpired',
+  OTP_ALREADY_USED: 'otpAlreadyUsed',
+  ACCOUNT_INACTIVE: 'accountInactive',
+  PERMISSION_DENIED: 'permissionDenied',
 
+  // ==========================================
   // Business logic errors
-  USER_ALREADY_EXISTS: 'userAlreadyExists',
+  // ==========================================
+  BINDING_NOT_FOUND: 'bindingNotFound',
+  TEMPLATE_NOT_FOUND: 'templateNotFound',
+  APPLICATION_NOT_FOUND: 'applicationNotFound',
+  APPLICATION_ALREADY_SUBMITTED: 'applicationAlreadySubmitted',
+  APPLICATION_NOT_EDITABLE: 'applicationNotEditable',
+  INVALID_STATUS_TRANSITION: 'invalidStatusTransition',
+  DOCUMENT_NOT_FOUND: 'documentNotFound',
   USER_NOT_FOUND: 'userNotFound',
   ROLE_NOT_FOUND: 'roleNotFound',
-  PERMISSION_DENIED: 'permissionDenied',
-  RESOURCE_NOT_FOUND: 'resourceNotFound',
-  OPERATION_NOT_ALLOWED: 'operationNotAllowed',
+  COUNTRY_NOT_FOUND: 'countryNotFound',
+  VISA_TYPE_NOT_FOUND: 'visaTypeNotFound',
+  APPLICANT_NOT_FOUND: 'applicantNotFound',
+
+  // ==========================================
+  // Upload errors
+  // ==========================================
+  FILE_TOO_LARGE: 'fileTooLarge',
+  FILE_TYPE_NOT_ALLOWED: 'fileTypeNotAllowed',
+  FILE_UPLOAD_FAILED: 'fileUploadFailed',
+
+  // ==========================================
+  // Payment errors
+  // ==========================================
+  PAYMENT_NOT_FOUND: 'paymentNotFound',
+  PAYMENT_INITIALIZATION_FAILED: 'paymentInitializationFailed',
+  PAYMENT_PROVIDER_UNAVAILABLE: 'paymentProviderUnavailable',
+  PAYMENT_CALLBACK_INVALID: 'paymentCallbackInvalid',
+  PAYMENT_ALREADY_PROCESSED: 'paymentAlreadyProcessed',
+  PAYMENT_AMOUNT_MISMATCH: 'paymentAmountMismatch',
+  PAYMENT_EXPIRED: 'paymentExpired',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
+
+/**
+ * HTTP status code mapping for error codes
+ */
+export const ErrorCodeHttpStatus: Record<ErrorCode, number> = {
+  // Common
+  [ErrorCodes.BAD_REQUEST]: 400,
+  [ErrorCodes.VALIDATION_ERROR]: 400,
+  [ErrorCodes.UNAUTHORIZED]: 401,
+  [ErrorCodes.FORBIDDEN]: 403,
+  [ErrorCodes.NOT_FOUND]: 404,
+  [ErrorCodes.CONFLICT]: 409,
+  [ErrorCodes.UNPROCESSABLE_ENTITY]: 422,
+  [ErrorCodes.TOO_MANY_REQUESTS]: 429,
+  [ErrorCodes.INTERNAL_SERVER_ERROR]: 500,
+  [ErrorCodes.SERVICE_UNAVAILABLE]: 503,
+  [ErrorCodes.DATABASE_ERROR]: 500,
+
+  // Auth
+  [ErrorCodes.INVALID_CREDENTIALS]: 401,
+  [ErrorCodes.INVALID_TOKEN]: 401,
+  [ErrorCodes.TOKEN_EXPIRED]: 401,
+  [ErrorCodes.SESSION_EXPIRED]: 401,
+  [ErrorCodes.OTP_INVALID]: 400,
+  [ErrorCodes.OTP_EXPIRED]: 400,
+  [ErrorCodes.OTP_ALREADY_USED]: 400,
+  [ErrorCodes.ACCOUNT_INACTIVE]: 403,
+  [ErrorCodes.PERMISSION_DENIED]: 403,
+
+  // Business
+  [ErrorCodes.BINDING_NOT_FOUND]: 404,
+  [ErrorCodes.TEMPLATE_NOT_FOUND]: 404,
+  [ErrorCodes.APPLICATION_NOT_FOUND]: 404,
+  [ErrorCodes.APPLICATION_ALREADY_SUBMITTED]: 409,
+  [ErrorCodes.APPLICATION_NOT_EDITABLE]: 409,
+  [ErrorCodes.INVALID_STATUS_TRANSITION]: 400,
+  [ErrorCodes.DOCUMENT_NOT_FOUND]: 404,
+  [ErrorCodes.USER_NOT_FOUND]: 404,
+  [ErrorCodes.ROLE_NOT_FOUND]: 404,
+  [ErrorCodes.COUNTRY_NOT_FOUND]: 404,
+  [ErrorCodes.VISA_TYPE_NOT_FOUND]: 404,
+  [ErrorCodes.APPLICANT_NOT_FOUND]: 404,
+
+  // Upload
+  [ErrorCodes.FILE_TOO_LARGE]: 413,
+  [ErrorCodes.FILE_TYPE_NOT_ALLOWED]: 415,
+  [ErrorCodes.FILE_UPLOAD_FAILED]: 500,
+
+  // Payment
+  [ErrorCodes.PAYMENT_NOT_FOUND]: 404,
+  [ErrorCodes.PAYMENT_INITIALIZATION_FAILED]: 500,
+  [ErrorCodes.PAYMENT_PROVIDER_UNAVAILABLE]: 503,
+  [ErrorCodes.PAYMENT_CALLBACK_INVALID]: 400,
+  [ErrorCodes.PAYMENT_ALREADY_PROCESSED]: 409,
+  [ErrorCodes.PAYMENT_AMOUNT_MISMATCH]: 400,
+  [ErrorCodes.PAYMENT_EXPIRED]: 410,
+};

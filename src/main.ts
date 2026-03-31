@@ -65,11 +65,50 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
+    // System
     .addTag('Health', 'System health check endpoints')
-    .addTag('Auth', 'Authentication endpoints')
+    // Admin Auth & Access Control
+    .addTag('Auth', 'Admin authentication endpoints')
+    .addTag('Sessions', 'Admin session management')
     .addTag('Users', 'User management endpoints')
     .addTag('Roles', 'Role management endpoints')
     .addTag('Permissions', 'Permission management endpoints')
+    // Portal Auth
+    .addTag('Portal Auth', 'Customer portal authentication')
+    // Configuration
+    .addTag('Countries', 'Country management endpoints')
+    .addTag('Country Sections', 'Country section management')
+    .addTag('Visa Types', 'Visa type management endpoints')
+    .addTag('Templates', 'Form template management')
+    .addTag('Template Sections', 'Template section management')
+    .addTag('Template Fields', 'Template field management')
+    .addTag('Template Bindings', 'Template binding management')
+    .addTag('Binding Nationality Fees', 'Fee configuration by nationality')
+    .addTag('Payment Page Config', 'Payment page configuration')
+    .addTag('Email Templates', 'Email template management')
+    .addTag('Settings', 'System settings management')
+    // Public
+    .addTag('Public Countries', 'Public country endpoints')
+    .addTag('Public Visa Types', 'Public visa type endpoints')
+    .addTag('Public Selection', 'Public selection and preview endpoints')
+    .addTag('Tracking', 'Application tracking endpoints')
+    // Application Domain
+    .addTag('Applications Admin', 'Admin application management')
+    .addTag('Applications Portal', 'Portal application management')
+    .addTag('Applicants Portal', 'Portal applicant management')
+    .addTag('Applicants Admin', 'Admin applicant management')
+    .addTag('Form Renderer', 'Form schema endpoints')
+    .addTag('Documents Portal', 'Portal document management')
+    .addTag('Documents Admin', 'Admin document review')
+    .addTag('Customer Portal', 'Customer portal endpoints')
+    // Payments
+    .addTag('Payments Admin', 'Admin payment management')
+    .addTag('Payments Portal', 'Portal payment endpoints')
+    .addTag('Payment Callbacks', 'Payment provider callbacks')
+    // Admin Support
+    .addTag('Dashboard', 'Admin dashboard endpoints')
+    .addTag('Audit Logs', 'Audit log endpoints')
+    .addTag('Jobs', 'Background job management')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
@@ -83,8 +122,8 @@ async function bootstrap() {
 
   await app.listen(port);
 
-  logger.log(`🚀 Application is running on: http://localhost:${port}/${apiPrefix}`);
-  logger.log(`📚 Swagger documentation: http://localhost:${port}/docs`);
+  logger.log(`Application is running on: http://localhost:${port}/${apiPrefix}`);
+  logger.log(`Swagger documentation: http://localhost:${port}/docs`);
 }
 
 bootstrap();

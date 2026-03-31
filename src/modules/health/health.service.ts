@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { HealthResponseDto } from './dto';
+import { HealthResponseDto } from './dto/health-response.dto';
 
 @Injectable()
 export class HealthService {
+  private readonly version = '1.0.0';
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -16,6 +18,8 @@ export class HealthService {
       checks: {
         app: 'ok',
       },
+      version: this.version,
+      timestamp: new Date().toISOString(),
     };
   }
 
@@ -47,6 +51,8 @@ export class HealthService {
     return {
       status,
       checks,
+      version: this.version,
+      timestamp: new Date().toISOString(),
     };
   }
 }

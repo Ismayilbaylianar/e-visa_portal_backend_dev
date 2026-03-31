@@ -1,7 +1,8 @@
 import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { HealthService } from './health.service';
-import { HealthResponseDto } from './dto';
+import { HealthResponseDto } from './dto/health-response.dto';
+import { Public } from '@/common/decorators';
 
 @ApiTags('Health')
 @Controller('system/health')
@@ -9,6 +10,7 @@ export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
   @Get('live')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Liveness check',
@@ -24,6 +26,7 @@ export class HealthController {
   }
 
   @Get('ready')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Readiness check',
@@ -40,10 +43,6 @@ export class HealthController {
     description: 'Application is not ready',
   })
   async checkReady(): Promise<HealthResponseDto> {
-    const health = await this.healthService.checkReady();
-
-    // Note: In a real scenario, you might want to return 503 if not ready
-    // For now, we return the status in the response body
-    return health;
+    return this.healthService.checkReady();
   }
 }

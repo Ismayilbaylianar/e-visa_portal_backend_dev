@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { BaseException } from '../exceptions';
-import { ErrorCodes } from '../constants';
+import { ErrorCodes, ErrorCode } from '../constants';
 import { ApiErrorResponse, ApiErrorDetail } from '../types';
 
 @Catch()
@@ -23,7 +23,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const requestId = (request as any).requestId || 'unknown';
 
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
-    let errorCode = ErrorCodes.INTERNAL_SERVER_ERROR;
+    let errorCode: string = ErrorCodes.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
     let details: ApiErrorDetail[] | undefined;
 
