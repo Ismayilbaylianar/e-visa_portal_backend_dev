@@ -1,25 +1,16 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { AuthGuard } from '@nestjs/passport';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { UnauthorizedException } from '../exceptions';
 
-/**
- * JWT Authentication Guard
- * Validates JWT tokens for protected routes
- * 
- * TODO: Implement actual JWT validation logic
- * This is a placeholder that will be completed when auth module is fully implemented
- */
 @Injectable()
-export class JwtAuthGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+export class JwtAuthGuard extends AuthGuard('jwt') {
+  constructor(private reflector: Reflector) {
+    super();
+  }
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    // Check if route is marked as public
+  canActivate(context: ExecutionContext) {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -29,24 +20,19 @@ export class JwtAuthGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers.authorization;
+    return super.canActivate(context);
+  }
 
-    if (!authHeader) {
-      throw new UnauthorizedException('No authorization header provided');
+  handleRequest(err: any, user: any, info: any) {
+    if (err || !user) {
+      if (info?.name === 'TokenExpiredError') {
+        throw new UnauthorizedException('Token has expired');
+      }
+      if (info?.name === 'JsonWebTokenError') {
+        throw new UnauthorizedException('Invalid token');
+      }
+      throw new UnauthorizedException('Authentication required');
     }
-
-    const [type, token] = authHeader.split(' ');
-
-    if (type !== 'Bearer' || !token) {
-      throw new UnauthorizedException('Invalid authorization header format');
-    }
-
-    // TODO: Validate JWT token and attach user to request
-    // For now, this is a placeholder
-    // const user = await this.authService.validateToken(token);
-    // request.user = user;
-
-    return true;
+    return user;
   }
 }

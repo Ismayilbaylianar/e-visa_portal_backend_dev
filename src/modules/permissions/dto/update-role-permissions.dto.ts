@@ -1,17 +1,29 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsUUID, ArrayNotEmpty } from 'class-validator';
+import { IsArray, IsUUID, ArrayUnique } from 'class-validator';
 
 export class UpdateRolePermissionsDto {
   @ApiProperty({
-    description: 'Array of permission IDs to assign to the role',
+    description: 'List of permission IDs to assign to the role (replaces existing)',
     type: [String],
-    example: [
-      '550e8400-e29b-41d4-a716-446655440000',
-      '550e8400-e29b-41d4-a716-446655440001',
-    ],
+    example: ['perm_1', 'perm_2', 'perm_3'],
   })
   @IsArray()
-  @ArrayNotEmpty()
-  @IsUUID('4', { each: true })
+  @IsUUID('4', { each: true, message: 'Each permission ID must be a valid UUID' })
+  @ArrayUnique({ message: 'Permission IDs must be unique' })
   permissionIds: string[];
+}
+
+export class UpdateRolePermissionsResponseDto {
+  @ApiProperty({ description: 'Role ID', example: 'role_1' })
+  roleId: string;
+
+  @ApiProperty({ description: 'Number of permissions assigned', example: 3 })
+  permissionCount: number;
+
+  @ApiProperty({
+    description: 'List of assigned permission keys',
+    type: [String],
+    example: ['users.read', 'users.create', 'users.update'],
+  })
+  permissionKeys: string[];
 }

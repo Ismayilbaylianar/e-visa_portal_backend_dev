@@ -2,9 +2,9 @@
 
 Production-ready backend API for an online visa application portal built with NestJS, Prisma, and PostgreSQL.
 
-## Current Stage: Foundation + Full Module Structure
+## Current Stage: IAM Layer Implementation
 
-This repository contains the complete backend architecture and API foundation for a visa portal system.
+This repository contains the complete backend architecture with a fully functional Identity and Access Management (IAM) layer.
 
 ### What's Implemented
 
@@ -20,6 +20,47 @@ This repository contains the complete backend architecture and API foundation fo
 - [x] Docker development setup
 - [x] Environment configuration
 
+#### Identity & Access Management (Fully Functional)
+- [x] **Authentication**
+  - JWT-based admin authentication
+  - Login with email/password
+  - Access token (1 hour) and refresh token (7 days)
+  - Token refresh endpoint
+  - Logout with session revocation
+  - Password hashing with bcrypt
+  - Refresh token hashing before storage
+- [x] **Session Management**
+  - Database-persisted sessions
+  - View active sessions
+  - Revoke individual sessions
+  - Revoke all sessions (except current)
+  - Session tracking (IP, user agent, last activity)
+- [x] **User Management**
+  - Full CRUD operations
+  - Password hashing on create
+  - Email uniqueness validation
+  - Soft delete
+  - Status management (activate/deactivate)
+  - Deactivation revokes all sessions
+- [x] **Role Management**
+  - Full CRUD operations
+  - System role protection
+  - User count tracking
+  - Prevent deletion of roles with active users
+  - Soft delete
+- [x] **Permission Management**
+  - Permission listing
+  - Permission matrix view (grouped by module)
+  - Role permission assignment (replace all)
+  - User permission overrides (grants/denies)
+- [x] **Access Control**
+  - JWT authentication guard
+  - Permission-based authorization guard
+  - `@Public()` decorator for public routes
+  - `@RequirePermissions()` decorator
+  - `@CurrentUser()` decorator
+  - Role permissions + user overrides calculation
+
 #### Database Schema (30+ models)
 - [x] Access Control: User, Role, Permission, RolePermission, UserPermission, Session
 - [x] Portal Auth: PortalIdentity, PortalSession, OtpCode
@@ -28,66 +69,27 @@ This repository contains the complete backend architecture and API foundation fo
 - [x] Payments: Payment, PaymentTransaction, PaymentStatusHistory, PaymentCallback, PaymentReconciliation
 - [x] Support: Notification, Job, JobExecution, AuditLog
 
-#### API Modules (35+ modules)
+#### API Modules (35+ modules scaffolded, IAM modules fully functional)
 
 **System**
 - [x] Health (`/system/health/live`, `/system/health/ready`)
 
-**Admin Auth & Access Control**
-- [x] Auth (`/admin/auth/login`, `/admin/auth/refresh`, `/admin/auth/logout`)
-- [x] Sessions (`/admin/sessions/me`, `/admin/sessions/:id`, `/admin/sessions/revokeAll`)
-- [x] Users (CRUD + status management)
-- [x] Roles (CRUD)
-- [x] Permissions (list, matrix, role/user permission management)
-- [x] Access Control (internal service)
+**Admin Auth & Access Control (FULLY FUNCTIONAL)**
+- [x] Auth (`POST /admin/auth/login`, `POST /admin/auth/refresh`, `POST /admin/auth/logout`)
+- [x] Sessions (`GET /admin/sessions/me`, `DELETE /admin/sessions/:id`, `DELETE /admin/sessions/revokeAll`)
+- [x] Users (`GET/POST/PATCH/DELETE /admin/users`, `PATCH /admin/users/:id/status`)
+- [x] Roles (`GET/POST/PATCH/DELETE /admin/roles`)
+- [x] Permissions (`GET /admin/permissions`, `GET /admin/permissions/matrix`, `PATCH /admin/permissions/roles/:id/permissions`, `PATCH /admin/permissions/users/:id/permissions`)
 
-**Portal Auth**
-- [x] Portal Auth (`/portal/auth/sendOtp`, `/portal/auth/verifyOtp`, `/portal/auth/refresh`, `/portal/auth/logout`)
-- [x] Portal Sessions (internal service)
-- [x] OTP (internal service)
-
-**Configuration**
-- [x] Countries (admin CRUD + public endpoints)
-- [x] Country Sections (admin CRUD)
-- [x] Visa Types (admin CRUD + public endpoint)
-- [x] Templates (admin CRUD)
-- [x] Template Sections (admin CRUD)
-- [x] Template Fields (admin CRUD)
-- [x] Template Bindings (admin CRUD)
-- [x] Binding Nationality Fees (admin CRUD)
-- [x] Payment Page Configs (admin get/update)
-- [x] Email Templates (admin CRUD)
-- [x] Settings (admin get/update)
-
-**Public**
-- [x] Public Selection (`/public/selection/options`, `/public/selection/preview`)
-- [x] Tracking (`/public/tracking/search`)
-
-**Application Domain**
-- [x] Applications (admin list/view, portal CRUD + submit)
-- [x] Applicants (portal CRUD, admin status update)
-- [x] Form Renderer (`/portal/forms/schema`)
-- [x] Documents (portal upload/view/delete, admin review)
-- [x] Customer Portal (`/portal/me/applications`)
-- [x] Status Workflow (internal service)
-
-**Payments**
-- [x] Payments (admin list/view/status, portal create/initialize, public callbacks)
-- [x] Payment Transactions (internal service)
-
-**Support**
-- [x] Dashboard (`/admin/dashboard/summary`, `/admin/dashboard/charts`)
-- [x] Audit Logs (admin list/view)
-- [x] Jobs (admin list/view/retry/cancel)
-- [x] Notifications (internal service)
-- [x] Geo Lookup (internal service)
+**Other Modules (Scaffolded)**
+- Portal Auth, Countries, Visa Types, Templates, Applications, Payments, etc.
 
 ### What's NOT Implemented Yet
 
-- [ ] Actual JWT token generation/validation
-- [ ] Password hashing (bcrypt)
-- [ ] Full RBAC enforcement
-- [ ] File upload storage (S3/local)
+- [ ] Portal OTP authentication
+- [ ] Countries/Visa Types/Templates CRUD logic
+- [ ] Application workflow
+- [ ] File upload storage
 - [ ] Email sending service
 - [ ] Payment provider integrations
 - [ ] Background job processing
@@ -100,70 +102,11 @@ This repository contains the complete backend architecture and API foundation fo
 - **Language**: TypeScript 5.x
 - **ORM**: Prisma 5.x
 - **Database**: PostgreSQL 16
+- **Authentication**: JWT (passport-jwt)
+- **Password Hashing**: bcrypt
 - **Documentation**: Swagger/OpenAPI 7.x
 - **Validation**: class-validator, class-transformer
 - **Container**: Docker, Docker Compose
-
-## Project Structure
-
-```
-src/
-├── main.ts                    # Application entry point
-├── app.module.ts              # Root module
-├── common/                    # Shared utilities
-│   ├── constants/             # Error codes, API constants
-│   ├── decorators/            # Custom decorators
-│   ├── dto/                   # Common DTOs
-│   ├── enums/                 # Application enums
-│   ├── exceptions/            # Custom exceptions
-│   ├── filters/               # Exception filters
-│   ├── guards/                # Auth guards
-│   ├── interceptors/          # Request/response interceptors
-│   ├── types/                 # TypeScript types
-│   └── utils/                 # Utility functions
-├── config/                    # Configuration files
-│   ├── app.config.ts
-│   ├── db.config.ts
-│   └── swagger.config.ts
-└── modules/                   # Feature modules
-    ├── prisma/                # Database service
-    ├── health/                # Health checks
-    ├── auth/                  # Admin authentication
-    ├── sessions/              # Admin sessions
-    ├── users/                 # User management
-    ├── roles/                 # Role management
-    ├── permissions/           # Permission management
-    ├── accessControl/         # Access control service
-    ├── portalAuth/            # Portal authentication
-    ├── portalSessions/        # Portal sessions
-    ├── otp/                   # OTP service
-    ├── countries/             # Country management
-    ├── countrySections/       # Country sections
-    ├── visaTypes/             # Visa types
-    ├── templates/             # Form templates
-    ├── templateSections/      # Template sections
-    ├── templateFields/        # Template fields
-    ├── templateBindings/      # Template bindings
-    ├── bindingNationalityFees/# Fee configuration
-    ├── paymentPageConfigs/    # Payment page config
-    ├── emailTemplates/        # Email templates
-    ├── settings/              # System settings
-    ├── publicSelection/       # Public selection
-    ├── tracking/              # Application tracking
-    ├── applications/          # Applications
-    ├── applicants/            # Applicants
-    ├── formRenderer/          # Form schema
-    ├── documents/             # Documents
-    ├── customerPortal/        # Customer portal
-    ├── statusWorkflow/        # Status workflow
-    ├── payments/              # Payments
-    ├── paymentTransactions/   # Payment transactions
-    ├── notifications/         # Notifications
-    ├── jobs/                  # Background jobs
-    ├── auditLogs/             # Audit logs
-    ├── dashboard/             # Dashboard
-    └── geoLookup/             # Geo lookup
-```
 
 ## Getting Started
 
@@ -189,17 +132,24 @@ cp .env.example .env
 
 # Generate Prisma client
 npm run prisma:generate
+```
 
-# Push schema to database (development)
+### Database Setup
+
+```bash
+# Option 1: Push schema to database (development)
 npm run db:push
+
+# Option 2: Run migrations (production)
+npm run prisma:migrate:dev
+
+# Seed default data (roles, permissions, users)
+npm run prisma:seed
 ```
 
 ### Running Locally
 
 ```bash
-# Start PostgreSQL (if not using Docker)
-# Make sure PostgreSQL is running on localhost:5432
-
 # Development mode with hot-reload
 npm run start:dev
 
@@ -219,10 +169,43 @@ docker compose -f docker-compose.dev.yml up -d --build
 
 # Stop services
 docker compose -f docker-compose.dev.yml down
-
-# View logs
-docker compose -f docker-compose.dev.yml logs -f api
 ```
+
+## Default Development Credentials
+
+After running the seed script, these users are available:
+
+| Email | Password | Role |
+|-------|----------|------|
+| `super@visa.com` | `super123` | Super Admin (all permissions) |
+| `admin@visa.com` | `admin123` | Admin (most permissions) |
+| `operator@visa.com` | `operator123` | Operator (limited permissions) |
+
+**⚠️ Change these passwords in production!**
+
+## Seeded Permissions
+
+The seed script creates the following permission groups:
+
+| Module | Actions |
+|--------|---------|
+| `users` | read, create, update, delete |
+| `roles` | read, create, update, delete |
+| `permissions` | read, update |
+| `sessions` | read, delete |
+| `countries` | read, create, update, delete |
+| `visaTypes` | read, create, update, delete |
+| `templates` | read, create, update, delete |
+| `applications` | read, update, review |
+| `payments` | read, refund |
+| `settings` | read, update |
+| `auditLogs` | read |
+| `dashboard` | read |
+
+**Role Permission Mapping:**
+- **superAdmin**: All permissions
+- **admin**: Most permissions (no user delete, no role management)
+- **operator**: Read-only + application review
 
 ## API Documentation
 
@@ -232,6 +215,54 @@ Once the application is running, access Swagger documentation at:
 http://localhost:3000/docs
 ```
 
+## API Endpoints (IAM Layer)
+
+### Authentication
+
+```
+POST /api/v1/admin/auth/login
+POST /api/v1/admin/auth/refresh
+POST /api/v1/admin/auth/logout
+```
+
+### Sessions
+
+```
+GET    /api/v1/admin/sessions/me
+DELETE /api/v1/admin/sessions/:sessionId
+DELETE /api/v1/admin/sessions/revokeAll
+```
+
+### Users
+
+```
+GET    /api/v1/admin/users
+GET    /api/v1/admin/users/:userId
+POST   /api/v1/admin/users
+PATCH  /api/v1/admin/users/:userId
+PATCH  /api/v1/admin/users/:userId/status
+DELETE /api/v1/admin/users/:userId
+```
+
+### Roles
+
+```
+GET    /api/v1/admin/roles
+GET    /api/v1/admin/roles/:roleId
+POST   /api/v1/admin/roles
+PATCH  /api/v1/admin/roles/:roleId
+DELETE /api/v1/admin/roles/:roleId
+```
+
+### Permissions
+
+```
+GET   /api/v1/admin/permissions
+GET   /api/v1/admin/permissions/matrix
+PATCH /api/v1/admin/permissions/roles/:roleId/permissions
+PATCH /api/v1/admin/permissions/users/:userId/permissions
+```
+
 ## API Response Format
 
 ### Success Response
@@ -239,30 +270,21 @@ http://localhost:3000/docs
 ```json
 {
   "success": true,
-  "data": { ... },
-  "meta": {
-    "requestId": "req_abc123xyz",
-    "timestamp": "2024-01-15T10:30:00.000Z"
-  },
-  "error": null
-}
-```
-
-### Paginated Response
-
-```json
-{
-  "success": true,
-  "data": [ ... ],
-  "meta": {
-    "requestId": "req_abc123xyz",
-    "timestamp": "2024-01-15T10:30:00.000Z",
-    "pagination": {
-      "page": 1,
-      "limit": 10,
-      "total": 100,
-      "totalPages": 10
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
+    "expiresInSeconds": 3600,
+    "user": {
+      "id": "uuid",
+      "fullName": "Super Admin",
+      "email": "super@visa.com",
+      "roleId": "uuid",
+      "roleKey": "superAdmin",
+      "isActive": true
     }
+  },
+  "meta": {
+    "requestId": "req_abc123xyz"
   },
   "error": null
 }
@@ -275,22 +297,33 @@ http://localhost:3000/docs
   "success": false,
   "data": null,
   "meta": {
-    "requestId": "req_abc123xyz",
-    "timestamp": "2024-01-15T10:30:00.000Z"
+    "requestId": "req_abc123xyz"
   },
   "error": {
-    "code": "validationError",
-    "message": "Validation failed",
+    "code": "invalidCredentials",
+    "message": "Invalid credentials",
     "details": [
       {
-        "field": "email",
-        "reason": "invalidFormat",
-        "message": "Email format is invalid"
+        "reason": "invalidCredentials",
+        "message": "Email or password is incorrect"
       }
     ]
   }
 }
 ```
+
+## Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `invalidCredentials` | 401 | Wrong email or password |
+| `unauthorized` | 401 | Missing or invalid token |
+| `accountInactive` | 403 | User account is deactivated |
+| `permissionDenied` | 403 | Missing required permissions |
+| `forbidden` | 403 | Access denied |
+| `notFound` | 404 | Resource not found |
+| `conflict` | 409 | Duplicate resource (e.g., email) |
+| `validationError` | 400 | Request validation failed |
 
 ## Environment Variables
 
@@ -302,9 +335,9 @@ http://localhost:3000/docs
 | `DATABASE_URL` | PostgreSQL connection string | - |
 | `JWT_ACCESS_SECRET` | JWT access token secret | - |
 | `JWT_REFRESH_SECRET` | JWT refresh token secret | - |
-| `SWAGGER_TITLE` | Swagger doc title | `Visa Portal Backend API` |
-| `SWAGGER_DESCRIPTION` | Swagger doc description | - |
-| `SWAGGER_VERSION` | API version | `1.0.0` |
+| `JWT_ACCESS_EXPIRATION_SECONDS` | Access token TTL | `3600` |
+| `JWT_REFRESH_EXPIRATION_SECONDS` | Refresh token TTL | `604800` |
+| `BCRYPT_SALT_ROUNDS` | Password hashing rounds | `12` |
 
 See `.env.example` for all available variables.
 
@@ -322,44 +355,29 @@ npm run start:prod     # Start production build
 # Database
 npm run prisma:generate  # Generate Prisma client
 npm run db:push          # Push schema to database
-npm run db:migrate       # Run migrations (production)
+npm run prisma:migrate:dev  # Create migration
+npm run prisma:seed      # Seed default data
 
 # Code Quality
 npm run lint           # Run ESLint
-npm run lint:fix       # Fix ESLint errors
 npm run format         # Format with Prettier
 
 # Testing
 npm run test           # Run unit tests
-npm run test:watch     # Run tests in watch mode
 npm run test:cov       # Run tests with coverage
-npm run test:e2e       # Run e2e tests
 ```
 
-## Docker Commands
+## Security Features
 
-```bash
-# Build image
-docker build -t evisa-backend .
-
-# Run container
-docker run -p 3000:3000 --env-file .env evisa-backend
-
-# Development with compose
-docker compose -f docker-compose.dev.yml up --build
-
-# Production with compose
-docker compose up --build
-```
-
-## Route Groups
-
-| Prefix | Description | Authentication |
-|--------|-------------|----------------|
-| `/api/v1/public/*` | Public endpoints | None |
-| `/api/v1/portal/*` | Customer portal | Portal JWT |
-| `/api/v1/admin/*` | Admin endpoints | Admin JWT |
-| `/api/v1/system/*` | System endpoints | None/Admin |
+- ✅ Passwords hashed with bcrypt (12 rounds)
+- ✅ Refresh tokens hashed before database storage
+- ✅ JWT tokens with configurable expiration
+- ✅ Session-based token revocation
+- ✅ Soft delete for users (preserves audit trail)
+- ✅ Inactive users cannot login
+- ✅ Deleted users cannot login
+- ✅ Permission-based access control
+- ✅ User-level permission overrides
 
 ## License
 

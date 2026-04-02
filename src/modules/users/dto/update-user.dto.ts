@@ -4,34 +4,46 @@ import { IsEmail, IsString, MinLength, IsOptional, IsUUID, IsBoolean } from 'cla
 export class UpdateUserDto {
   @ApiPropertyOptional({
     description: 'User full name',
-    example: 'John Doe',
+    example: 'Updated Operator Name',
   })
   @IsOptional()
   @IsString()
-  @MinLength(2)
+  @MinLength(2, { message: 'Full name must be at least 2 characters' })
   fullName?: string;
 
   @ApiPropertyOptional({
     description: 'User email address',
-    example: 'john.doe@example.com',
+    example: 'updated.operator@visa.com',
   })
   @IsOptional()
-  @IsEmail()
+  @IsEmail({}, { message: 'Please provide a valid email address' })
   email?: string;
 
   @ApiPropertyOptional({
     description: 'Role ID to assign to user',
-    example: '550e8400-e29b-41d4-a716-446655440000',
+    example: 'role_2',
   })
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4', { message: 'Role ID must be a valid UUID' })
   roleId?: string;
 }
 
 export class UpdateUserStatusDto {
   @ApiPropertyOptional({
     description: 'Whether the user is active',
+    example: false,
   })
-  @IsBoolean()
+  @IsBoolean({ message: 'isActive must be a boolean' })
   isActive: boolean;
+}
+
+export class UpdateUserPasswordDto {
+  @ApiPropertyOptional({
+    description: 'New password',
+    example: 'newPassword123',
+    minLength: 6,
+  })
+  @IsString()
+  @MinLength(6, { message: 'Password must be at least 6 characters' })
+  password: string;
 }

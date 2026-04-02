@@ -9,40 +9,50 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import {
   CreateUserDto,
   UpdateUserDto,
   UpdateUserStatusDto,
   UserResponseDto,
+  UserListResponseDto,
   GetUsersQueryDto,
 } from './dto';
-import { UserIdParamDto } from '@/common/dto';
-import { ApiPaginatedResponse } from '@/common/decorators';
+import { RequirePermissions } from '@/common/decorators';
+import { JwtAuthGuard } from '@/common/guards';
 
 @ApiTags('Users')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('admin/users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
+  @RequirePermissions('users.read')
   @ApiOperation({
     summary: 'Get all users',
     description: 'Get paginated list of users with optional filters',
   })
-  @ApiPaginatedResponse(UserResponseDto)
-  async findAll(@Query() query: GetUsersQueryDto) {
+  @ApiResponse({
+    status: 200,
+    description: 'List of users',
+    type: UserListResponseDto,
+  })
+  async findAll(@Query() query: GetUsersQueryDto): Promise<UserListResponseDto> {
     return this.usersService.findAll(query);
   }
 
   @Get(':userId')
+  @RequirePermissions('users.read')
   @ApiOperation({
     summary: 'Get user by ID',
     description: 'Get user details by ID',
   })
+  @ApiParam({ name: 'userId', description: 'User ID' })
   @ApiResponse({
     status: 200,
     description: 'User details',
@@ -52,15 +62,16 @@ export class UsersController {
     status: 404,
     description: 'User not found',
   })
-  async findById(@Param() params: UserIdParamDto): Promise<UserResponseDto> {
-    return this.usersService.findById(params.userId);
+  async findById(@Param('userId') userId: string): Promise<UserResponseDto> {
+    return this.usersService.findById(userId);
   }
 
   @Post()
+  @RequirePermissions('users.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create user',
-    description: 'Create a new user',
+    description: 'Create a new admin user',
   })
   @ApiResponse({
     status: 201,
@@ -69,17 +80,19 @@ export class UsersController {
   })
   @ApiResponse({
     status: 409,
-    description: 'User with this email already exists',
+    description: 'Email already in use',
   })
   async create(@Body() dto: CreateUserDto): Promise<UserResponseDto> {
     return this.usersService.create(dto);
   }
 
   @Patch(':userId')
+  @RequirePermissions('users.update')
   @ApiOperation({
     summary: 'Update user',
     description: 'Update user details',
   })
+  @ApiParam({ name: 'userId', description: 'User ID' })
   @ApiResponse({
     status: 200,
     description: 'User updated successfully',
@@ -89,18 +102,24 @@ export class UsersController {
     status: 404,
     description: 'User not found',
   })
+  @ApiResponse({
+    status: 409,
+    description: 'Email already in use',
+  })
   async update(
-    @Param() params: UserIdParamDto,
+    @Param('userId') userId: string,
     @Body() dto: UpdateUserDto,
   ): Promise<UserResponseDto> {
-    return this.usersService.update(params.userId, dto);
+    return this.usersService.update(userId, dto);
   }
 
   @Patch(':userId/status')
+  @RequirePermissions('users.update')
   @ApiOperation({
     summary: 'Update user status',
-    description: 'Activate or deactivate a user',
+    description: 'Activate or deactivate a user. Deactivating revokes all sessions.',
   })
+  @ApiParam({ name: 'userId', description: 'User ID' })
   @ApiResponse({
     status: 200,
     description: 'User status updated successfully',
@@ -111,18 +130,20 @@ export class UsersController {
     description: 'User not found',
   })
   async updateStatus(
-    @Param() params: UserIdParamDto,
+    @Param('userId') userId: string,
     @Body() dto: UpdateUserStatusDto,
   ): Promise<UserResponseDto> {
-    return this.usersService.updateStatus(params.userId, dto);
+    return this.usersService.updateStatus(userId, dto);
   }
 
   @Delete(':userId')
+  @RequirePermissions('users.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete user',
-    description: 'Soft delete a user',
+    description: 'Soft delete a user. Also revokes all sessions.',
   })
+  @ApiParam({ name: 'userId', description: 'User ID' })
   @ApiResponse({
     status: 204,
     description: 'User deleted successfully',
@@ -131,7 +152,7 @@ export class UsersController {
     status: 404,
     description: 'User not found',
   })
-  async delete(@Param() params: UserIdParamDto): Promise<void> {
-    return this.usersService.delete(params.userId);
+  async delete(@Param('userId') userId: string): Promise<void> {
+    return this.usersService.delete(userId);
   }
 }

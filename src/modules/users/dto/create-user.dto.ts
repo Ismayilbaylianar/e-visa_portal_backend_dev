@@ -4,39 +4,40 @@ import { IsEmail, IsString, MinLength, IsOptional, IsUUID, IsBoolean } from 'cla
 export class CreateUserDto {
   @ApiProperty({
     description: 'User full name',
-    example: 'John Doe',
+    example: 'Operator User',
   })
   @IsString()
-  @MinLength(2)
+  @MinLength(2, { message: 'Full name must be at least 2 characters' })
   fullName: string;
 
   @ApiProperty({
     description: 'User email address',
-    example: 'john.doe@example.com',
+    example: 'operator@visa.com',
   })
-  @IsEmail()
+  @IsEmail({}, { message: 'Please provide a valid email address' })
   email: string;
 
   @ApiProperty({
     description: 'User password',
-    example: 'securePassword123',
-    minLength: 8,
+    example: 'operator123',
+    minLength: 6,
   })
   @IsString()
-  @MinLength(8)
+  @MinLength(6, { message: 'Password must be at least 6 characters' })
   password: string;
 
   @ApiPropertyOptional({
     description: 'Role ID to assign to user',
-    example: '550e8400-e29b-41d4-a716-446655440000',
+    example: 'role_3',
   })
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4', { message: 'Role ID must be a valid UUID' })
   roleId?: string;
 
   @ApiPropertyOptional({
     description: 'Whether the user is active',
     default: true,
+    example: true,
   })
   @IsOptional()
   @IsBoolean()

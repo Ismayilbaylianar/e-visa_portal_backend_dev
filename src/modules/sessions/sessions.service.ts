@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SessionResponseDto, CurrentSessionResponseDto } from './dto';
-import { NotFoundException } from '@/common/exceptions';
+import { SessionResponseDto, SessionListResponseDto, RevokeAllSessionsResponseDto } from './dto';
+import { NotFoundException, ForbiddenException } from '@/common/exceptions';
+import { ErrorCodes } from '@/common/constants';
 
 @Injectable()
 export class SessionsService {
@@ -10,53 +11,12 @@ export class SessionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Get current session details
+   * Get all active sessions for the current user
    */
-  async getCurrentSession(
+  async getActiveSessions(
     userId: string,
     currentSessionId: string,
-  ): Promise<CurrentSessionResponseDto> {
-    const session = await this.prisma.session.findFirst({
-      where: {
-        id: currentSessionId,
-        userId,
-        revokedAt: null,
-      },
-      include: {
-        user: {
-          include: { role: true },
-        },
-      },
-    });
-
-    if (!session) {
-      throw new NotFoundException('Session not found');
-    }
-
-    return {
-      id: session.id,
-      user: {
-        id: session.user.id,
-        email: session.user.email,
-        fullName: session.user.fullName,
-        roleId: session.user.roleId || undefined,
-        roleName: session.user.role?.name,
-      },
-      ipAddress: session.ipAddress || undefined,
-      userAgent: session.userAgent || undefined,
-      expiresAt: session.expiresAt,
-      lastActivityAt: session.lastActivityAt,
-      createdAt: session.createdAt,
-    };
-  }
-
-  /**
-   * Get all sessions for a user
-   */
-  async getUserSessions(
-    userId: string,
-    currentSessionId?: string,
-  ): Promise<SessionResponseDto[]> {
+  ): Promise<SessionListResponseDto> {
     const sessions = await this.prisma.session.findMany({
       where: {
         userId,
@@ -66,57 +26,87 @@ export class SessionsService {
       orderBy: { lastActivityAt: 'desc' },
     });
 
-    return sessions.map(session => ({
+    const sessionDtos: SessionResponseDto[] = sessions.map(session => ({
       id: session.id,
-      userId: session.userId,
       ipAddress: session.ipAddress || undefined,
       userAgent: session.userAgent || undefined,
       expiresAt: session.expiresAt,
       lastActivityAt: session.lastActivityAt,
-      createdAt: session.createdAt,
-      revokedAt: session.revokedAt || undefined,
       isCurrent: session.id === currentSessionId,
+      createdAt: session.createdAt,
     }));
+
+    return {
+      sessions: sessionDtos,
+      total: sessionDtos.length,
+    };
   }
 
   /**
    * Revoke a specific session
    */
-  async revokeSession(userId: string, sessionId: string): Promise<void> {
+  async revokeSession(
+    userId: string,
+    sessionId: string,
+    currentSessionId: string,
+  ): Promise<void> {
+    // Find the session
     const session = await this.prisma.session.findFirst({
       where: {
         id: sessionId,
-        userId,
         revokedAt: null,
       },
     });
 
     if (!session) {
-      throw new NotFoundException('Session not found');
+      throw new NotFoundException('Session not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Session does not exist or is already revoked' },
+      ]);
     }
 
+    // Ensure user owns this session
+    if (session.userId !== userId) {
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You can only revoke your own sessions' },
+      ]);
+    }
+
+    // Prevent revoking current session through this endpoint
+    if (session.id === currentSessionId) {
+      throw new ForbiddenException('Cannot revoke current session', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'Use logout endpoint to revoke current session' },
+      ]);
+    }
+
+    // Revoke the session
     await this.prisma.session.update({
       where: { id: sessionId },
       data: { revokedAt: new Date() },
     });
 
-    this.logger.log(`Session ${sessionId} revoked for user ${userId}`);
+    this.logger.log(`Session ${sessionId} revoked by user ${userId}`);
   }
 
   /**
-   * Revoke all sessions for a user except current
+   * Revoke all sessions except the current one
    */
-  async revokeAllSessions(userId: string, exceptSessionId?: string): Promise<number> {
+  async revokeAllSessions(
+    userId: string,
+    currentSessionId: string,
+  ): Promise<RevokeAllSessionsResponseDto> {
     const result = await this.prisma.session.updateMany({
       where: {
         userId,
         revokedAt: null,
-        ...(exceptSessionId && { id: { not: exceptSessionId } }),
+        id: { not: currentSessionId },
       },
       data: { revokedAt: new Date() },
     });
 
     this.logger.log(`Revoked ${result.count} sessions for user ${userId}`);
-    return result.count;
+
+    return {
+      revokedCount: result.count,
+    };
   }
 }

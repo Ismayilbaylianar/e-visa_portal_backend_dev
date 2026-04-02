@@ -1,82 +1,52 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class ModulePermissionDto {
-  @ApiProperty({
-    description: 'Permission ID',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
+  @ApiProperty({ description: 'Permission ID', example: 'perm_1' })
   id: string;
 
-  @ApiProperty({
-    description: 'Action key',
-    example: 'read',
-  })
+  @ApiProperty({ description: 'Action key', example: 'read' })
   actionKey: string;
 
-  @ApiProperty({
-    description: 'Full permission key',
-    example: 'users.read',
-  })
+  @ApiProperty({ description: 'Full permission key', example: 'users.read' })
   permissionKey: string;
 
-  @ApiPropertyOptional({
-    description: 'Permission description',
-    example: 'Allows reading user data',
-  })
-  description?: string;
+  @ApiProperty({ description: 'Permission description', example: 'View users' })
+  description: string;
 }
 
 export class PermissionModuleDto {
-  @ApiProperty({
-    description: 'Module key',
-    example: 'users',
-  })
+  @ApiProperty({ description: 'Module key', example: 'users' })
   moduleKey: string;
 
-  @ApiProperty({
-    description: 'List of permissions in this module',
-    type: [ModulePermissionDto],
-  })
+  @ApiProperty({ description: 'Module display name', example: 'Users' })
+  moduleName: string;
+
+  @ApiProperty({ type: [ModulePermissionDto], description: 'Permissions in this module' })
   permissions: ModulePermissionDto[];
 }
 
 export class RolePermissionMatrixDto {
-  @ApiProperty({
-    description: 'Role ID',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  id: string;
+  @ApiProperty({ description: 'Role ID', example: 'role_1' })
+  roleId: string;
+
+  @ApiProperty({ description: 'Role name', example: 'Super Admin' })
+  roleName: string;
+
+  @ApiProperty({ description: 'Role key', example: 'superAdmin' })
+  roleKey: string;
 
   @ApiProperty({
-    description: 'Role name',
-    example: 'Admin',
-  })
-  name: string;
-
-  @ApiProperty({
-    description: 'Role key',
-    example: 'admin',
-  })
-  key: string;
-
-  @ApiProperty({
-    description: 'List of permission IDs assigned to this role',
+    description: 'List of assigned permission IDs',
     type: [String],
-    example: ['550e8400-e29b-41d4-a716-446655440000'],
+    example: ['perm_1', 'perm_2', 'perm_3'],
   })
   permissionIds: string[];
 }
 
 export class PermissionMatrixResponseDto {
-  @ApiProperty({
-    description: 'Permissions grouped by module',
-    type: [PermissionModuleDto],
-  })
+  @ApiProperty({ type: [PermissionModuleDto], description: 'Permissions grouped by module' })
   modules: PermissionModuleDto[];
 
-  @ApiProperty({
-    description: 'Roles with their assigned permissions',
-    type: [RolePermissionMatrixDto],
-  })
+  @ApiProperty({ type: [RolePermissionMatrixDto], description: 'Role permission assignments' })
   roles: RolePermissionMatrixDto[];
 }

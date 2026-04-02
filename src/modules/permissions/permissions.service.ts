@@ -2,14 +2,34 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   PermissionResponseDto,
+  PermissionListResponseDto,
   PermissionMatrixResponseDto,
   PermissionModuleDto,
   RolePermissionMatrixDto,
   UpdateRolePermissionsDto,
+  UpdateRolePermissionsResponseDto,
   UpdateUserPermissionsDto,
+  UpdateUserPermissionsResponseDto,
 } from './dto';
 import { NotFoundException } from '@/common/exceptions';
-import { PaginationMeta } from '@/common/types';
+import { ErrorCodes } from '@/common/constants';
+
+// Module display names for the matrix view
+const MODULE_NAMES: Record<string, string> = {
+  users: 'Users',
+  roles: 'Roles',
+  permissions: 'Permissions',
+  sessions: 'Sessions',
+  countries: 'Countries',
+  visaTypes: 'Visa Types',
+  templates: 'Templates',
+  applications: 'Applications',
+  payments: 'Payments',
+  settings: 'Settings',
+  auditLogs: 'Audit Logs',
+  jobs: 'Jobs',
+  dashboard: 'Dashboard',
+};
 
 @Injectable()
 export class PermissionsService {
@@ -20,195 +40,204 @@ export class PermissionsService {
   /**
    * Get all permissions
    */
-  async findAll(): Promise<{ items: PermissionResponseDto[]; pagination: PaginationMeta }> {
+  async findAll(): Promise<PermissionListResponseDto> {
     const permissions = await this.prisma.permission.findMany({
       orderBy: [{ moduleKey: 'asc' }, { actionKey: 'asc' }],
     });
 
-    const items = permissions.map(permission => this.mapToResponse(permission));
+    const items: PermissionResponseDto[] = permissions.map(p => ({
+      id: p.id,
+      moduleKey: p.moduleKey,
+      actionKey: p.actionKey,
+      permissionKey: p.permissionKey,
+      description: p.description || undefined,
+      createdAt: p.createdAt,
+    }));
 
     return {
       items,
-      pagination: {
-        page: 1,
-        limit: items.length,
-        total: items.length,
-        totalPages: 1,
-      },
+      total: items.length,
     };
   }
 
   /**
-   * Get permission matrix view (permissions grouped by module with role assignments)
+   * Get permission matrix (grouped by module with role assignments)
    */
   async getMatrix(): Promise<PermissionMatrixResponseDto> {
-    const [permissions, roles] = await Promise.all([
-      this.prisma.permission.findMany({
-        orderBy: [{ moduleKey: 'asc' }, { actionKey: 'asc' }],
-      }),
-      this.prisma.role.findMany({
-        where: { deletedAt: null },
-        include: {
-          rolePermissions: {
-            select: { permissionId: true },
-          },
+    // Get all permissions
+    const permissions = await this.prisma.permission.findMany({
+      orderBy: [{ moduleKey: 'asc' }, { actionKey: 'asc' }],
+    });
+
+    // Get all roles with their permissions
+    const roles = await this.prisma.role.findMany({
+      where: { deletedAt: null },
+      include: {
+        rolePermissions: {
+          include: { permission: true },
         },
-        orderBy: { name: 'asc' },
-      }),
-    ]);
+      },
+      orderBy: { name: 'asc' },
+    });
 
+    // Group permissions by module
     const moduleMap = new Map<string, PermissionModuleDto>();
-
-    for (const permission of permissions) {
-      if (!moduleMap.has(permission.moduleKey)) {
-        moduleMap.set(permission.moduleKey, {
-          moduleKey: permission.moduleKey,
+    
+    for (const perm of permissions) {
+      if (!moduleMap.has(perm.moduleKey)) {
+        moduleMap.set(perm.moduleKey, {
+          moduleKey: perm.moduleKey,
+          moduleName: MODULE_NAMES[perm.moduleKey] || perm.moduleKey,
           permissions: [],
         });
       }
-
-      moduleMap.get(permission.moduleKey)!.permissions.push({
-        id: permission.id,
-        actionKey: permission.actionKey,
-        permissionKey: permission.permissionKey,
-        description: permission.description || undefined,
+      
+      moduleMap.get(perm.moduleKey)!.permissions.push({
+        id: perm.id,
+        actionKey: perm.actionKey,
+        permissionKey: perm.permissionKey,
+        description: perm.description || '',
       });
     }
 
-    const modules = Array.from(moduleMap.values());
-
-    const rolesMatrix: RolePermissionMatrixDto[] = roles.map(role => ({
-      id: role.id,
-      name: role.name,
-      key: role.key,
+    // Build role permission matrix
+    const roleMatrix: RolePermissionMatrixDto[] = roles.map(role => ({
+      roleId: role.id,
+      roleName: role.name,
+      roleKey: role.key,
       permissionIds: role.rolePermissions.map(rp => rp.permissionId),
     }));
 
     return {
-      modules,
-      roles: rolesMatrix,
+      modules: Array.from(moduleMap.values()),
+      roles: roleMatrix,
     };
   }
 
   /**
-   * Update role permissions (replace all permissions for a role)
+   * Update role permissions (replaces existing)
    */
   async updateRolePermissions(
     roleId: string,
     dto: UpdateRolePermissionsDto,
-  ): Promise<RolePermissionMatrixDto> {
+  ): Promise<UpdateRolePermissionsResponseDto> {
+    // Verify role exists
     const role = await this.prisma.role.findFirst({
       where: { id: roleId, deletedAt: null },
     });
 
     if (!role) {
-      throw new NotFoundException('Role not found');
+      throw new NotFoundException('Role not found', [
+        { reason: ErrorCodes.ROLE_NOT_FOUND, message: 'Role does not exist or has been deleted' },
+      ]);
     }
 
-    const validPermissions = await this.prisma.permission.findMany({
+    // Verify all permission IDs exist
+    const permissions = await this.prisma.permission.findMany({
       where: { id: { in: dto.permissionIds } },
-      select: { id: true },
     });
 
-    const validPermissionIds = validPermissions.map(p => p.id);
-    const invalidIds = dto.permissionIds.filter(id => !validPermissionIds.includes(id));
-
-    if (invalidIds.length > 0) {
-      throw new NotFoundException(`Permissions not found: ${invalidIds.join(', ')}`);
+    if (permissions.length !== dto.permissionIds.length) {
+      const foundIds = permissions.map(p => p.id);
+      const missingIds = dto.permissionIds.filter(id => !foundIds.includes(id));
+      throw new NotFoundException('Some permissions not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: `Permission IDs not found: ${missingIds.join(', ')}` },
+      ]);
     }
 
-    await this.prisma.$transaction(async tx => {
-      await tx.rolePermission.deleteMany({
+    // Delete existing role permissions and create new ones
+    await this.prisma.$transaction([
+      this.prisma.rolePermission.deleteMany({
         where: { roleId },
-      });
+      }),
+      this.prisma.rolePermission.createMany({
+        data: dto.permissionIds.map(permissionId => ({
+          roleId,
+          permissionId,
+        })),
+      }),
+    ]);
 
-      if (dto.permissionIds.length > 0) {
-        await tx.rolePermission.createMany({
-          data: dto.permissionIds.map(permissionId => ({
-            roleId,
-            permissionId,
-          })),
-        });
-      }
-    });
-
-    this.logger.log(
-      `Role permissions updated: ${roleId} -> ${dto.permissionIds.length} permissions`,
-    );
+    this.logger.log(`Updated permissions for role ${roleId}: ${dto.permissionIds.length} permissions`);
 
     return {
-      id: role.id,
-      name: role.name,
-      key: role.key,
-      permissionIds: dto.permissionIds,
+      roleId,
+      permissionCount: permissions.length,
+      permissionKeys: permissions.map(p => p.permissionKey),
     };
   }
 
   /**
-   * Update user-specific permissions (override role permissions)
+   * Update user permission overrides
    */
   async updateUserPermissions(
     userId: string,
     dto: UpdateUserPermissionsDto,
-  ): Promise<{ userId: string; permissions: { permissionId: string; effect: string }[] }> {
+  ): Promise<UpdateUserPermissionsResponseDto> {
+    // Verify user exists
     const user = await this.prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
     });
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('User not found', [
+        { reason: ErrorCodes.USER_NOT_FOUND, message: 'User does not exist or has been deleted' },
+      ]);
     }
 
-    const permissionIds = dto.permissions.map(p => p.permissionId);
-    const validPermissions = await this.prisma.permission.findMany({
-      where: { id: { in: permissionIds } },
-      select: { id: true },
-    });
+    const allPermissionIds = [...(dto.grants || []), ...(dto.denies || [])];
 
-    const validPermissionIds = validPermissions.map(p => p.id);
-    const invalidIds = permissionIds.filter(id => !validPermissionIds.includes(id));
+    // Verify all permission IDs exist
+    if (allPermissionIds.length > 0) {
+      const permissions = await this.prisma.permission.findMany({
+        where: { id: { in: allPermissionIds } },
+      });
 
-    if (invalidIds.length > 0) {
-      throw new NotFoundException(`Permissions not found: ${invalidIds.join(', ')}`);
+      if (permissions.length !== allPermissionIds.length) {
+        const foundIds = permissions.map(p => p.id);
+        const missingIds = allPermissionIds.filter(id => !foundIds.includes(id));
+        throw new NotFoundException('Some permissions not found', [
+          { reason: ErrorCodes.NOT_FOUND, message: `Permission IDs not found: ${missingIds.join(', ')}` },
+        ]);
+      }
     }
 
-    await this.prisma.$transaction(async tx => {
+    // Delete existing user permissions and create new ones
+    await this.prisma.$transaction(async (tx) => {
       await tx.userPermission.deleteMany({
         where: { userId },
       });
 
-      if (dto.permissions.length > 0) {
-        await tx.userPermission.createMany({
-          data: dto.permissions.map(p => ({
-            userId,
-            permissionId: p.permissionId,
-            effect: p.effect,
-          })),
-        });
+      const createData: { userId: string; permissionId: string; effect: 'ALLOW' | 'DENY' }[] = [];
+
+      for (const permId of dto.grants || []) {
+        createData.push({ userId, permissionId: permId, effect: 'ALLOW' });
+      }
+
+      for (const permId of dto.denies || []) {
+        createData.push({ userId, permissionId: permId, effect: 'DENY' });
+      }
+
+      if (createData.length > 0) {
+        await tx.userPermission.createMany({ data: createData });
       }
     });
 
-    this.logger.log(
-      `User permissions updated: ${userId} -> ${dto.permissions.length} permissions`,
-    );
+    // Fetch updated permissions
+    const userPermissions = await this.prisma.userPermission.findMany({
+      where: { userId },
+      include: { permission: true },
+    });
+
+    this.logger.log(`Updated permission overrides for user ${userId}`);
 
     return {
       userId,
-      permissions: dto.permissions.map(p => ({
-        permissionId: p.permissionId,
-        effect: p.effect,
+      overrides: userPermissions.map(up => ({
+        permissionId: up.permissionId,
+        permissionKey: up.permission.permissionKey,
+        effect: up.effect,
       })),
-    };
-  }
-
-  private mapToResponse(permission: any): PermissionResponseDto {
-    return {
-      id: permission.id,
-      moduleKey: permission.moduleKey,
-      actionKey: permission.actionKey,
-      permissionKey: permission.permissionKey,
-      description: permission.description || undefined,
-      createdAt: permission.createdAt,
     };
   }
 }

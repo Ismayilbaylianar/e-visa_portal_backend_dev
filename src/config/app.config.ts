@@ -5,26 +5,31 @@ export const appConfig = registerAs('app', () => ({
   port: parseInt(process.env.PORT || '3000', 10),
   apiPrefix: process.env.API_PREFIX || 'api/v1',
 
-  // JWT Configuration (for future use)
+  // JWT Configuration
   jwt: {
-    accessSecret: process.env.JWT_ACCESS_SECRET || 'default-access-secret',
-    refreshSecret: process.env.JWT_REFRESH_SECRET || 'default-refresh-secret',
-    accessExpiration: process.env.JWT_ACCESS_EXPIRATION || '15m',
-    refreshExpiration: process.env.JWT_REFRESH_EXPIRATION || '7d',
+    accessSecret: process.env.JWT_ACCESS_SECRET || 'dev-access-secret-change-in-production',
+    refreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-change-in-production',
+    accessExpirationSeconds: parseInt(process.env.JWT_ACCESS_EXPIRATION_SECONDS || '3600', 10), // 1 hour
+    refreshExpirationSeconds: parseInt(process.env.JWT_REFRESH_EXPIRATION_SECONDS || '604800', 10), // 7 days
   },
 
   // Portal JWT Configuration (for future use)
   portalJwt: {
-    accessSecret: process.env.PORTAL_JWT_ACCESS_SECRET || 'default-portal-access-secret',
-    refreshSecret: process.env.PORTAL_JWT_REFRESH_SECRET || 'default-portal-refresh-secret',
-    accessExpiration: process.env.PORTAL_JWT_ACCESS_EXPIRATION || '15m',
-    refreshExpiration: process.env.PORTAL_JWT_REFRESH_EXPIRATION || '7d',
+    accessSecret: process.env.PORTAL_JWT_ACCESS_SECRET || 'dev-portal-access-secret',
+    refreshSecret: process.env.PORTAL_JWT_REFRESH_SECRET || 'dev-portal-refresh-secret',
+    accessExpirationSeconds: parseInt(process.env.PORTAL_JWT_ACCESS_EXPIRATION_SECONDS || '900', 10), // 15 minutes
+    refreshExpirationSeconds: parseInt(process.env.PORTAL_JWT_REFRESH_EXPIRATION_SECONDS || '604800', 10), // 7 days
   },
 
   // OTP Configuration
   otp: {
     expiryMinutes: parseInt(process.env.OTP_EXPIRY_MINUTES || '10', 10),
     length: parseInt(process.env.OTP_LENGTH || '6', 10),
+  },
+
+  // Bcrypt Configuration
+  bcrypt: {
+    saltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS || '12', 10),
   },
 
   // Rate limiting (for future use)

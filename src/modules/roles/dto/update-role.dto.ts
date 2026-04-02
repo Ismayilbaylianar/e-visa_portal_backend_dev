@@ -1,48 +1,36 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, MinLength, MaxLength, IsOptional, IsBoolean, Matches } from 'class-validator';
+import { IsString, MinLength, MaxLength, IsOptional, Matches } from 'class-validator';
 
 export class UpdateRoleDto {
   @ApiPropertyOptional({
-    description: 'Role name',
-    example: 'Administrator',
-    minLength: 2,
-    maxLength: 100,
+    description: 'Role display name',
+    example: 'Senior Reviewer',
   })
   @IsOptional()
   @IsString()
-  @MinLength(2)
-  @MaxLength(100)
+  @MinLength(2, { message: 'Name must be at least 2 characters' })
+  @MaxLength(100, { message: 'Name must not exceed 100 characters' })
   name?: string;
 
   @ApiPropertyOptional({
-    description: 'Role key (unique identifier, lowercase with underscores)',
-    example: 'admin',
-    minLength: 2,
-    maxLength: 50,
+    description: 'Role unique key (lowercase, alphanumeric with underscores)',
+    example: 'senior_reviewer',
   })
   @IsOptional()
   @IsString()
-  @MinLength(2)
-  @MaxLength(50)
+  @MinLength(2, { message: 'Key must be at least 2 characters' })
+  @MaxLength(50, { message: 'Key must not exceed 50 characters' })
   @Matches(/^[a-z][a-z0-9_]*$/, {
-    message: 'Key must start with a letter and contain only lowercase letters, numbers, and underscores',
+    message: 'Key must start with lowercase letter and contain only lowercase letters, numbers, and underscores',
   })
   key?: string;
 
   @ApiPropertyOptional({
     description: 'Role description',
-    example: 'Full system access with all permissions',
-    maxLength: 500,
+    example: 'Updated role description',
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLength(500, { message: 'Description must not exceed 500 characters' })
   description?: string;
-
-  @ApiPropertyOptional({
-    description: 'Whether this is a system role (cannot be deleted)',
-  })
-  @IsOptional()
-  @IsBoolean()
-  isSystem?: boolean;
 }

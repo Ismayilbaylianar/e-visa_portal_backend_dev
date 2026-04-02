@@ -4,19 +4,39 @@ import { IsEmail, IsString, MinLength } from 'class-validator';
 export class LoginDto {
   @ApiProperty({
     description: 'User email address',
-    example: 'admin@example.com',
+    example: 'super@visa.com',
   })
-  @IsEmail()
+  @IsEmail({}, { message: 'Please provide a valid email address' })
   email: string;
 
   @ApiProperty({
     description: 'User password',
-    example: 'password123',
+    example: 'super123',
     minLength: 6,
   })
   @IsString()
-  @MinLength(6)
+  @MinLength(6, { message: 'Password must be at least 6 characters' })
   password: string;
+}
+
+export class UserInfoDto {
+  @ApiProperty({ description: 'User ID', example: 'usr_1' })
+  id: string;
+
+  @ApiProperty({ description: 'User full name', example: 'Super Admin' })
+  fullName: string;
+
+  @ApiProperty({ description: 'User email', example: 'super@visa.com' })
+  email: string;
+
+  @ApiProperty({ description: 'Role ID', example: 'role_1', required: false })
+  roleId?: string;
+
+  @ApiProperty({ description: 'Role key', example: 'superAdmin', required: false })
+  roleKey?: string;
+
+  @ApiProperty({ description: 'Whether user is active', example: true })
+  isActive: boolean;
 }
 
 export class LoginResponseDto {
@@ -26,9 +46,9 @@ export class LoginResponseDto {
   @ApiProperty({ description: 'JWT refresh token' })
   refreshToken: string;
 
-  @ApiProperty({ description: 'Access token expiration time in seconds' })
-  expiresIn: number;
+  @ApiProperty({ description: 'Access token expiration time in seconds', example: 3600 })
+  expiresInSeconds: number;
 
-  @ApiProperty({ description: 'Token type', example: 'Bearer' })
-  tokenType: string;
+  @ApiProperty({ description: 'Authenticated user information', type: UserInfoDto })
+  user: UserInfoDto;
 }

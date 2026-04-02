@@ -4,10 +4,11 @@ import {
   CreateRoleDto,
   UpdateRoleDto,
   RoleResponseDto,
+  RoleListResponseDto,
   GetRolesQueryDto,
 } from './dto';
-import { NotFoundException, ConflictException, BadRequestException } from '@/common/exceptions';
-import { PaginationMeta } from '@/common/types';
+import { NotFoundException, ConflictException, ForbiddenException } from '@/common/exceptions';
+import { ErrorCodes } from '@/common/constants';
 
 @Injectable()
 export class RolesService {
@@ -15,27 +16,36 @@ export class RolesService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(
-    query: GetRolesQueryDto,
-  ): Promise<{ items: RoleResponseDto[]; pagination: PaginationMeta }> {
+  /**
+   * Get paginated list of roles
+   */
+  async findAll(query: GetRolesQueryDto): Promise<RoleListResponseDto> {
     const { page = 1, limit = 10, search, sortBy = 'createdAt', sortOrder = 'desc' } = query;
     const skip = (page - 1) * limit;
 
-    const where = {
+    const where: any = {
       deletedAt: null,
-      ...(query.isSystem !== undefined && { isSystem: query.isSystem }),
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' as const } },
-          { key: { contains: search, mode: 'insensitive' as const } },
-          { description: { contains: search, mode: 'insensitive' as const } },
-        ],
-      }),
     };
+
+    if (query.isSystem !== undefined) {
+      where.isSystem = query.isSystem;
+    }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { key: { contains: search, mode: 'insensitive' } },
+      ];
+    }
 
     const [roles, total] = await Promise.all([
       this.prisma.role.findMany({
         where,
+        include: {
+          _count: {
+            select: { users: { where: { deletedAt: null } } },
+          },
+        },
         skip,
         take: limit,
         orderBy: { [sortBy]: sortOrder },
@@ -47,40 +57,59 @@ export class RolesService {
 
     return {
       items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 
+  /**
+   * Get role by ID
+   */
   async findById(id: string): Promise<RoleResponseDto> {
     const role = await this.prisma.role.findFirst({
       where: { id, deletedAt: null },
+      include: {
+        _count: {
+          select: { users: { where: { deletedAt: null } } },
+        },
+      },
     });
 
     if (!role) {
-      throw new NotFoundException('Role not found');
+      throw new NotFoundException('Role not found', [
+        { reason: ErrorCodes.ROLE_NOT_FOUND, message: 'Role does not exist or has been deleted' },
+      ]);
     }
 
     return this.mapToResponse(role);
   }
 
+  /**
+   * Create new role
+   */
   async create(dto: CreateRoleDto): Promise<RoleResponseDto> {
-    const existingRole = await this.prisma.role.findFirst({
-      where: {
-        OR: [{ key: dto.key }, { name: dto.name }],
-        deletedAt: null,
-      },
+    // Check if key already exists
+    const existingByKey = await this.prisma.role.findFirst({
+      where: { key: dto.key },
     });
 
-    if (existingRole) {
-      if (existingRole.key === dto.key) {
-        throw new ConflictException('Role with this key already exists');
-      }
-      throw new ConflictException('Role with this name already exists');
+    if (existingByKey) {
+      throw new ConflictException('Role key already exists', [
+        { field: 'key', reason: ErrorCodes.CONFLICT, message: 'A role with this key already exists' },
+      ]);
+    }
+
+    // Check if name already exists
+    const existingByName = await this.prisma.role.findFirst({
+      where: { name: dto.name },
+    });
+
+    if (existingByName) {
+      throw new ConflictException('Role name already exists', [
+        { field: 'name', reason: ErrorCodes.CONFLICT, message: 'A role with this name already exists' },
+      ]);
     }
 
     const role = await this.prisma.role.create({
@@ -90,69 +119,108 @@ export class RolesService {
         description: dto.description,
         isSystem: dto.isSystem ?? false,
       },
+      include: {
+        _count: {
+          select: { users: { where: { deletedAt: null } } },
+        },
+      },
     });
 
-    this.logger.log(`Role created: ${role.id}`);
+    this.logger.log(`Role created: ${role.id} (${role.key})`);
     return this.mapToResponse(role);
   }
 
+  /**
+   * Update role
+   */
   async update(id: string, dto: UpdateRoleDto): Promise<RoleResponseDto> {
     const role = await this.prisma.role.findFirst({
       where: { id, deletedAt: null },
     });
 
     if (!role) {
-      throw new NotFoundException('Role not found');
+      throw new NotFoundException('Role not found', [
+        { reason: ErrorCodes.ROLE_NOT_FOUND, message: 'Role does not exist or has been deleted' },
+      ]);
     }
 
+    // Check key uniqueness if changing
     if (dto.key && dto.key !== role.key) {
-      const existingRole = await this.prisma.role.findFirst({
-        where: { key: dto.key, deletedAt: null, NOT: { id } },
+      const existingByKey = await this.prisma.role.findFirst({
+        where: { key: dto.key },
       });
-      if (existingRole) {
-        throw new ConflictException('Role with this key already exists');
+      if (existingByKey) {
+        throw new ConflictException('Role key already exists', [
+          { field: 'key', reason: ErrorCodes.CONFLICT, message: 'A role with this key already exists' },
+        ]);
       }
     }
 
+    // Check name uniqueness if changing
     if (dto.name && dto.name !== role.name) {
-      const existingRole = await this.prisma.role.findFirst({
-        where: { name: dto.name, deletedAt: null, NOT: { id } },
+      const existingByName = await this.prisma.role.findFirst({
+        where: { name: dto.name },
       });
-      if (existingRole) {
-        throw new ConflictException('Role with this name already exists');
+      if (existingByName) {
+        throw new ConflictException('Role name already exists', [
+          { field: 'name', reason: ErrorCodes.CONFLICT, message: 'A role with this name already exists' },
+        ]);
       }
     }
+
+    const updateData: any = {};
+    if (dto.name) updateData.name = dto.name;
+    if (dto.key) updateData.key = dto.key;
+    if (dto.description !== undefined) updateData.description = dto.description;
 
     const updatedRole = await this.prisma.role.update({
       where: { id },
-      data: dto,
+      data: updateData,
+      include: {
+        _count: {
+          select: { users: { where: { deletedAt: null } } },
+        },
+      },
     });
 
     this.logger.log(`Role updated: ${id}`);
     return this.mapToResponse(updatedRole);
   }
 
+  /**
+   * Soft delete role
+   */
   async delete(id: string): Promise<void> {
     const role = await this.prisma.role.findFirst({
       where: { id, deletedAt: null },
+      include: {
+        _count: {
+          select: { users: { where: { deletedAt: null } } },
+        },
+      },
     });
 
     if (!role) {
-      throw new NotFoundException('Role not found');
+      throw new NotFoundException('Role not found', [
+        { reason: ErrorCodes.ROLE_NOT_FOUND, message: 'Role does not exist or has been deleted' },
+      ]);
     }
 
+    // Prevent deletion of system roles
     if (role.isSystem) {
-      throw new BadRequestException('System roles cannot be deleted');
+      throw new ForbiddenException('Cannot delete system role', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'System roles cannot be deleted' },
+      ]);
     }
 
-    const usersWithRole = await this.prisma.user.count({
-      where: { roleId: id, deletedAt: null },
-    });
-
-    if (usersWithRole > 0) {
-      throw new BadRequestException(
-        `Cannot delete role: ${usersWithRole} user(s) are assigned to this role`,
-      );
+    // Prevent deletion if role has active users
+    if (role._count.users > 0) {
+      throw new ConflictException('Role has active users', [
+        {
+          reason: ErrorCodes.CONFLICT,
+          message: `Cannot delete role with ${role._count.users} active user(s). Reassign users first.`,
+        },
+      ]);
     }
 
     await this.prisma.role.update({
@@ -160,9 +228,12 @@ export class RolesService {
       data: { deletedAt: new Date() },
     });
 
-    this.logger.log(`Role deleted: ${id}`);
+    this.logger.log(`Role soft deleted: ${id}`);
   }
 
+  /**
+   * Map role entity to response DTO
+   */
   private mapToResponse(role: any): RoleResponseDto {
     return {
       id: role.id,
@@ -170,6 +241,7 @@ export class RolesService {
       key: role.key,
       description: role.description || undefined,
       isSystem: role.isSystem,
+      userCount: role._count?.users ?? 0,
       createdAt: role.createdAt,
       updatedAt: role.updatedAt,
     };

@@ -1,10 +1,16 @@
-import { SetMetadata } from '@nestjs/common';
+import { SetMetadata, applyDecorators, UseGuards } from '@nestjs/common';
+import { ApiForbiddenResponse } from '@nestjs/swagger';
+import { PermissionsGuard } from '../guards/permissions.guard';
 
 export const PERMISSIONS_KEY = 'permissions';
 
 /**
  * Specifies which permissions are required to access a route
- * @param permissions - Array of permission keys
+ * @param permissions - Array of permission keys (e.g., 'users.read', 'users.create')
  */
-export const Permissions = (...permissions: string[]) =>
-  SetMetadata(PERMISSIONS_KEY, permissions);
+export const RequirePermissions = (...permissions: string[]) =>
+  applyDecorators(
+    SetMetadata(PERMISSIONS_KEY, permissions),
+    UseGuards(PermissionsGuard),
+    ApiForbiddenResponse({ description: 'Permission denied' }),
+  );
