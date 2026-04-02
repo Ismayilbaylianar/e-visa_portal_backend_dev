@@ -9,41 +9,57 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { CountriesService } from './countries.service';
 import {
   CreateCountryDto,
   UpdateCountryDto,
   CountryResponseDto,
-  PublicCountryResponseDto,
+  CountryListResponseDto,
   GetCountriesQueryDto,
-  GetPublicCountriesQueryDto,
+  PublicCountryResponseDto,
+  PublicCountryListResponseDto,
 } from './dto';
-import { CountryIdParamDto } from '@/common/dto';
-import { ApiPaginatedResponse, Public } from '@/common/decorators';
+import { RequirePermissions, Public } from '@/common/decorators';
+import { JwtAuthGuard } from '@/common/guards';
 
-@ApiTags('Countries - Admin')
-@ApiBearerAuth('JWT-auth')
-@Controller('admin/countries')
-export class AdminCountriesController {
+@ApiTags('Countries')
+@Controller()
+export class CountriesController {
   constructor(private readonly countriesService: CountriesService) {}
 
-  @Get()
+  // ==========================================
+  // Admin Endpoints
+  // ==========================================
+
+  @Get('admin/countries')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @RequirePermissions('countries.read')
   @ApiOperation({
-    summary: 'Get all countries',
+    summary: 'Get all countries (admin)',
     description: 'Get paginated list of countries with optional filters',
   })
-  @ApiPaginatedResponse(CountryResponseDto)
-  async findAll(@Query() query: GetCountriesQueryDto) {
+  @ApiResponse({
+    status: 200,
+    description: 'List of countries',
+    type: CountryListResponseDto,
+  })
+  async findAll(@Query() query: GetCountriesQueryDto): Promise<CountryListResponseDto> {
     return this.countriesService.findAll(query);
   }
 
-  @Get(':countryId')
+  @Get('admin/countries/:countryId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @RequirePermissions('countries.read')
   @ApiOperation({
-    summary: 'Get country by ID',
-    description: 'Get country details by ID',
+    summary: 'Get country by ID (admin)',
+    description: 'Get country details by ID including sections',
   })
+  @ApiParam({ name: 'countryId', description: 'Country ID' })
   @ApiResponse({
     status: 200,
     description: 'Country details',
@@ -53,11 +69,14 @@ export class AdminCountriesController {
     status: 404,
     description: 'Country not found',
   })
-  async findById(@Param() params: CountryIdParamDto): Promise<CountryResponseDto> {
-    return this.countriesService.findById(params.countryId);
+  async findById(@Param('countryId') countryId: string): Promise<CountryResponseDto> {
+    return this.countriesService.findById(countryId);
   }
 
-  @Post()
+  @Post('admin/countries')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @RequirePermissions('countries.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create country',
@@ -70,17 +89,21 @@ export class AdminCountriesController {
   })
   @ApiResponse({
     status: 409,
-    description: 'Country with this slug or ISO code already exists',
+    description: 'Slug or ISO code already exists',
   })
   async create(@Body() dto: CreateCountryDto): Promise<CountryResponseDto> {
     return this.countriesService.create(dto);
   }
 
-  @Patch(':countryId')
+  @Patch('admin/countries/:countryId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @RequirePermissions('countries.update')
   @ApiOperation({
     summary: 'Update country',
     description: 'Update country details',
   })
+  @ApiParam({ name: 'countryId', description: 'Country ID' })
   @ApiResponse({
     status: 200,
     description: 'Country updated successfully',
@@ -92,21 +115,25 @@ export class AdminCountriesController {
   })
   @ApiResponse({
     status: 409,
-    description: 'Country with this slug or ISO code already exists',
+    description: 'Slug or ISO code already exists',
   })
   async update(
-    @Param() params: CountryIdParamDto,
+    @Param('countryId') countryId: string,
     @Body() dto: UpdateCountryDto,
   ): Promise<CountryResponseDto> {
-    return this.countriesService.update(params.countryId, dto);
+    return this.countriesService.update(countryId, dto);
   }
 
-  @Delete(':countryId')
+  @Delete('admin/countries/:countryId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @RequirePermissions('countries.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete country',
-    description: 'Soft delete a country',
+    description: 'Soft delete a country and its sections',
   })
+  @ApiParam({ name: 'countryId', description: 'Country ID' })
   @ApiResponse({
     status: 204,
     description: 'Country deleted successfully',
@@ -115,33 +142,36 @@ export class AdminCountriesController {
     status: 404,
     description: 'Country not found',
   })
-  async delete(@Param() params: CountryIdParamDto): Promise<void> {
-    return this.countriesService.delete(params.countryId);
-  }
-}
-
-@ApiTags('Countries - Public')
-@Controller('public/countries')
-export class PublicCountriesController {
-  constructor(private readonly countriesService: CountriesService) {}
-
-  @Get()
-  @Public()
-  @ApiOperation({
-    summary: 'Get all published countries',
-    description: 'Get paginated list of published and active countries for public access',
-  })
-  @ApiPaginatedResponse(PublicCountryResponseDto)
-  async findAll(@Query() query: GetPublicCountriesQueryDto) {
-    return this.countriesService.findAllPublic(query);
+  async delete(@Param('countryId') countryId: string): Promise<void> {
+    return this.countriesService.delete(countryId);
   }
 
-  @Get(':slug')
+  // ==========================================
+  // Public Endpoints
+  // ==========================================
+
+  @Get('public/countries')
   @Public()
   @ApiOperation({
-    summary: 'Get country by slug',
-    description: 'Get published country details by slug for public access',
+    summary: 'Get public countries',
+    description: 'Get list of published and active countries for public display',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'List of public countries',
+    type: PublicCountryListResponseDto,
+  })
+  async findAllPublic(): Promise<PublicCountryListResponseDto> {
+    return this.countriesService.findAllPublic();
+  }
+
+  @Get('public/countries/:slug')
+  @Public()
+  @ApiOperation({
+    summary: 'Get public country by slug',
+    description: 'Get published country details by slug',
+  })
+  @ApiParam({ name: 'slug', description: 'Country slug', example: 'turkey' })
   @ApiResponse({
     status: 200,
     description: 'Country details',
@@ -151,7 +181,7 @@ export class PublicCountriesController {
     status: 404,
     description: 'Country not found',
   })
-  async findBySlug(@Param('slug') slug: string): Promise<PublicCountryResponseDto> {
-    return this.countriesService.findBySlug(slug);
+  async findBySlugPublic(@Param('slug') slug: string): Promise<PublicCountryResponseDto> {
+    return this.countriesService.findBySlugPublic(slug);
   }
 }

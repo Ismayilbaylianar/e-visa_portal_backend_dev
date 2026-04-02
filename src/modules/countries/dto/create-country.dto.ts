@@ -4,20 +4,20 @@ import { IsString, IsBoolean, IsOptional, MinLength, MaxLength, Matches } from '
 export class CreateCountryDto {
   @ApiProperty({
     description: 'Country name',
-    example: 'United States',
+    example: 'Turkey',
   })
   @IsString()
-  @MinLength(2)
-  @MaxLength(100)
+  @MinLength(2, { message: 'Name must be at least 2 characters' })
+  @MaxLength(100, { message: 'Name must not exceed 100 characters' })
   name: string;
 
   @ApiProperty({
-    description: 'URL-friendly slug',
-    example: 'united-states',
+    description: 'URL-friendly slug (lowercase, alphanumeric with hyphens)',
+    example: 'turkey',
   })
   @IsString()
-  @MinLength(2)
-  @MaxLength(100)
+  @MinLength(2, { message: 'Slug must be at least 2 characters' })
+  @MaxLength(100, { message: 'Slug must not exceed 100 characters' })
   @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
     message: 'Slug must be lowercase alphanumeric with hyphens only',
   })
@@ -25,47 +25,47 @@ export class CreateCountryDto {
 
   @ApiProperty({
     description: 'ISO 3166-1 alpha-2 country code',
-    example: 'US',
+    example: 'TR',
   })
   @IsString()
-  @MinLength(2)
-  @MaxLength(3)
-  @Matches(/^[A-Z]{2,3}$/, {
-    message: 'ISO code must be 2-3 uppercase letters',
+  @Matches(/^[A-Z]{2}$/, {
+    message: 'ISO code must be exactly 2 uppercase letters',
   })
   isoCode: string;
 
   @ApiPropertyOptional({
     description: 'Whether the country is active',
     default: true,
+    example: true,
   })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
   @ApiPropertyOptional({
-    description: 'SEO meta title',
-    example: 'Apply for United States e-Visa Online',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  seoTitle?: string;
-
-  @ApiPropertyOptional({
-    description: 'SEO meta description',
-    example: 'Get your United States e-Visa quickly and easily. Apply online now.',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  seoDescription?: string;
-
-  @ApiPropertyOptional({
-    description: 'Whether the country is published and visible to public',
+    description: 'Whether the country is published (visible to public)',
     default: false,
+    example: true,
   })
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'SEO title for the country page',
+    example: 'Turkey Visa',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200, { message: 'SEO title must not exceed 200 characters' })
+  seoTitle?: string;
+
+  @ApiPropertyOptional({
+    description: 'SEO description for the country page',
+    example: 'Turkey visa information and requirements',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500, { message: 'SEO description must not exceed 500 characters' })
+  seoDescription?: string;
 }

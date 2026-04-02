@@ -1,86 +1,74 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsString,
-  IsInt,
-  IsEnum,
-  IsBoolean,
-  IsOptional,
-  Min,
-  MinLength,
-  MaxLength,
-} from 'class-validator';
+import { IsString, IsBoolean, IsOptional, IsInt, Min, Max, MinLength, MaxLength, IsEnum } from 'class-validator';
 import { VisaEntryType } from '@prisma/client';
 
 export class CreateVisaTypeDto {
   @ApiProperty({
-    description: 'Purpose of the visa',
-    example: 'Tourism',
-    minLength: 2,
-    maxLength: 100,
+    description: 'Visa purpose (e.g., tourism, business)',
+    example: 'tourism',
   })
   @IsString()
-  @MinLength(2)
-  @MaxLength(100)
+  @MinLength(2, { message: 'Purpose must be at least 2 characters' })
+  @MaxLength(100, { message: 'Purpose must not exceed 100 characters' })
   purpose: string;
 
   @ApiProperty({
-    description: 'Validity period in days',
+    description: 'Visa validity in days',
     example: 30,
-    minimum: 1,
   })
   @IsInt()
-  @Min(1)
+  @Min(1, { message: 'Validity days must be at least 1' })
+  @Max(3650, { message: 'Validity days must not exceed 3650' })
   validityDays: number;
 
   @ApiProperty({
-    description: 'Maximum stay duration in days',
+    description: 'Maximum stay in days',
     example: 30,
-    minimum: 1,
   })
   @IsInt()
-  @Min(1)
+  @Min(1, { message: 'Max stay must be at least 1' })
+  @Max(365, { message: 'Max stay must not exceed 365' })
   maxStay: number;
 
   @ApiProperty({
-    description: 'Entry type for the visa',
+    description: 'Entry type',
     enum: VisaEntryType,
-    example: VisaEntryType.SINGLE,
+    example: 'SINGLE',
   })
-  @IsEnum(VisaEntryType)
+  @IsEnum(VisaEntryType, { message: 'Invalid entry type' })
   entries: VisaEntryType;
 
   @ApiProperty({
-    description: 'Display label for the visa type',
-    example: 'Tourist Visa - 30 Days',
-    minLength: 2,
-    maxLength: 200,
+    description: 'Display label',
+    example: 'Tourism',
   })
   @IsString()
-  @MinLength(2)
-  @MaxLength(200)
+  @MinLength(2, { message: 'Label must be at least 2 characters' })
+  @MaxLength(100, { message: 'Label must not exceed 100 characters' })
   label: string;
 
   @ApiPropertyOptional({
-    description: 'Detailed description of the visa type',
-    example: 'Standard tourist visa for leisure travel',
+    description: 'Visa type description',
+    example: 'Tourism visa for leisure travel',
   })
   @IsOptional()
   @IsString()
-  @MaxLength(1000)
+  @MaxLength(500, { message: 'Description must not exceed 500 characters' })
   description?: string;
 
   @ApiPropertyOptional({
     description: 'Whether the visa type is active',
     default: true,
+    example: true,
   })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Sort order for display purposes',
+    description: 'Sort order for display',
     default: 0,
-    minimum: 0,
+    example: 1,
   })
   @IsOptional()
   @IsInt()

@@ -1,24 +1,40 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean } from 'class-validator';
+import { IsOptional, IsBoolean, IsString } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { SearchQueryDto } from '@/common/dto';
+import { PaginationQueryDto } from '@/common/dto';
 
-export class GetCountriesQueryDto extends SearchQueryDto {
+export class GetCountriesQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     description: 'Filter by active status',
+    example: true,
   })
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
   @IsBoolean()
   isActive?: boolean;
 
   @ApiPropertyOptional({
     description: 'Filter by published status',
+    example: true,
   })
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
   @IsBoolean()
   isPublished?: boolean;
-}
 
-export class GetPublicCountriesQueryDto extends SearchQueryDto {}
+  @ApiPropertyOptional({
+    description: 'Search by name or ISO code',
+    example: 'turkey',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
+}

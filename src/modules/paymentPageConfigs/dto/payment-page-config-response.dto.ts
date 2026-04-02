@@ -1,45 +1,27 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PaymentPageConfigResponseDto {
-  @ApiProperty({
-    description: 'Config ID',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
+  @ApiProperty({ description: 'Config ID', example: 'uuid' })
   id: string;
 
-  @ApiProperty({
-    description: 'Page title',
-    example: 'Complete Your Payment',
-  })
+  @ApiProperty({ description: 'Page title', example: 'Payment Information' })
   title: string;
 
-  @ApiPropertyOptional({
-    description: 'Page description',
-    example: 'Please review your order and complete the payment',
-  })
+  @ApiPropertyOptional({ description: 'Page description', example: 'Review payment details' })
   description?: string;
 
   @ApiProperty({
-    description: 'Page sections configuration as JSON',
-    example: [{ type: 'summary', title: 'Order Summary' }],
+    description: 'Page sections configuration',
+    example: [{ key: 'summary', title: 'Payment Summary', fields: [] }],
   })
   sectionsJson: any;
 
-  @ApiProperty({
-    description: 'Whether the config is active',
-    example: true,
-  })
+  @ApiProperty({ description: 'Whether config is active', example: true })
   isActive: boolean;
 
-  @ApiProperty({
-    description: 'Creation timestamp',
-    example: '2024-01-15T10:00:00.000Z',
-  })
+  @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
 
-  @ApiProperty({
-    description: 'Last update timestamp',
-    example: '2024-01-15T10:30:00.000Z',
-  })
+  @ApiProperty({ description: 'Last update timestamp' })
   updatedAt: Date;
 }

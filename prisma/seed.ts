@@ -25,17 +25,31 @@ const PERMISSIONS = [
   { moduleKey: 'sessions', actionKey: 'read', description: 'View active sessions' },
   { moduleKey: 'sessions', actionKey: 'delete', description: 'Revoke sessions' },
   
-  // Countries module (for future use)
-  { moduleKey: 'countries', actionKey: 'read', description: 'View countries' },
+  // Countries module
+  { moduleKey: 'countries', actionKey: 'read', description: 'View countries and sections' },
   { moduleKey: 'countries', actionKey: 'create', description: 'Create countries' },
-  { moduleKey: 'countries', actionKey: 'update', description: 'Update countries' },
-  { moduleKey: 'countries', actionKey: 'delete', description: 'Delete countries' },
+  { moduleKey: 'countries', actionKey: 'update', description: 'Update countries and sections' },
+  { moduleKey: 'countries', actionKey: 'delete', description: 'Delete countries and sections' },
   
-  // Visa Types module (for future use)
+  // Visa Types module
   { moduleKey: 'visaTypes', actionKey: 'read', description: 'View visa types' },
   { moduleKey: 'visaTypes', actionKey: 'create', description: 'Create visa types' },
   { moduleKey: 'visaTypes', actionKey: 'update', description: 'Update visa types' },
   { moduleKey: 'visaTypes', actionKey: 'delete', description: 'Delete visa types' },
+  
+  // Settings module
+  { moduleKey: 'settings', actionKey: 'read', description: 'View system settings' },
+  { moduleKey: 'settings', actionKey: 'update', description: 'Update system settings' },
+  
+  // Email Templates module
+  { moduleKey: 'emailTemplates', actionKey: 'read', description: 'View email templates' },
+  { moduleKey: 'emailTemplates', actionKey: 'create', description: 'Create email templates' },
+  { moduleKey: 'emailTemplates', actionKey: 'update', description: 'Update email templates' },
+  { moduleKey: 'emailTemplates', actionKey: 'delete', description: 'Delete email templates' },
+  
+  // Payment Page Configs module
+  { moduleKey: 'paymentPageConfigs', actionKey: 'read', description: 'View payment page config' },
+  { moduleKey: 'paymentPageConfigs', actionKey: 'update', description: 'Update payment page config' },
   
   // Templates module (for future use)
   { moduleKey: 'templates', actionKey: 'read', description: 'View templates' },
@@ -51,10 +65,6 @@ const PERMISSIONS = [
   // Payments module (for future use)
   { moduleKey: 'payments', actionKey: 'read', description: 'View payments' },
   { moduleKey: 'payments', actionKey: 'refund', description: 'Process refunds' },
-  
-  // Settings module (for future use)
-  { moduleKey: 'settings', actionKey: 'read', description: 'View system settings' },
-  { moduleKey: 'settings', actionKey: 'update', description: 'Update system settings' },
   
   // Audit Logs module (for future use)
   { moduleKey: 'auditLogs', actionKey: 'read', description: 'View audit logs' },
@@ -84,10 +94,12 @@ const ROLES = [
       'sessions.read', 'sessions.delete',
       'countries.read', 'countries.create', 'countries.update',
       'visaTypes.read', 'visaTypes.create', 'visaTypes.update',
+      'settings.read', 'settings.update',
+      'emailTemplates.read', 'emailTemplates.create', 'emailTemplates.update',
+      'paymentPageConfigs.read', 'paymentPageConfigs.update',
       'templates.read', 'templates.create', 'templates.update',
       'applications.read', 'applications.update', 'applications.review',
       'payments.read',
-      'settings.read',
       'auditLogs.read',
       'dashboard.read',
     ],
@@ -103,6 +115,9 @@ const ROLES = [
       'sessions.read', 'sessions.delete',
       'countries.read',
       'visaTypes.read',
+      'settings.read',
+      'emailTemplates.read',
+      'paymentPageConfigs.read',
       'templates.read',
       'applications.read', 'applications.update', 'applications.review',
       'payments.read',
@@ -267,6 +282,16 @@ async function main() {
   console.log(`  Roles: ${ROLES.length}`);
   console.log(`  Users: ${USERS.length}`);
   console.log('─'.repeat(50));
+  
+  console.log('\n📋 Permission modules:');
+  console.log('─'.repeat(50));
+  const modules = [...new Set(PERMISSIONS.map(p => p.moduleKey))];
+  for (const mod of modules) {
+    const actions = PERMISSIONS.filter(p => p.moduleKey === mod).map(p => p.actionKey);
+    console.log(`  ${mod}: ${actions.join(', ')}`);
+  }
+  console.log('─'.repeat(50));
+  
   console.log('\n🔐 Default credentials for development:');
   console.log('─'.repeat(50));
   for (const user of USERS) {

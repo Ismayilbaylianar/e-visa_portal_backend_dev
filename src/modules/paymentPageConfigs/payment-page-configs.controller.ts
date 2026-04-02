@@ -1,39 +1,44 @@
-import { Controller, Get, Patch, Body } from '@nestjs/common';
+import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { PaymentPageConfigsService } from './payment-page-configs.service';
-import { PaymentPageConfigResponseDto, UpdatePaymentPageConfigDto } from './dto';
+import { UpdatePaymentPageConfigDto, PaymentPageConfigResponseDto } from './dto';
+import { RequirePermissions } from '@/common/decorators';
+import { JwtAuthGuard } from '@/common/guards';
 
 @ApiTags('Payment Page Config')
 @ApiBearerAuth('JWT-auth')
-@Controller('admin/paymentPageConfig')
+@UseGuards(JwtAuthGuard)
+@Controller('admin/paymentPageConfigs')
 export class PaymentPageConfigsController {
   constructor(private readonly paymentPageConfigsService: PaymentPageConfigsService) {}
 
   @Get()
+  @RequirePermissions('paymentPageConfigs.read')
   @ApiOperation({
     summary: 'Get payment page config',
-    description: 'Get the current payment page configuration',
+    description: 'Get current payment page configuration. Creates default config if none exists.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Payment page configuration',
+    description: 'Current payment page config',
     type: PaymentPageConfigResponseDto,
   })
-  async get(): Promise<PaymentPageConfigResponseDto> {
-    return this.paymentPageConfigsService.get();
+  async getConfig(): Promise<PaymentPageConfigResponseDto> {
+    return this.paymentPageConfigsService.getConfig();
   }
 
   @Patch()
+  @RequirePermissions('paymentPageConfigs.update')
   @ApiOperation({
     summary: 'Update payment page config',
-    description: 'Update the payment page configuration',
+    description: 'Update payment page configuration. Only provided fields will be updated.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Updated payment page configuration',
+    description: 'Payment page config updated successfully',
     type: PaymentPageConfigResponseDto,
   })
-  async update(@Body() dto: UpdatePaymentPageConfigDto): Promise<PaymentPageConfigResponseDto> {
-    return this.paymentPageConfigsService.update(dto);
+  async updateConfig(@Body() dto: UpdatePaymentPageConfigDto): Promise<PaymentPageConfigResponseDto> {
+    return this.paymentPageConfigsService.updateConfig(dto);
   }
 }

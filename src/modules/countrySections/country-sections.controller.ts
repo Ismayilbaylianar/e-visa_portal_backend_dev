@@ -7,31 +7,33 @@ import {
   Param,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { CountrySectionsService } from './country-sections.service';
-import {
-  CreateCountrySectionDto,
-  UpdateCountrySectionDto,
-  CountrySectionResponseDto,
-} from './dto';
-import { CountryIdParamDto, SectionIdParamDto } from '@/common/dto';
+import { CreateCountrySectionDto, UpdateCountrySectionDto } from './dto';
+import { CountrySectionResponseDto } from '../countries/dto';
+import { RequirePermissions } from '@/common/decorators';
+import { JwtAuthGuard } from '@/common/guards';
 
-@ApiTags('Country Sections - Admin')
+@ApiTags('Country Sections')
 @ApiBearerAuth('JWT-auth')
-@Controller('admin')
+@UseGuards(JwtAuthGuard)
+@Controller()
 export class CountrySectionsController {
   constructor(private readonly countrySectionsService: CountrySectionsService) {}
 
-  @Post('countries/:countryId/sections')
+  @Post('admin/countries/:countryId/sections')
+  @RequirePermissions('countries.update')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create country section',
-    description: 'Create a new section under a country',
+    description: 'Create a new section for a country',
   })
+  @ApiParam({ name: 'countryId', description: 'Country ID' })
   @ApiResponse({
     status: 201,
-    description: 'Country section created successfully',
+    description: 'Section created successfully',
     type: CountrySectionResponseDto,
   })
   @ApiResponse({
@@ -39,48 +41,52 @@ export class CountrySectionsController {
     description: 'Country not found',
   })
   async create(
-    @Param() params: CountryIdParamDto,
+    @Param('countryId') countryId: string,
     @Body() dto: CreateCountrySectionDto,
   ): Promise<CountrySectionResponseDto> {
-    return this.countrySectionsService.create(params.countryId, dto);
+    return this.countrySectionsService.create(countryId, dto);
   }
 
-  @Patch('countrySections/:sectionId')
+  @Patch('admin/countrySections/:sectionId')
+  @RequirePermissions('countries.update')
   @ApiOperation({
     summary: 'Update country section',
-    description: 'Update country section details',
+    description: 'Update a country section',
   })
+  @ApiParam({ name: 'sectionId', description: 'Section ID' })
   @ApiResponse({
     status: 200,
-    description: 'Country section updated successfully',
+    description: 'Section updated successfully',
     type: CountrySectionResponseDto,
   })
   @ApiResponse({
     status: 404,
-    description: 'Country section not found',
+    description: 'Section not found',
   })
   async update(
-    @Param() params: SectionIdParamDto,
+    @Param('sectionId') sectionId: string,
     @Body() dto: UpdateCountrySectionDto,
   ): Promise<CountrySectionResponseDto> {
-    return this.countrySectionsService.update(params.sectionId, dto);
+    return this.countrySectionsService.update(sectionId, dto);
   }
 
-  @Delete('countrySections/:sectionId')
+  @Delete('admin/countrySections/:sectionId')
+  @RequirePermissions('countries.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete country section',
     description: 'Soft delete a country section',
   })
+  @ApiParam({ name: 'sectionId', description: 'Section ID' })
   @ApiResponse({
     status: 204,
-    description: 'Country section deleted successfully',
+    description: 'Section deleted successfully',
   })
   @ApiResponse({
     status: 404,
-    description: 'Country section not found',
+    description: 'Section not found',
   })
-  async delete(@Param() params: SectionIdParamDto): Promise<void> {
-    return this.countrySectionsService.delete(params.sectionId);
+  async delete(@Param('sectionId') sectionId: string): Promise<void> {
+    return this.countrySectionsService.delete(sectionId);
   }
 }

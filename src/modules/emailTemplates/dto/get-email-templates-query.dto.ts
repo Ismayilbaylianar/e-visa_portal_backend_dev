@@ -1,10 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsString, IsEnum } from 'class-validator';
+import { IsOptional, IsBoolean, IsString } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { VisaEntryType } from '@prisma/client';
 import { PaginationQueryDto } from '@/common/dto';
 
-export class GetVisaTypesQueryDto extends PaginationQueryDto {
+export class GetEmailTemplatesQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     description: 'Filter by active status',
     example: true,
@@ -19,17 +18,8 @@ export class GetVisaTypesQueryDto extends PaginationQueryDto {
   isActive?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Filter by entry type',
-    enum: VisaEntryType,
-    example: 'SINGLE',
-  })
-  @IsOptional()
-  @IsEnum(VisaEntryType)
-  entries?: VisaEntryType;
-
-  @ApiPropertyOptional({
-    description: 'Search by purpose or label',
-    example: 'tourism',
+    description: 'Search by template key or subject',
+    example: 'application',
   })
   @IsOptional()
   @IsString()

@@ -4,12 +4,14 @@ import {
   CreateCountryDto,
   UpdateCountryDto,
   CountryResponseDto,
-  PublicCountryResponseDto,
+  CountryListResponseDto,
   GetCountriesQueryDto,
-  GetPublicCountriesQueryDto,
+  PublicCountryResponseDto,
+  PublicCountryListResponseDto,
+  CountrySectionResponseDto,
 } from './dto';
 import { NotFoundException, ConflictException } from '@/common/exceptions';
-import { PaginationMeta } from '@/common/types';
+import { ErrorCodes } from '@/common/constants';
 
 @Injectable()
 export class CountriesService {
@@ -17,24 +19,32 @@ export class CountriesService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(
-    query: GetCountriesQueryDto,
-  ): Promise<{ items: CountryResponseDto[]; pagination: PaginationMeta }> {
-    const { page = 1, limit = 10, search, sortBy = 'createdAt', sortOrder = 'desc' } = query;
+  /**
+   * Get paginated list of countries (admin)
+   */
+  async findAll(query: GetCountriesQueryDto): Promise<CountryListResponseDto> {
+    const { page = 1, limit = 10, search, sortBy = 'name', sortOrder = 'asc' } = query;
     const skip = (page - 1) * limit;
 
-    const where = {
+    const where: any = {
       deletedAt: null,
-      ...(query.isActive !== undefined && { isActive: query.isActive }),
-      ...(query.isPublished !== undefined && { isPublished: query.isPublished }),
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' as const } },
-          { slug: { contains: search, mode: 'insensitive' as const } },
-          { isoCode: { contains: search, mode: 'insensitive' as const } },
-        ],
-      }),
     };
+
+    if (query.isActive !== undefined) {
+      where.isActive = query.isActive;
+    }
+
+    if (query.isPublished !== undefined) {
+      where.isPublished = query.isPublished;
+    }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { isoCode: { contains: search, mode: 'insensitive' } },
+        { slug: { contains: search, mode: 'insensitive' } },
+      ];
+    }
 
     const [countries, total] = await Promise.all([
       this.prisma.country.findMany({
@@ -56,15 +66,16 @@ export class CountriesService {
 
     return {
       items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 
+  /**
+   * Get country by ID (admin)
+   */
   async findById(id: string): Promise<CountryResponseDto> {
     const country = await this.prisma.country.findFirst({
       where: { id, deletedAt: null },
@@ -77,13 +88,184 @@ export class CountriesService {
     });
 
     if (!country) {
-      throw new NotFoundException('Country not found');
+      throw new NotFoundException('Country not found', [
+        { reason: ErrorCodes.COUNTRY_NOT_FOUND, message: 'Country does not exist or has been deleted' },
+      ]);
     }
 
     return this.mapToResponse(country);
   }
 
-  async findBySlug(slug: string): Promise<PublicCountryResponseDto> {
+  /**
+   * Create new country
+   */
+  async create(dto: CreateCountryDto): Promise<CountryResponseDto> {
+    // Check slug uniqueness
+    const existingBySlug = await this.prisma.country.findUnique({
+      where: { slug: dto.slug },
+    });
+
+    if (existingBySlug) {
+      throw new ConflictException('Slug already exists', [
+        { field: 'slug', reason: ErrorCodes.CONFLICT, message: 'A country with this slug already exists' },
+      ]);
+    }
+
+    // Check ISO code uniqueness
+    const existingByIso = await this.prisma.country.findUnique({
+      where: { isoCode: dto.isoCode },
+    });
+
+    if (existingByIso) {
+      throw new ConflictException('ISO code already exists', [
+        { field: 'isoCode', reason: ErrorCodes.CONFLICT, message: 'A country with this ISO code already exists' },
+      ]);
+    }
+
+    const country = await this.prisma.country.create({
+      data: {
+        name: dto.name,
+        slug: dto.slug,
+        isoCode: dto.isoCode,
+        isActive: dto.isActive ?? true,
+        isPublished: dto.isPublished ?? false,
+        seoTitle: dto.seoTitle,
+        seoDescription: dto.seoDescription,
+      },
+      include: {
+        sections: {
+          where: { deletedAt: null },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+
+    this.logger.log(`Country created: ${country.id} (${country.name})`);
+    return this.mapToResponse(country);
+  }
+
+  /**
+   * Update country
+   */
+  async update(id: string, dto: UpdateCountryDto): Promise<CountryResponseDto> {
+    const country = await this.prisma.country.findFirst({
+      where: { id, deletedAt: null },
+    });
+
+    if (!country) {
+      throw new NotFoundException('Country not found', [
+        { reason: ErrorCodes.COUNTRY_NOT_FOUND, message: 'Country does not exist or has been deleted' },
+      ]);
+    }
+
+    // Check slug uniqueness if changing
+    if (dto.slug && dto.slug !== country.slug) {
+      const existingBySlug = await this.prisma.country.findUnique({
+        where: { slug: dto.slug },
+      });
+      if (existingBySlug) {
+        throw new ConflictException('Slug already exists', [
+          { field: 'slug', reason: ErrorCodes.CONFLICT, message: 'A country with this slug already exists' },
+        ]);
+      }
+    }
+
+    // Check ISO code uniqueness if changing
+    if (dto.isoCode && dto.isoCode !== country.isoCode) {
+      const existingByIso = await this.prisma.country.findUnique({
+        where: { isoCode: dto.isoCode },
+      });
+      if (existingByIso) {
+        throw new ConflictException('ISO code already exists', [
+          { field: 'isoCode', reason: ErrorCodes.CONFLICT, message: 'A country with this ISO code already exists' },
+        ]);
+      }
+    }
+
+    const updateData: any = {};
+    if (dto.name !== undefined) updateData.name = dto.name;
+    if (dto.slug !== undefined) updateData.slug = dto.slug;
+    if (dto.isoCode !== undefined) updateData.isoCode = dto.isoCode;
+    if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
+    if (dto.isPublished !== undefined) updateData.isPublished = dto.isPublished;
+    if (dto.seoTitle !== undefined) updateData.seoTitle = dto.seoTitle;
+    if (dto.seoDescription !== undefined) updateData.seoDescription = dto.seoDescription;
+
+    const updatedCountry = await this.prisma.country.update({
+      where: { id },
+      data: updateData,
+      include: {
+        sections: {
+          where: { deletedAt: null },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+
+    this.logger.log(`Country updated: ${id}`);
+    return this.mapToResponse(updatedCountry);
+  }
+
+  /**
+   * Soft delete country
+   */
+  async delete(id: string): Promise<void> {
+    const country = await this.prisma.country.findFirst({
+      where: { id, deletedAt: null },
+    });
+
+    if (!country) {
+      throw new NotFoundException('Country not found', [
+        { reason: ErrorCodes.COUNTRY_NOT_FOUND, message: 'Country does not exist or has been deleted' },
+      ]);
+    }
+
+    // Soft delete country and its sections
+    await this.prisma.$transaction([
+      this.prisma.country.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      }),
+      this.prisma.countrySection.updateMany({
+        where: { countryId: id, deletedAt: null },
+        data: { deletedAt: new Date() },
+      }),
+    ]);
+
+    this.logger.log(`Country soft deleted: ${id}`);
+  }
+
+  /**
+   * Get public list of countries (published + active only)
+   */
+  async findAllPublic(): Promise<PublicCountryListResponseDto> {
+    const countries = await this.prisma.country.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        isPublished: true,
+      },
+      include: {
+        sections: {
+          where: { deletedAt: null, isActive: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const items = countries.map(country => this.mapToPublicResponse(country));
+
+    return {
+      items,
+      total: items.length,
+    };
+  }
+
+  /**
+   * Get public country by slug
+   */
+  async findBySlugPublic(slug: string): Promise<PublicCountryResponseDto> {
     const country = await this.prisma.country.findFirst({
       where: {
         slug,
@@ -100,157 +282,17 @@ export class CountriesService {
     });
 
     if (!country) {
-      throw new NotFoundException('Country not found');
+      throw new NotFoundException('Country not found', [
+        { reason: ErrorCodes.COUNTRY_NOT_FOUND, message: 'Country does not exist or is not available' },
+      ]);
     }
 
     return this.mapToPublicResponse(country);
   }
 
-  async findAllPublic(
-    query: GetPublicCountriesQueryDto,
-  ): Promise<{ items: PublicCountryResponseDto[]; pagination: PaginationMeta }> {
-    const { page = 1, limit = 10, search, sortBy = 'name', sortOrder = 'asc' } = query;
-    const skip = (page - 1) * limit;
-
-    const where = {
-      deletedAt: null,
-      isActive: true,
-      isPublished: true,
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' as const } },
-          { isoCode: { contains: search, mode: 'insensitive' as const } },
-        ],
-      }),
-    };
-
-    const [countries, total] = await Promise.all([
-      this.prisma.country.findMany({
-        where,
-        include: {
-          sections: {
-            where: { deletedAt: null, isActive: true },
-            orderBy: { sortOrder: 'asc' },
-          },
-        },
-        skip,
-        take: limit,
-        orderBy: { [sortBy]: sortOrder },
-      }),
-      this.prisma.country.count({ where }),
-    ]);
-
-    const items = countries.map(country => this.mapToPublicResponse(country));
-
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  async create(dto: CreateCountryDto): Promise<CountryResponseDto> {
-    const existingBySlug = await this.prisma.country.findUnique({
-      where: { slug: dto.slug },
-    });
-
-    if (existingBySlug) {
-      throw new ConflictException('Country with this slug already exists');
-    }
-
-    const existingByIsoCode = await this.prisma.country.findUnique({
-      where: { isoCode: dto.isoCode },
-    });
-
-    if (existingByIsoCode) {
-      throw new ConflictException('Country with this ISO code already exists');
-    }
-
-    const country = await this.prisma.country.create({
-      data: {
-        name: dto.name,
-        slug: dto.slug,
-        isoCode: dto.isoCode,
-        isActive: dto.isActive ?? true,
-        seoTitle: dto.seoTitle,
-        seoDescription: dto.seoDescription,
-        isPublished: dto.isPublished ?? false,
-      },
-      include: {
-        sections: {
-          where: { deletedAt: null },
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
-    });
-
-    this.logger.log(`Country created: ${country.id}`);
-    return this.mapToResponse(country);
-  }
-
-  async update(id: string, dto: UpdateCountryDto): Promise<CountryResponseDto> {
-    const country = await this.prisma.country.findFirst({
-      where: { id, deletedAt: null },
-    });
-
-    if (!country) {
-      throw new NotFoundException('Country not found');
-    }
-
-    if (dto.slug && dto.slug !== country.slug) {
-      const existingBySlug = await this.prisma.country.findUnique({
-        where: { slug: dto.slug },
-      });
-      if (existingBySlug) {
-        throw new ConflictException('Country with this slug already exists');
-      }
-    }
-
-    if (dto.isoCode && dto.isoCode !== country.isoCode) {
-      const existingByIsoCode = await this.prisma.country.findUnique({
-        where: { isoCode: dto.isoCode },
-      });
-      if (existingByIsoCode) {
-        throw new ConflictException('Country with this ISO code already exists');
-      }
-    }
-
-    const updatedCountry = await this.prisma.country.update({
-      where: { id },
-      data: dto,
-      include: {
-        sections: {
-          where: { deletedAt: null },
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
-    });
-
-    this.logger.log(`Country updated: ${id}`);
-    return this.mapToResponse(updatedCountry);
-  }
-
-  async delete(id: string): Promise<void> {
-    const country = await this.prisma.country.findFirst({
-      where: { id, deletedAt: null },
-    });
-
-    if (!country) {
-      throw new NotFoundException('Country not found');
-    }
-
-    await this.prisma.country.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
-
-    this.logger.log(`Country deleted: ${id}`);
-  }
-
+  /**
+   * Map country entity to admin response DTO
+   */
   private mapToResponse(country: any): CountryResponseDto {
     return {
       id: country.id,
@@ -258,23 +300,18 @@ export class CountriesService {
       slug: country.slug,
       isoCode: country.isoCode,
       isActive: country.isActive,
+      isPublished: country.isPublished,
       seoTitle: country.seoTitle || undefined,
       seoDescription: country.seoDescription || undefined,
-      isPublished: country.isPublished,
-      sections: country.sections?.map((section: any) => ({
-        id: section.id,
-        title: section.title,
-        content: section.content,
-        sortOrder: section.sortOrder,
-        isActive: section.isActive,
-        createdAt: section.createdAt,
-        updatedAt: section.updatedAt,
-      })),
+      sections: country.sections?.map((s: any) => this.mapSectionToResponse(s)),
       createdAt: country.createdAt,
       updatedAt: country.updatedAt,
     };
   }
 
+  /**
+   * Map country entity to public response DTO
+   */
   private mapToPublicResponse(country: any): PublicCountryResponseDto {
     return {
       id: country.id,
@@ -283,15 +320,22 @@ export class CountriesService {
       isoCode: country.isoCode,
       seoTitle: country.seoTitle || undefined,
       seoDescription: country.seoDescription || undefined,
-      sections: country.sections?.map((section: any) => ({
-        id: section.id,
-        title: section.title,
-        content: section.content,
-        sortOrder: section.sortOrder,
-        isActive: section.isActive,
-        createdAt: section.createdAt,
-        updatedAt: section.updatedAt,
-      })),
+      sections: country.sections?.map((s: any) => this.mapSectionToResponse(s)),
+    };
+  }
+
+  /**
+   * Map section entity to response DTO
+   */
+  private mapSectionToResponse(section: any): CountrySectionResponseDto {
+    return {
+      id: section.id,
+      title: section.title,
+      content: section.content,
+      sortOrder: section.sortOrder,
+      isActive: section.isActive,
+      createdAt: section.createdAt,
+      updatedAt: section.updatedAt,
     };
   }
 }

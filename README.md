@@ -2,9 +2,9 @@
 
 Production-ready backend API for an online visa application portal built with NestJS, Prisma, and PostgreSQL.
 
-## Current Stage: IAM Layer Implementation
+## Current Stage: Configuration Modules Implementation
 
-This repository contains the complete backend architecture with a fully functional Identity and Access Management (IAM) layer.
+This repository contains the complete backend architecture with fully functional IAM and Configuration layers.
 
 ### What's Implemented
 
@@ -21,80 +21,55 @@ This repository contains the complete backend architecture with a fully function
 - [x] Environment configuration
 
 #### Identity & Access Management (Fully Functional)
-- [x] **Authentication**
-  - JWT-based admin authentication
-  - Login with email/password
-  - Access token (1 hour) and refresh token (7 days)
-  - Token refresh endpoint
-  - Logout with session revocation
-  - Password hashing with bcrypt
-  - Refresh token hashing before storage
-- [x] **Session Management**
-  - Database-persisted sessions
-  - View active sessions
-  - Revoke individual sessions
-  - Revoke all sessions (except current)
-  - Session tracking (IP, user agent, last activity)
-- [x] **User Management**
-  - Full CRUD operations
-  - Password hashing on create
-  - Email uniqueness validation
-  - Soft delete
-  - Status management (activate/deactivate)
-  - Deactivation revokes all sessions
-- [x] **Role Management**
-  - Full CRUD operations
-  - System role protection
-  - User count tracking
-  - Prevent deletion of roles with active users
-  - Soft delete
-- [x] **Permission Management**
-  - Permission listing
-  - Permission matrix view (grouped by module)
-  - Role permission assignment (replace all)
-  - User permission overrides (grants/denies)
-- [x] **Access Control**
-  - JWT authentication guard
-  - Permission-based authorization guard
-  - `@Public()` decorator for public routes
-  - `@RequirePermissions()` decorator
-  - `@CurrentUser()` decorator
-  - Role permissions + user overrides calculation
+- [x] JWT-based admin authentication
+- [x] Session management with database persistence
+- [x] User management (CRUD + status)
+- [x] Role management (CRUD + system role protection)
+- [x] Permission management (list, matrix, assignments)
+- [x] Access control guards and decorators
 
-#### Database Schema (30+ models)
-- [x] Access Control: User, Role, Permission, RolePermission, UserPermission, Session
-- [x] Portal Auth: PortalIdentity, PortalSession, OtpCode
-- [x] Configuration: Country, CountrySection, VisaType, Template, TemplateSection, TemplateField, TemplateBinding, BindingNationalityFee, PaymentPageConfig, EmailTemplate, Setting
-- [x] Application Domain: Application, ApplicationApplicant, ApplicationStatusHistory, ApplicantStatusHistory, Document
-- [x] Payments: Payment, PaymentTransaction, PaymentStatusHistory, PaymentCallback, PaymentReconciliation
-- [x] Support: Notification, Job, JobExecution, AuditLog
-
-#### API Modules (35+ modules scaffolded, IAM modules fully functional)
-
-**System**
-- [x] Health (`/system/health/live`, `/system/health/ready`)
-
-**Admin Auth & Access Control (FULLY FUNCTIONAL)**
-- [x] Auth (`POST /admin/auth/login`, `POST /admin/auth/refresh`, `POST /admin/auth/logout`)
-- [x] Sessions (`GET /admin/sessions/me`, `DELETE /admin/sessions/:id`, `DELETE /admin/sessions/revokeAll`)
-- [x] Users (`GET/POST/PATCH/DELETE /admin/users`, `PATCH /admin/users/:id/status`)
-- [x] Roles (`GET/POST/PATCH/DELETE /admin/roles`)
-- [x] Permissions (`GET /admin/permissions`, `GET /admin/permissions/matrix`, `PATCH /admin/permissions/roles/:id/permissions`, `PATCH /admin/permissions/users/:id/permissions`)
-
-**Other Modules (Scaffolded)**
-- Portal Auth, Countries, Visa Types, Templates, Applications, Payments, etc.
+#### Configuration Modules (Fully Functional)
+- [x] **Countries**
+  - Admin CRUD with sections
+  - Public endpoints for published countries
+  - Soft delete support
+  - SEO fields (title, description)
+- [x] **Country Sections**
+  - Create/update/delete sections for countries
+  - Sort order and active status
+- [x] **Visa Types**
+  - Admin CRUD
+  - Public endpoint for active types
+  - Entry type (single/double/multiple)
+  - Validity and max stay configuration
+- [x] **Settings**
+  - Singleton configuration
+  - Site name, support email, currency
+  - Payment timeout, maintenance mode
+  - Auto-creates defaults if none exist
+- [x] **Email Templates**
+  - Admin CRUD
+  - Template key uniqueness
+  - HTML and plain text body
+  - Template variable support (e.g., `{{fullName}}`)
+- [x] **Payment Page Configs**
+  - Singleton configuration
+  - JSON-based sections configuration
+  - Auto-creates defaults if none exist
 
 ### What's NOT Implemented Yet
 
+- [ ] Templates (form templates)
+- [ ] Template sections/fields
+- [ ] Template bindings
+- [ ] Nationality fees
 - [ ] Portal OTP authentication
-- [ ] Countries/Visa Types/Templates CRUD logic
-- [ ] Application workflow
-- [ ] File upload storage
-- [ ] Email sending service
-- [ ] Payment provider integrations
-- [ ] Background job processing
-- [ ] Rate limiting
-- [ ] Caching
+- [ ] Applications workflow
+- [ ] Documents/file upload
+- [ ] Payment integrations
+- [ ] Notifications
+- [ ] Background jobs
+- [ ] Audit logs
 
 ## Tech Stack
 
@@ -158,19 +133,6 @@ npm run build
 npm run start:prod
 ```
 
-### Running with Docker
-
-```bash
-# Start all services (PostgreSQL + API)
-docker compose -f docker-compose.dev.yml up --build
-
-# Run in background
-docker compose -f docker-compose.dev.yml up -d --build
-
-# Stop services
-docker compose -f docker-compose.dev.yml down
-```
-
 ## Default Development Credentials
 
 After running the seed script, these users are available:
@@ -185,8 +147,6 @@ After running the seed script, these users are available:
 
 ## Seeded Permissions
 
-The seed script creates the following permission groups:
-
 | Module | Actions |
 |--------|---------|
 | `users` | read, create, update, delete |
@@ -195,17 +155,14 @@ The seed script creates the following permission groups:
 | `sessions` | read, delete |
 | `countries` | read, create, update, delete |
 | `visaTypes` | read, create, update, delete |
+| `settings` | read, update |
+| `emailTemplates` | read, create, update, delete |
+| `paymentPageConfigs` | read, update |
 | `templates` | read, create, update, delete |
 | `applications` | read, update, review |
 | `payments` | read, refund |
-| `settings` | read, update |
 | `auditLogs` | read |
 | `dashboard` | read |
-
-**Role Permission Mapping:**
-- **superAdmin**: All permissions
-- **admin**: Most permissions (no user delete, no role management)
-- **operator**: Read-only + application review
 
 ## API Documentation
 
@@ -215,10 +172,9 @@ Once the application is running, access Swagger documentation at:
 http://localhost:3000/docs
 ```
 
-## API Endpoints (IAM Layer)
+## API Endpoints
 
 ### Authentication
-
 ```
 POST /api/v1/admin/auth/login
 POST /api/v1/admin/auth/refresh
@@ -226,7 +182,6 @@ POST /api/v1/admin/auth/logout
 ```
 
 ### Sessions
-
 ```
 GET    /api/v1/admin/sessions/me
 DELETE /api/v1/admin/sessions/:sessionId
@@ -234,7 +189,6 @@ DELETE /api/v1/admin/sessions/revokeAll
 ```
 
 ### Users
-
 ```
 GET    /api/v1/admin/users
 GET    /api/v1/admin/users/:userId
@@ -245,7 +199,6 @@ DELETE /api/v1/admin/users/:userId
 ```
 
 ### Roles
-
 ```
 GET    /api/v1/admin/roles
 GET    /api/v1/admin/roles/:roleId
@@ -255,7 +208,6 @@ DELETE /api/v1/admin/roles/:roleId
 ```
 
 ### Permissions
-
 ```
 GET   /api/v1/admin/permissions
 GET   /api/v1/admin/permissions/matrix
@@ -263,26 +215,70 @@ PATCH /api/v1/admin/permissions/roles/:roleId/permissions
 PATCH /api/v1/admin/permissions/users/:userId/permissions
 ```
 
+### Countries (Admin)
+```
+GET    /api/v1/admin/countries
+GET    /api/v1/admin/countries/:countryId
+POST   /api/v1/admin/countries
+PATCH  /api/v1/admin/countries/:countryId
+DELETE /api/v1/admin/countries/:countryId
+POST   /api/v1/admin/countries/:countryId/sections
+```
+
+### Country Sections (Admin)
+```
+PATCH  /api/v1/admin/countrySections/:sectionId
+DELETE /api/v1/admin/countrySections/:sectionId
+```
+
+### Countries (Public)
+```
+GET /api/v1/public/countries
+GET /api/v1/public/countries/:slug
+```
+
+### Visa Types (Admin)
+```
+GET    /api/v1/admin/visaTypes
+GET    /api/v1/admin/visaTypes/:visaTypeId
+POST   /api/v1/admin/visaTypes
+PATCH  /api/v1/admin/visaTypes/:visaTypeId
+DELETE /api/v1/admin/visaTypes/:visaTypeId
+```
+
+### Visa Types (Public)
+```
+GET /api/v1/public/visaTypes
+```
+
+### Settings
+```
+GET   /api/v1/admin/settings
+PATCH /api/v1/admin/settings
+```
+
+### Email Templates
+```
+GET    /api/v1/admin/emailTemplates
+GET    /api/v1/admin/emailTemplates/:templateId
+POST   /api/v1/admin/emailTemplates
+PATCH  /api/v1/admin/emailTemplates/:templateId
+DELETE /api/v1/admin/emailTemplates/:templateId
+```
+
+### Payment Page Config
+```
+GET   /api/v1/admin/paymentPageConfigs
+PATCH /api/v1/admin/paymentPageConfigs
+```
+
 ## API Response Format
 
 ### Success Response
-
 ```json
 {
   "success": true,
-  "data": {
-    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
-    "expiresInSeconds": 3600,
-    "user": {
-      "id": "uuid",
-      "fullName": "Super Admin",
-      "email": "super@visa.com",
-      "roleId": "uuid",
-      "roleKey": "superAdmin",
-      "isActive": true
-    }
-  },
+  "data": { ... },
   "meta": {
     "requestId": "req_abc123xyz"
   },
@@ -291,7 +287,6 @@ PATCH /api/v1/admin/permissions/users/:userId/permissions
 ```
 
 ### Error Response
-
 ```json
 {
   "success": false,
@@ -300,12 +295,12 @@ PATCH /api/v1/admin/permissions/users/:userId/permissions
     "requestId": "req_abc123xyz"
   },
   "error": {
-    "code": "invalidCredentials",
-    "message": "Invalid credentials",
+    "code": "notFound",
+    "message": "Country not found",
     "details": [
       {
-        "reason": "invalidCredentials",
-        "message": "Email or password is incorrect"
+        "reason": "countryNotFound",
+        "message": "Country does not exist or has been deleted"
       }
     ]
   }
@@ -322,8 +317,22 @@ PATCH /api/v1/admin/permissions/users/:userId/permissions
 | `permissionDenied` | 403 | Missing required permissions |
 | `forbidden` | 403 | Access denied |
 | `notFound` | 404 | Resource not found |
-| `conflict` | 409 | Duplicate resource (e.g., email) |
+| `countryNotFound` | 404 | Country not found |
+| `visaTypeNotFound` | 404 | Visa type not found |
+| `conflict` | 409 | Duplicate resource |
 | `validationError` | 400 | Request validation failed |
+
+## Singleton Configurations
+
+### Settings
+- Auto-creates default settings on first read if none exist
+- Single active record in database
+- Update modifies existing record (no duplicates)
+
+### Payment Page Config
+- Auto-creates default config on first read if none exist
+- Single active record in database
+- JSON-based sections configuration
 
 ## Environment Variables
 
@@ -366,18 +375,6 @@ npm run format         # Format with Prettier
 npm run test           # Run unit tests
 npm run test:cov       # Run tests with coverage
 ```
-
-## Security Features
-
-- ✅ Passwords hashed with bcrypt (12 rounds)
-- ✅ Refresh tokens hashed before database storage
-- ✅ JWT tokens with configurable expiration
-- ✅ Session-based token revocation
-- ✅ Soft delete for users (preserves audit trail)
-- ✅ Inactive users cannot login
-- ✅ Deleted users cannot login
-- ✅ Permission-based access control
-- ✅ User-level permission overrides
 
 ## License
 

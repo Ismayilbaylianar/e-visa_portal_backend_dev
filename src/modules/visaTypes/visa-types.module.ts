@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { VisaTypesAdminController, VisaTypesPublicController } from './visa-types.controller';
+import { VisaTypesController } from './visa-types.controller';
 import { VisaTypesService } from './visa-types.service';
 
 @Module({
-  controllers: [VisaTypesAdminController, VisaTypesPublicController],
+  controllers: [VisaTypesController],
   providers: [VisaTypesService],
   exports: [VisaTypesService],
 })

@@ -1,13 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  EmailTemplateResponseDto,
   CreateEmailTemplateDto,
   UpdateEmailTemplateDto,
+  EmailTemplateResponseDto,
+  EmailTemplateListResponseDto,
+  GetEmailTemplatesQueryDto,
 } from './dto';
 import { NotFoundException, ConflictException } from '@/common/exceptions';
-import { PaginationMeta } from '@/common/types';
-import { PaginationQueryDto } from '@/common/dto';
+import { ErrorCodes } from '@/common/constants';
 
 @Injectable()
 export class EmailTemplatesService {
@@ -15,13 +16,27 @@ export class EmailTemplatesService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(
-    query: PaginationQueryDto,
-  ): Promise<{ items: EmailTemplateResponseDto[]; pagination: PaginationMeta }> {
-    const { page = 1, limit = 10, sortBy = 'createdAt', sortOrder = 'desc' } = query;
+  /**
+   * Get paginated list of email templates
+   */
+  async findAll(query: GetEmailTemplatesQueryDto): Promise<EmailTemplateListResponseDto> {
+    const { page = 1, limit = 10, search, sortBy = 'templateKey', sortOrder = 'asc' } = query;
     const skip = (page - 1) * limit;
 
-    const where = { deletedAt: null };
+    const where: any = {
+      deletedAt: null,
+    };
+
+    if (query.isActive !== undefined) {
+      where.isActive = query.isActive;
+    }
+
+    if (search) {
+      where.OR = [
+        { templateKey: { contains: search, mode: 'insensitive' } },
+        { subject: { contains: search, mode: 'insensitive' } },
+      ];
+    }
 
     const [templates, total] = await Promise.all([
       this.prisma.emailTemplate.findMany({
@@ -37,34 +52,43 @@ export class EmailTemplatesService {
 
     return {
       items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 
+  /**
+   * Get email template by ID
+   */
   async findById(id: string): Promise<EmailTemplateResponseDto> {
     const template = await this.prisma.emailTemplate.findFirst({
       where: { id, deletedAt: null },
     });
 
     if (!template) {
-      throw new NotFoundException('Email template not found');
+      throw new NotFoundException('Email template not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Email template does not exist or has been deleted' },
+      ]);
     }
 
     return this.mapToResponse(template);
   }
 
+  /**
+   * Create new email template
+   */
   async create(dto: CreateEmailTemplateDto): Promise<EmailTemplateResponseDto> {
-    const existing = await this.prisma.emailTemplate.findFirst({
-      where: { templateKey: dto.templateKey, deletedAt: null },
+    // Check template key uniqueness
+    const existing = await this.prisma.emailTemplate.findUnique({
+      where: { templateKey: dto.templateKey },
     });
 
     if (existing) {
-      throw new ConflictException('Email template with this key already exists');
+      throw new ConflictException('Template key already exists', [
+        { field: 'templateKey', reason: ErrorCodes.CONFLICT, message: 'An email template with this key already exists' },
+      ]);
     }
 
     const template = await this.prisma.emailTemplate.create({
@@ -77,44 +101,64 @@ export class EmailTemplatesService {
       },
     });
 
-    this.logger.log(`Email template created: ${template.id}`);
+    this.logger.log(`Email template created: ${template.id} (${template.templateKey})`);
     return this.mapToResponse(template);
   }
 
+  /**
+   * Update email template
+   */
   async update(id: string, dto: UpdateEmailTemplateDto): Promise<EmailTemplateResponseDto> {
     const template = await this.prisma.emailTemplate.findFirst({
       where: { id, deletedAt: null },
     });
 
     if (!template) {
-      throw new NotFoundException('Email template not found');
+      throw new NotFoundException('Email template not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Email template does not exist or has been deleted' },
+      ]);
     }
 
+    // Check template key uniqueness if changing
     if (dto.templateKey && dto.templateKey !== template.templateKey) {
-      const existing = await this.prisma.emailTemplate.findFirst({
-        where: { templateKey: dto.templateKey, deletedAt: null },
+      const existing = await this.prisma.emailTemplate.findUnique({
+        where: { templateKey: dto.templateKey },
       });
       if (existing) {
-        throw new ConflictException('Email template with this key already exists');
+        throw new ConflictException('Template key already exists', [
+          { field: 'templateKey', reason: ErrorCodes.CONFLICT, message: 'An email template with this key already exists' },
+        ]);
       }
     }
 
-    const updated = await this.prisma.emailTemplate.update({
+    const updateData: any = {};
+    if (dto.templateKey !== undefined) updateData.templateKey = dto.templateKey;
+    if (dto.subject !== undefined) updateData.subject = dto.subject;
+    if (dto.bodyHtml !== undefined) updateData.bodyHtml = dto.bodyHtml;
+    if (dto.bodyText !== undefined) updateData.bodyText = dto.bodyText;
+    if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
+
+    const updatedTemplate = await this.prisma.emailTemplate.update({
       where: { id },
-      data: dto,
+      data: updateData,
     });
 
     this.logger.log(`Email template updated: ${id}`);
-    return this.mapToResponse(updated);
+    return this.mapToResponse(updatedTemplate);
   }
 
+  /**
+   * Soft delete email template
+   */
   async delete(id: string): Promise<void> {
     const template = await this.prisma.emailTemplate.findFirst({
       where: { id, deletedAt: null },
     });
 
     if (!template) {
-      throw new NotFoundException('Email template not found');
+      throw new NotFoundException('Email template not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Email template does not exist or has been deleted' },
+      ]);
     }
 
     await this.prisma.emailTemplate.update({
@@ -122,9 +166,12 @@ export class EmailTemplatesService {
       data: { deletedAt: new Date() },
     });
 
-    this.logger.log(`Email template deleted: ${id}`);
+    this.logger.log(`Email template soft deleted: ${id}`);
   }
 
+  /**
+   * Map template entity to response DTO
+   */
   private mapToResponse(template: any): EmailTemplateResponseDto {
     return {
       id: template.id,

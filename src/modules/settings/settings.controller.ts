@@ -1,39 +1,44 @@
-import { Controller, Get, Patch, Body } from '@nestjs/common';
+import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { SettingsService } from './settings.service';
-import { SettingsResponseDto, UpdateSettingsDto } from './dto';
+import { UpdateSettingsDto, SettingsResponseDto } from './dto';
+import { RequirePermissions } from '@/common/decorators';
+import { JwtAuthGuard } from '@/common/guards';
 
 @ApiTags('Settings')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('admin/settings')
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @Get()
+  @RequirePermissions('settings.read')
   @ApiOperation({
-    summary: 'Get system settings',
-    description: 'Get current system settings',
+    summary: 'Get settings',
+    description: 'Get current system settings. Creates default settings if none exist.',
   })
   @ApiResponse({
     status: 200,
-    description: 'System settings',
+    description: 'Current settings',
     type: SettingsResponseDto,
   })
-  async get(): Promise<SettingsResponseDto> {
-    return this.settingsService.get();
+  async getSettings(): Promise<SettingsResponseDto> {
+    return this.settingsService.getSettings();
   }
 
   @Patch()
+  @RequirePermissions('settings.update')
   @ApiOperation({
-    summary: 'Update system settings',
-    description: 'Update one or more system settings',
+    summary: 'Update settings',
+    description: 'Update system settings. Only provided fields will be updated.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Updated system settings',
+    description: 'Settings updated successfully',
     type: SettingsResponseDto,
   })
-  async update(@Body() dto: UpdateSettingsDto): Promise<SettingsResponseDto> {
-    return this.settingsService.update(dto);
+  async updateSettings(@Body() dto: UpdateSettingsDto): Promise<SettingsResponseDto> {
+    return this.settingsService.updateSettings(dto);
   }
 }

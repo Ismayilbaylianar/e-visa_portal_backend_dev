@@ -1,11 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  CreateCountrySectionDto,
-  UpdateCountrySectionDto,
-  CountrySectionResponseDto,
-} from './dto';
+import { CreateCountrySectionDto, UpdateCountrySectionDto } from './dto';
+import { CountrySectionResponseDto } from '../countries/dto';
 import { NotFoundException } from '@/common/exceptions';
+import { ErrorCodes } from '@/common/constants';
 
 @Injectable()
 export class CountrySectionsService {
@@ -13,16 +11,19 @@ export class CountrySectionsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(
-    countryId: string,
-    dto: CreateCountrySectionDto,
-  ): Promise<CountrySectionResponseDto> {
+  /**
+   * Create a new section for a country
+   */
+  async create(countryId: string, dto: CreateCountrySectionDto): Promise<CountrySectionResponseDto> {
+    // Verify country exists
     const country = await this.prisma.country.findFirst({
       where: { id: countryId, deletedAt: null },
     });
 
     if (!country) {
-      throw new NotFoundException('Country not found');
+      throw new NotFoundException('Country not found', [
+        { reason: ErrorCodes.COUNTRY_NOT_FOUND, message: 'Country does not exist or has been deleted' },
+      ]);
     }
 
     const section = await this.prisma.countrySection.create({
@@ -35,38 +36,51 @@ export class CountrySectionsService {
       },
     });
 
-    this.logger.log(`Country section created: ${section.id} for country: ${countryId}`);
+    this.logger.log(`Country section created: ${section.id} for country ${countryId}`);
     return this.mapToResponse(section);
   }
 
-  async update(
-    sectionId: string,
-    dto: UpdateCountrySectionDto,
-  ): Promise<CountrySectionResponseDto> {
+  /**
+   * Update a country section
+   */
+  async update(sectionId: string, dto: UpdateCountrySectionDto): Promise<CountrySectionResponseDto> {
     const section = await this.prisma.countrySection.findFirst({
       where: { id: sectionId, deletedAt: null },
     });
 
     if (!section) {
-      throw new NotFoundException('Country section not found');
+      throw new NotFoundException('Section not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Country section does not exist or has been deleted' },
+      ]);
     }
+
+    const updateData: any = {};
+    if (dto.title !== undefined) updateData.title = dto.title;
+    if (dto.content !== undefined) updateData.content = dto.content;
+    if (dto.sortOrder !== undefined) updateData.sortOrder = dto.sortOrder;
+    if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
 
     const updatedSection = await this.prisma.countrySection.update({
       where: { id: sectionId },
-      data: dto,
+      data: updateData,
     });
 
     this.logger.log(`Country section updated: ${sectionId}`);
     return this.mapToResponse(updatedSection);
   }
 
+  /**
+   * Soft delete a country section
+   */
   async delete(sectionId: string): Promise<void> {
     const section = await this.prisma.countrySection.findFirst({
       where: { id: sectionId, deletedAt: null },
     });
 
     if (!section) {
-      throw new NotFoundException('Country section not found');
+      throw new NotFoundException('Section not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Country section does not exist or has been deleted' },
+      ]);
     }
 
     await this.prisma.countrySection.update({
@@ -74,13 +88,15 @@ export class CountrySectionsService {
       data: { deletedAt: new Date() },
     });
 
-    this.logger.log(`Country section deleted: ${sectionId}`);
+    this.logger.log(`Country section soft deleted: ${sectionId}`);
   }
 
+  /**
+   * Map section entity to response DTO
+   */
   private mapToResponse(section: any): CountrySectionResponseDto {
     return {
       id: section.id,
-      countryId: section.countryId,
       title: section.title,
       content: section.content,
       sortOrder: section.sortOrder,
