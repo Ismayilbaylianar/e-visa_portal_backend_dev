@@ -22,11 +22,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { DocumentsService } from './documents.service';
-import {
-  UploadDocumentBodyDto,
-  ReviewDocumentDto,
-  DocumentResponseDto,
-} from './dto';
+import { UploadDocumentBodyDto, ReviewDocumentDto, DocumentResponseDto } from './dto';
 import { ApplicantIdParamDto, DocumentIdParamDto } from '@/common/dto';
 import { CurrentPortalIdentity, CurrentUser } from '@/common/decorators';
 import { PortalAuthGuard, JwtAuthGuard } from '@/common/guards';
@@ -61,10 +57,7 @@ export class DocumentsPortalController {
     @Param() params: ApplicantIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<DocumentResponseDto[]> {
-    return this.documentsService.findByApplicant(
-      params.applicantId,
-      portalIdentity.id,
-    );
+    return this.documentsService.findByApplicant(params.applicantId, portalIdentity.id);
   }
 
   @Post('documents/upload')
@@ -129,10 +122,7 @@ export class DocumentsPortalController {
     @Param() params: DocumentIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<DocumentResponseDto> {
-    return this.documentsService.findById(
-      params.documentId,
-      portalIdentity.id,
-    );
+    return this.documentsService.findById(params.documentId, portalIdentity.id);
   }
 
   @Delete('documents/:documentId')
@@ -157,10 +147,7 @@ export class DocumentsPortalController {
     @Param() params: DocumentIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<void> {
-    return this.documentsService.delete(
-      params.documentId,
-      portalIdentity.id,
-    );
+    return this.documentsService.delete(params.documentId, portalIdentity.id);
   }
 }
 
@@ -190,10 +177,6 @@ export class DocumentsAdminController {
     @Body() dto: ReviewDocumentDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<DocumentResponseDto> {
-    return this.documentsService.review(
-      params.documentId,
-      user.id,
-      dto,
-    );
+    return this.documentsService.review(params.documentId, user.id, dto);
   }
 }

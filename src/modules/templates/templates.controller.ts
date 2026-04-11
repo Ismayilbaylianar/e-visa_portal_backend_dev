@@ -9,42 +9,51 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { TemplatesService } from './templates.service';
 import {
   CreateTemplateDto,
   UpdateTemplateDto,
   TemplateResponseDto,
+  TemplateListItemResponseDto,
   GetTemplatesQueryDto,
 } from './dto';
 import { TemplateIdParamDto } from '@/common/dto';
-import { ApiPaginatedResponse } from '@/common/decorators';
+import { RequirePermissions, ApiPaginatedResponse } from '@/common/decorators';
+import { JwtAuthGuard } from '@/common/guards';
 
 @ApiTags('Templates - Admin')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('admin/templates')
 export class TemplatesController {
   constructor(private readonly templatesService: TemplatesService) {}
 
   @Get()
+  @RequirePermissions('templates.read')
   @ApiOperation({
     summary: 'Get all templates',
-    description: 'Get paginated list of templates with optional filters',
+    description:
+      'Get paginated list of templates with optional filters. Returns summary list without deeply nested sections/fields.',
   })
-  @ApiPaginatedResponse(TemplateResponseDto)
+  @ApiPaginatedResponse(TemplateListItemResponseDto)
   async findAll(@Query() query: GetTemplatesQueryDto) {
     return this.templatesService.findAll(query);
   }
 
   @Get(':templateId')
+  @RequirePermissions('templates.read')
   @ApiOperation({
     summary: 'Get template by ID',
-    description: 'Get template details by ID including sections and fields',
+    description:
+      'Get template details by ID including sections and fields ordered by sortOrder. Returns fully nested form structure suitable for admin UI editing.',
   })
+  @ApiParam({ name: 'templateId', description: 'Template UUID' })
   @ApiResponse({
     status: 200,
-    description: 'Template details',
+    description: 'Template details with nested sections and fields',
     type: TemplateResponseDto,
   })
   @ApiResponse({
@@ -56,10 +65,11 @@ export class TemplatesController {
   }
 
   @Post()
+  @RequirePermissions('templates.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create template',
-    description: 'Create a new template',
+    description: 'Create a new form template. The key must be unique across all templates.',
   })
   @ApiResponse({
     status: 201,
@@ -75,10 +85,12 @@ export class TemplatesController {
   }
 
   @Patch(':templateId')
+  @RequirePermissions('templates.update')
   @ApiOperation({
     summary: 'Update template',
-    description: 'Update template details',
+    description: 'Update template details. Version is not auto-incremented in this stage.',
   })
+  @ApiParam({ name: 'templateId', description: 'Template UUID' })
   @ApiResponse({
     status: 200,
     description: 'Template updated successfully',
@@ -100,11 +112,13 @@ export class TemplatesController {
   }
 
   @Delete(':templateId')
+  @RequirePermissions('templates.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete template',
-    description: 'Soft delete a template',
+    description: 'Soft delete a template and all its sections and fields',
   })
+  @ApiParam({ name: 'templateId', description: 'Template UUID' })
   @ApiResponse({
     status: 204,
     description: 'Template deleted successfully',

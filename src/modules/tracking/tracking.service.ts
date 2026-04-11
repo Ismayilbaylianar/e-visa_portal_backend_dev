@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TrackApplicationDto, TrackingResponseDto } from './dto';
+import { TrackApplicationDto, TrackingResponseDto, StatusHistoryItemDto } from './dto';
 import { NotFoundException } from '@/common/exceptions';
+import { ErrorCodes } from '@/common/constants';
 
 @Injectable()
 export class TrackingService {
@@ -9,53 +10,57 @@ export class TrackingService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Search for application status using email and application code
+   *
+   * Tracking is based on applicant-level code.
+   * Email must match the applicant's email.
+   */
   async search(dto: TrackApplicationDto): Promise<TrackingResponseDto> {
+    const email = dto.email.toLowerCase().trim();
+
+    // Find applicant by email and application code
     const applicant = await this.prisma.applicationApplicant.findFirst({
       where: {
-        email: dto.email,
+        email: { equals: email, mode: 'insensitive' },
         applicationCode: dto.applicationCode,
         deletedAt: null,
       },
       include: {
-        application: {
-          include: {
-            destinationCountry: true,
-            visaType: true,
-          },
+        statusHistory: {
+          orderBy: { createdAt: 'asc' },
         },
       },
     });
 
-    if (!applicant || !applicant.application) {
-      throw new NotFoundException(
-        'Application not found. Please check your email and application code.',
-      );
+    if (!applicant) {
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'No application found with this email and application code combination',
+        },
+      ]);
     }
 
-    this.logger.log(
-      `Application tracked: ${dto.applicationCode} by ${dto.email}`,
-    );
+    // Map status history
+    const statusHistory: StatusHistoryItemDto[] = applicant.statusHistory.map(history => ({
+      oldStatus: history.oldStatus,
+      newStatus: history.newStatus,
+      note: history.note || null,
+      changedAt: history.createdAt,
+    }));
+
+    // Check if result file is available
+    const resultAvailable = !!(applicant.resultFileName && applicant.resultStorageKey);
+
+    this.logger.log(`Application tracked: ${dto.applicationCode} by ${email}`);
 
     return {
-      status: applicant.application.currentStatus,
-      applicantInfo: {
-        id: applicant.id,
-        email: applicant.email,
-        phone: applicant.phone || undefined,
-        applicationCode: applicant.applicationCode!,
-        status: applicant.status,
-        isMainApplicant: applicant.isMainApplicant,
-      },
-      destinationCountry: applicant.application.destinationCountry?.name,
-      visaType: applicant.application.visaType?.label,
-      submittedAt: applicant.application.createdAt,
-      expectedCompletionAt: applicant.application.expedited
-        ? new Date(
-            applicant.application.createdAt.getTime() + 3 * 24 * 60 * 60 * 1000,
-          )
-        : new Date(
-            applicant.application.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000,
-          ),
+      applicationCode: applicant.applicationCode!,
+      currentStatus: applicant.status,
+      statusHistory,
+      resultAvailable,
+      resultFileName: applicant.resultFileName || null,
     };
   }
 }

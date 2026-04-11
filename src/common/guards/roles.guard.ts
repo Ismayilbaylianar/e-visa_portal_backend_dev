@@ -6,7 +6,7 @@ import { ForbiddenException } from '../exceptions';
 /**
  * Roles Guard
  * Checks if user has required role(s) to access the route
- * 
+ *
  * TODO: Implement actual role checking logic
  */
 @Injectable()

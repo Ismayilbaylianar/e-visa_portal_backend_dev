@@ -1,5 +1,15 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsBoolean, IsOptional, IsInt, Min, Max, MinLength, MaxLength, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsBoolean,
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
+  MinLength,
+  MaxLength,
+  IsEnum,
+} from 'class-validator';
 import { VisaEntryType } from '@prisma/client';
 
 export class UpdateVisaTypeDto {

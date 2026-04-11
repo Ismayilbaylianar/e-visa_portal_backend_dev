@@ -51,25 +51,41 @@ const PERMISSIONS = [
   { moduleKey: 'paymentPageConfigs', actionKey: 'read', description: 'View payment page config' },
   { moduleKey: 'paymentPageConfigs', actionKey: 'update', description: 'Update payment page config' },
   
-  // Templates module (for future use)
+  // Templates module
   { moduleKey: 'templates', actionKey: 'read', description: 'View templates' },
   { moduleKey: 'templates', actionKey: 'create', description: 'Create templates' },
   { moduleKey: 'templates', actionKey: 'update', description: 'Update templates' },
   { moduleKey: 'templates', actionKey: 'delete', description: 'Delete templates' },
+  
+  // Template Bindings module
+  { moduleKey: 'templateBindings', actionKey: 'read', description: 'View template bindings and nationality fees' },
+  { moduleKey: 'templateBindings', actionKey: 'create', description: 'Create template bindings and nationality fees' },
+  { moduleKey: 'templateBindings', actionKey: 'update', description: 'Update template bindings and nationality fees' },
+  { moduleKey: 'templateBindings', actionKey: 'delete', description: 'Delete template bindings and nationality fees' },
   
   // Applications module (for future use)
   { moduleKey: 'applications', actionKey: 'read', description: 'View applications' },
   { moduleKey: 'applications', actionKey: 'update', description: 'Update application status' },
   { moduleKey: 'applications', actionKey: 'review', description: 'Review and process applications' },
   
-  // Payments module (for future use)
-  { moduleKey: 'payments', actionKey: 'read', description: 'View payments' },
+  // Payments module
+  { moduleKey: 'payments', actionKey: 'read', description: 'View payments and transactions' },
+  { moduleKey: 'payments', actionKey: 'update', description: 'Update payment status manually' },
   { moduleKey: 'payments', actionKey: 'refund', description: 'Process refunds' },
+  { moduleKey: 'payments', actionKey: 'manage', description: 'Full payment management access' },
   
-  // Audit Logs module (for future use)
+  // Notifications module
+  { moduleKey: 'notifications', actionKey: 'read', description: 'View notifications' },
+  { moduleKey: 'notifications', actionKey: 'update', description: 'Retry notifications' },
+  
+  // Jobs module
+  { moduleKey: 'jobs', actionKey: 'read', description: 'View background jobs' },
+  { moduleKey: 'jobs', actionKey: 'update', description: 'Retry or cancel jobs' },
+  
+  // Audit Logs module
   { moduleKey: 'auditLogs', actionKey: 'read', description: 'View audit logs' },
   
-  // Dashboard module (for future use)
+  // Dashboard module
   { moduleKey: 'dashboard', actionKey: 'read', description: 'View dashboard statistics' },
 ];
 
@@ -98,8 +114,11 @@ const ROLES = [
       'emailTemplates.read', 'emailTemplates.create', 'emailTemplates.update',
       'paymentPageConfigs.read', 'paymentPageConfigs.update',
       'templates.read', 'templates.create', 'templates.update',
+      'templateBindings.read', 'templateBindings.create', 'templateBindings.update',
       'applications.read', 'applications.update', 'applications.review',
-      'payments.read',
+      'payments.read', 'payments.update', 'payments.manage',
+      'notifications.read', 'notifications.update',
+      'jobs.read', 'jobs.update',
       'auditLogs.read',
       'dashboard.read',
     ],
@@ -119,8 +138,11 @@ const ROLES = [
       'emailTemplates.read',
       'paymentPageConfigs.read',
       'templates.read',
+      'templateBindings.read',
       'applications.read', 'applications.update', 'applications.review',
-      'payments.read',
+      'payments.read', 'payments.update',
+      'notifications.read',
+      'jobs.read',
       'dashboard.read',
     ],
   },

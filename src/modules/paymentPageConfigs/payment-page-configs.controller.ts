@@ -38,7 +38,9 @@ export class PaymentPageConfigsController {
     description: 'Payment page config updated successfully',
     type: PaymentPageConfigResponseDto,
   })
-  async updateConfig(@Body() dto: UpdatePaymentPageConfigDto): Promise<PaymentPageConfigResponseDto> {
+  async updateConfig(
+    @Body() dto: UpdatePaymentPageConfigDto,
+  ): Promise<PaymentPageConfigResponseDto> {
     return this.paymentPageConfigsService.updateConfig(dto);
   }
 }

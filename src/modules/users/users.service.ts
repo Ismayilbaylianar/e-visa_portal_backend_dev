@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import {
   CreateUserDto,
   UpdateUserDto,
@@ -21,6 +22,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly auditLogsService: AuditLogsService,
   ) {
     this.bcryptSaltRounds = this.configService.get<number>('app.bcrypt.saltRounds') || 12;
   }
@@ -102,7 +104,11 @@ export class UsersService {
 
     if (existingUser) {
       throw new ConflictException('Email already in use', [
-        { field: 'email', reason: ErrorCodes.CONFLICT, message: 'A user with this email already exists' },
+        {
+          field: 'email',
+          reason: ErrorCodes.CONFLICT,
+          message: 'A user with this email already exists',
+        },
       ]);
     }
 
@@ -113,7 +119,11 @@ export class UsersService {
       });
       if (!role) {
         throw new NotFoundException('Role not found', [
-          { field: 'roleId', reason: ErrorCodes.ROLE_NOT_FOUND, message: 'The specified role does not exist' },
+          {
+            field: 'roleId',
+            reason: ErrorCodes.ROLE_NOT_FOUND,
+            message: 'The specified role does not exist',
+          },
         ]);
       }
     }
@@ -133,13 +143,22 @@ export class UsersService {
     });
 
     this.logger.log(`User created: ${user.id} (${user.email})`);
+
+    // Audit log
+    await this.auditLogsService.logSystemAction('USER_CREATED', 'User', user.id, undefined, {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      roleId: user.roleId,
+    });
+
     return this.mapToResponse(user);
   }
 
   /**
    * Update user
    */
-  async update(id: string, dto: UpdateUserDto): Promise<UserResponseDto> {
+  async update(id: string, dto: UpdateUserDto, actorUserId?: string): Promise<UserResponseDto> {
     const user = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
     });
@@ -157,7 +176,11 @@ export class UsersService {
       });
       if (existingUser) {
         throw new ConflictException('Email already in use', [
-          { field: 'email', reason: ErrorCodes.CONFLICT, message: 'A user with this email already exists' },
+          {
+            field: 'email',
+            reason: ErrorCodes.CONFLICT,
+            message: 'A user with this email already exists',
+          },
         ]);
       }
     }
@@ -169,7 +192,11 @@ export class UsersService {
       });
       if (!role) {
         throw new NotFoundException('Role not found', [
-          { field: 'roleId', reason: ErrorCodes.ROLE_NOT_FOUND, message: 'The specified role does not exist' },
+          {
+            field: 'roleId',
+            reason: ErrorCodes.ROLE_NOT_FOUND,
+            message: 'The specified role does not exist',
+          },
         ]);
       }
     }
@@ -186,13 +213,30 @@ export class UsersService {
     });
 
     this.logger.log(`User updated: ${id}`);
+
+    // Audit log
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'USER_UPDATED',
+        'User',
+        id,
+        { email: user.email, fullName: user.fullName, roleId: user.roleId },
+        { email: updatedUser.email, fullName: updatedUser.fullName, roleId: updatedUser.roleId },
+      );
+    }
+
     return this.mapToResponse(updatedUser);
   }
 
   /**
    * Update user status
    */
-  async updateStatus(id: string, dto: UpdateUserStatusDto): Promise<UserResponseDto> {
+  async updateStatus(
+    id: string,
+    dto: UpdateUserStatusDto,
+    actorUserId?: string,
+  ): Promise<UserResponseDto> {
     const user = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
     });
@@ -219,13 +263,26 @@ export class UsersService {
     }
 
     this.logger.log(`User status updated: ${id} -> isActive: ${dto.isActive}`);
+
+    // Audit log
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'USER_STATUS_CHANGED',
+        'User',
+        id,
+        { isActive: user.isActive },
+        { isActive: updatedUser.isActive },
+      );
+    }
+
     return this.mapToResponse(updatedUser);
   }
 
   /**
    * Soft delete user
    */
-  async delete(id: string): Promise<void> {
+  async delete(id: string, actorUserId?: string): Promise<void> {
     const user = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
     });
@@ -249,6 +306,18 @@ export class UsersService {
     ]);
 
     this.logger.log(`User soft deleted: ${id}`);
+
+    // Audit log
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'USER_DELETED',
+        'User',
+        id,
+        { id: user.id, email: user.email, fullName: user.fullName },
+        undefined,
+      );
+    }
   }
 
   /**

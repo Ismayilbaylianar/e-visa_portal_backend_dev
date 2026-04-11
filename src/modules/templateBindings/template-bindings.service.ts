@@ -4,9 +4,11 @@ import {
   CreateTemplateBindingDto,
   UpdateTemplateBindingDto,
   TemplateBindingResponseDto,
+  TemplateBindingListItemResponseDto,
   GetTemplateBindingsQueryDto,
 } from './dto';
 import { NotFoundException, ConflictException } from '@/common/exceptions';
+import { ErrorCodes } from '@/common/constants';
 import { PaginationMeta } from '@/common/types';
 
 @Injectable()
@@ -15,16 +17,13 @@ export class TemplateBindingsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Get paginated list of template bindings (summary view)
+   */
   async findAll(
     query: GetTemplateBindingsQueryDto,
-  ): Promise<{ items: TemplateBindingResponseDto[]; pagination: PaginationMeta }> {
-    const {
-      page = 1,
-      limit = 10,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-      includeRelations = false,
-    } = query;
+  ): Promise<{ items: TemplateBindingListItemResponseDto[]; pagination: PaginationMeta }> {
+    const { page = 1, limit = 10, sortBy = 'createdAt', sortOrder = 'desc' } = query;
     const skip = (page - 1) * limit;
 
     const where = {
@@ -35,8 +34,13 @@ export class TemplateBindingsService {
       ...(query.templateId && { templateId: query.templateId }),
     };
 
-    const include = includeRelations
-      ? {
+    const [bindings, total] = await Promise.all([
+      this.prisma.templateBinding.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder },
+        include: {
           destinationCountry: {
             select: { id: true, name: true, isoCode: true },
           },
@@ -46,34 +50,19 @@ export class TemplateBindingsService {
           template: {
             select: { id: true, name: true, key: true },
           },
-          nationalityFees: {
-            where: { deletedAt: null },
+          _count: {
             select: {
-              id: true,
-              nationalityCountryId: true,
-              governmentFeeAmount: true,
-              serviceFeeAmount: true,
-              expeditedFeeAmount: true,
-              currencyCode: true,
-              expeditedEnabled: true,
-              isActive: true,
+              nationalityFees: {
+                where: { deletedAt: null },
+              },
             },
           },
-        }
-      : undefined;
-
-    const [bindings, total] = await Promise.all([
-      this.prisma.templateBinding.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { [sortBy]: sortOrder },
-        include,
+        },
       }),
       this.prisma.templateBinding.count({ where }),
     ]);
 
-    const items = bindings.map(binding => this.mapToResponse(binding, includeRelations));
+    const items = bindings.map(binding => this.mapToListItemResponse(binding));
 
     return {
       items,
@@ -86,47 +75,54 @@ export class TemplateBindingsService {
     };
   }
 
-  async findById(id: string, includeRelations = true): Promise<TemplateBindingResponseDto> {
-    const include = includeRelations
-      ? {
-          destinationCountry: {
-            select: { id: true, name: true, isoCode: true },
-          },
-          visaType: {
-            select: { id: true, label: true, purpose: true },
-          },
-          template: {
-            select: { id: true, name: true, key: true },
-          },
-          nationalityFees: {
-            where: { deletedAt: null },
-            select: {
-              id: true,
-              nationalityCountryId: true,
-              governmentFeeAmount: true,
-              serviceFeeAmount: true,
-              expeditedFeeAmount: true,
-              currencyCode: true,
-              expeditedEnabled: true,
-              isActive: true,
-            },
-          },
-        }
-      : undefined;
-
+  /**
+   * Get template binding by ID with full details including nationality fees
+   */
+  async findById(id: string): Promise<TemplateBindingResponseDto> {
     const binding = await this.prisma.templateBinding.findFirst({
       where: { id, deletedAt: null },
-      include,
+      include: {
+        destinationCountry: {
+          select: { id: true, name: true, isoCode: true },
+        },
+        visaType: {
+          select: { id: true, label: true, purpose: true },
+        },
+        template: {
+          select: { id: true, name: true, key: true },
+        },
+        nationalityFees: {
+          where: { deletedAt: null },
+          include: {
+            nationalityCountry: {
+              select: { id: true, name: true, isoCode: true },
+            },
+          },
+          orderBy: {
+            nationalityCountry: { name: 'asc' },
+          },
+        },
+      },
     });
 
     if (!binding) {
-      throw new NotFoundException('Template binding not found');
+      throw new NotFoundException('Template binding not found', [
+        {
+          reason: ErrorCodes.BINDING_NOT_FOUND,
+          message: 'Template binding does not exist or has been deleted',
+        },
+      ]);
     }
 
-    return this.mapToResponse(binding, includeRelations);
+    return this.mapToResponse(binding);
   }
 
+  /**
+   * Create a new template binding
+   * Duplicate rule: Only one active binding allowed per destinationCountryId + visaTypeId
+   */
   async create(dto: CreateTemplateBindingDto): Promise<TemplateBindingResponseDto> {
+    // Check for duplicate binding (same destination + visa type)
     const existingBinding = await this.prisma.templateBinding.findFirst({
       where: {
         destinationCountryId: dto.destinationCountryId,
@@ -136,9 +132,13 @@ export class TemplateBindingsService {
     });
 
     if (existingBinding) {
-      throw new ConflictException(
-        'A template binding already exists for this destination country and visa type combination',
-      );
+      throw new ConflictException('Template binding already exists', [
+        {
+          reason: ErrorCodes.CONFLICT,
+          message:
+            'A template binding already exists for this destination country and visa type combination',
+        },
+      ]);
     }
 
     await this.validateRelations(dto);
@@ -162,22 +162,39 @@ export class TemplateBindingsService {
         template: {
           select: { id: true, name: true, key: true },
         },
+        nationalityFees: {
+          where: { deletedAt: null },
+          include: {
+            nationalityCountry: {
+              select: { id: true, name: true, isoCode: true },
+            },
+          },
+        },
       },
     });
 
     this.logger.log(`Template binding created: ${binding.id}`);
-    return this.mapToResponse(binding, true);
+    return this.mapToResponse(binding);
   }
 
+  /**
+   * Update template binding
+   */
   async update(id: string, dto: UpdateTemplateBindingDto): Promise<TemplateBindingResponseDto> {
     const binding = await this.prisma.templateBinding.findFirst({
       where: { id, deletedAt: null },
     });
 
     if (!binding) {
-      throw new NotFoundException('Template binding not found');
+      throw new NotFoundException('Template binding not found', [
+        {
+          reason: ErrorCodes.BINDING_NOT_FOUND,
+          message: 'Template binding does not exist or has been deleted',
+        },
+      ]);
     }
 
+    // Check for duplicate if changing destination or visa type
     if (dto.destinationCountryId || dto.visaTypeId) {
       const destinationCountryId = dto.destinationCountryId || binding.destinationCountryId;
       const visaTypeId = dto.visaTypeId || binding.visaTypeId;
@@ -192,28 +209,31 @@ export class TemplateBindingsService {
       });
 
       if (existingBinding) {
-        throw new ConflictException(
-          'A template binding already exists for this destination country and visa type combination',
-        );
+        throw new ConflictException('Template binding already exists', [
+          {
+            reason: ErrorCodes.CONFLICT,
+            message:
+              'A template binding already exists for this destination country and visa type combination',
+          },
+        ]);
       }
     }
 
     await this.validateRelations(dto);
 
+    const updateData: any = {};
+    if (dto.destinationCountryId !== undefined)
+      updateData.destinationCountryId = dto.destinationCountryId;
+    if (dto.visaTypeId !== undefined) updateData.visaTypeId = dto.visaTypeId;
+    if (dto.templateId !== undefined) updateData.templateId = dto.templateId;
+    if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
+    if (dto.validFrom !== undefined)
+      updateData.validFrom = dto.validFrom ? new Date(dto.validFrom) : null;
+    if (dto.validTo !== undefined) updateData.validTo = dto.validTo ? new Date(dto.validTo) : null;
+
     const updatedBinding = await this.prisma.templateBinding.update({
       where: { id },
-      data: {
-        ...(dto.destinationCountryId && { destinationCountryId: dto.destinationCountryId }),
-        ...(dto.visaTypeId && { visaTypeId: dto.visaTypeId }),
-        ...(dto.templateId && { templateId: dto.templateId }),
-        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
-        ...(dto.validFrom !== undefined && {
-          validFrom: dto.validFrom ? new Date(dto.validFrom) : null,
-        }),
-        ...(dto.validTo !== undefined && {
-          validTo: dto.validTo ? new Date(dto.validTo) : null,
-        }),
-      },
+      data: updateData,
       include: {
         destinationCountry: {
           select: { id: true, name: true, isoCode: true },
@@ -224,28 +244,95 @@ export class TemplateBindingsService {
         template: {
           select: { id: true, name: true, key: true },
         },
+        nationalityFees: {
+          where: { deletedAt: null },
+          include: {
+            nationalityCountry: {
+              select: { id: true, name: true, isoCode: true },
+            },
+          },
+          orderBy: {
+            nationalityCountry: { name: 'asc' },
+          },
+        },
       },
     });
 
     this.logger.log(`Template binding updated: ${id}`);
-    return this.mapToResponse(updatedBinding, true);
+    return this.mapToResponse(updatedBinding);
   }
 
+  /**
+   * Soft delete template binding and all its nationality fees
+   */
   async delete(id: string): Promise<void> {
     const binding = await this.prisma.templateBinding.findFirst({
       where: { id, deletedAt: null },
     });
 
     if (!binding) {
-      throw new NotFoundException('Template binding not found');
+      throw new NotFoundException('Template binding not found', [
+        {
+          reason: ErrorCodes.BINDING_NOT_FOUND,
+          message: 'Template binding does not exist or has been deleted',
+        },
+      ]);
     }
 
-    await this.prisma.templateBinding.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
+    const now = new Date();
 
-    this.logger.log(`Template binding deleted: ${id}`);
+    await this.prisma.$transaction([
+      // Soft delete all nationality fees
+      this.prisma.bindingNationalityFee.updateMany({
+        where: { templateBindingId: id, deletedAt: null },
+        data: { deletedAt: now },
+      }),
+      // Soft delete binding
+      this.prisma.templateBinding.update({
+        where: { id },
+        data: { deletedAt: now },
+      }),
+    ]);
+
+    this.logger.log(`Template binding soft deleted: ${id}`);
+  }
+
+  /**
+   * Find active binding for public selection (with date validity check)
+   */
+  async findActiveBinding(destinationCountryId: string, visaTypeId: string): Promise<any | null> {
+    const now = new Date();
+
+    return this.prisma.templateBinding.findFirst({
+      where: {
+        destinationCountryId,
+        visaTypeId,
+        isActive: true,
+        deletedAt: null,
+        OR: [{ validFrom: null }, { validFrom: { lte: now } }],
+        AND: [
+          {
+            OR: [{ validTo: null }, { validTo: { gte: now } }],
+          },
+        ],
+      },
+      include: {
+        template: {
+          select: { id: true, name: true, key: true },
+        },
+        nationalityFees: {
+          where: {
+            isActive: true,
+            deletedAt: null,
+          },
+          include: {
+            nationalityCountry: {
+              select: { id: true, name: true, isoCode: true },
+            },
+          },
+        },
+      },
+    });
   }
 
   private async validateRelations(
@@ -256,7 +343,12 @@ export class TemplateBindingsService {
         where: { id: dto.destinationCountryId, deletedAt: null },
       });
       if (!country) {
-        throw new NotFoundException('Destination country not found');
+        throw new NotFoundException('Destination country not found', [
+          {
+            reason: ErrorCodes.COUNTRY_NOT_FOUND,
+            message: 'Destination country does not exist or has been deleted',
+          },
+        ]);
       }
     }
 
@@ -265,7 +357,12 @@ export class TemplateBindingsService {
         where: { id: dto.visaTypeId, deletedAt: null },
       });
       if (!visaType) {
-        throw new NotFoundException('Visa type not found');
+        throw new NotFoundException('Visa type not found', [
+          {
+            reason: ErrorCodes.VISA_TYPE_NOT_FOUND,
+            message: 'Visa type does not exist or has been deleted',
+          },
+        ]);
       }
     }
 
@@ -274,63 +371,103 @@ export class TemplateBindingsService {
         where: { id: dto.templateId, deletedAt: null },
       });
       if (!template) {
-        throw new NotFoundException('Template not found');
+        throw new NotFoundException('Template not found', [
+          {
+            reason: ErrorCodes.TEMPLATE_NOT_FOUND,
+            message: 'Template does not exist or has been deleted',
+          },
+        ]);
       }
     }
   }
 
-  private mapToResponse(binding: any, includeRelations = false): TemplateBindingResponseDto {
-    const response: TemplateBindingResponseDto = {
+  private mapToListItemResponse(binding: any): TemplateBindingListItemResponseDto {
+    return {
       id: binding.id,
       destinationCountryId: binding.destinationCountryId,
       visaTypeId: binding.visaTypeId,
       templateId: binding.templateId,
       isActive: binding.isActive,
-      validFrom: binding.validFrom || undefined,
-      validTo: binding.validTo || undefined,
+      validFrom: binding.validFrom || null,
+      validTo: binding.validTo || null,
+      nationalityFeesCount: binding._count?.nationalityFees ?? 0,
       createdAt: binding.createdAt,
       updatedAt: binding.updatedAt,
+      destinationCountry: binding.destinationCountry
+        ? {
+            id: binding.destinationCountry.id,
+            name: binding.destinationCountry.name,
+            isoCode: binding.destinationCountry.isoCode,
+          }
+        : undefined,
+      visaType: binding.visaType
+        ? {
+            id: binding.visaType.id,
+            label: binding.visaType.label,
+            purpose: binding.visaType.purpose,
+          }
+        : undefined,
+      template: binding.template
+        ? {
+            id: binding.template.id,
+            name: binding.template.name,
+            key: binding.template.key,
+          }
+        : undefined,
     };
+  }
 
-    if (includeRelations) {
-      if (binding.destinationCountry) {
-        response.destinationCountry = {
-          id: binding.destinationCountry.id,
-          name: binding.destinationCountry.name,
-          isoCode: binding.destinationCountry.isoCode,
-        };
-      }
-
-      if (binding.visaType) {
-        response.visaType = {
-          id: binding.visaType.id,
-          label: binding.visaType.label,
-          purpose: binding.visaType.purpose,
-        };
-      }
-
-      if (binding.template) {
-        response.template = {
-          id: binding.template.id,
-          name: binding.template.name,
-          key: binding.template.key,
-        };
-      }
-
-      if (binding.nationalityFees) {
-        response.nationalityFees = binding.nationalityFees.map((fee: any) => ({
-          id: fee.id,
-          nationalityCountryId: fee.nationalityCountryId,
-          governmentFeeAmount: fee.governmentFeeAmount.toString(),
-          serviceFeeAmount: fee.serviceFeeAmount.toString(),
-          expeditedFeeAmount: fee.expeditedFeeAmount?.toString() || undefined,
-          currencyCode: fee.currencyCode,
-          expeditedEnabled: fee.expeditedEnabled,
-          isActive: fee.isActive,
-        }));
-      }
-    }
-
-    return response;
+  private mapToResponse(binding: any): TemplateBindingResponseDto {
+    return {
+      id: binding.id,
+      destinationCountryId: binding.destinationCountryId,
+      visaTypeId: binding.visaTypeId,
+      templateId: binding.templateId,
+      isActive: binding.isActive,
+      validFrom: binding.validFrom || null,
+      validTo: binding.validTo || null,
+      createdAt: binding.createdAt,
+      updatedAt: binding.updatedAt,
+      destinationCountry: binding.destinationCountry
+        ? {
+            id: binding.destinationCountry.id,
+            name: binding.destinationCountry.name,
+            isoCode: binding.destinationCountry.isoCode,
+          }
+        : undefined,
+      visaType: binding.visaType
+        ? {
+            id: binding.visaType.id,
+            label: binding.visaType.label,
+            purpose: binding.visaType.purpose,
+          }
+        : undefined,
+      template: binding.template
+        ? {
+            id: binding.template.id,
+            name: binding.template.name,
+            key: binding.template.key,
+          }
+        : undefined,
+      nationalityFees: (binding.nationalityFees || []).map((fee: any) => ({
+        id: fee.id,
+        nationalityCountryId: fee.nationalityCountryId,
+        nationalityCountry: fee.nationalityCountry
+          ? {
+              id: fee.nationalityCountry.id,
+              name: fee.nationalityCountry.name,
+              isoCode: fee.nationalityCountry.isoCode,
+            }
+          : undefined,
+        governmentFeeAmount: fee.governmentFeeAmount.toString(),
+        serviceFeeAmount: fee.serviceFeeAmount.toString(),
+        expeditedFeeAmount: fee.expeditedFeeAmount?.toString() || null,
+        currencyCode: fee.currencyCode,
+        expeditedEnabled: fee.expeditedEnabled,
+        isActive: fee.isActive,
+        createdAt: fee.createdAt,
+        updatedAt: fee.updatedAt,
+      })),
+    };
   }
 }

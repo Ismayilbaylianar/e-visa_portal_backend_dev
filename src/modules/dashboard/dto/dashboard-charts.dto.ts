@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class StatusCountDto {
-  @ApiProperty({ example: 'PENDING' })
+  @ApiProperty({ example: 'SUBMITTED' })
   status: string;
 
   @ApiProperty({ example: 45 })
@@ -20,11 +20,19 @@ export class CountryCountDto {
 }
 
 export class MonthlyRevenueDto {
-  @ApiProperty({ example: '2024-01' })
+  @ApiProperty({ example: '2026-01' })
   month: string;
 
-  @ApiProperty({ example: 50000 })
+  @ApiProperty({ example: 50000.0 })
   revenue: number;
+}
+
+export class DailyCountDto {
+  @ApiProperty({ example: '2026-04-01' })
+  date: string;
+
+  @ApiProperty({ example: 15 })
+  count: number;
 }
 
 export class DashboardChartsDto {
@@ -35,14 +43,26 @@ export class DashboardChartsDto {
   applicationsByStatus: StatusCountDto[];
 
   @ApiProperty({
-    description: 'Applications grouped by country',
-    type: [CountryCountDto],
+    description: 'Payments grouped by status',
+    type: [StatusCountDto],
   })
-  applicationsByCountry: CountryCountDto[];
+  paymentsByStatus: StatusCountDto[];
 
   @ApiProperty({
-    description: 'Revenue grouped by month',
+    description: 'Applications grouped by destination country (top 10)',
+    type: [CountryCountDto],
+  })
+  applicationsByDestination: CountryCountDto[];
+
+  @ApiProperty({
+    description: 'Revenue grouped by month (last 6 months)',
     type: [MonthlyRevenueDto],
   })
   revenueByMonth: MonthlyRevenueDto[];
+
+  @ApiProperty({
+    description: 'Daily application counts (last 30 days)',
+    type: [DailyCountDto],
+  })
+  recentDailyApplications: DailyCountDto[];
 }

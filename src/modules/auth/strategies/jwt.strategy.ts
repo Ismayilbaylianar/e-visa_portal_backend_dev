@@ -89,19 +89,20 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     // Build permissions list
     const rolePermissions = user.role?.rolePermissions.map(rp => rp.permission.permissionKey) || [];
-    
+
     // Apply user-level permission overrides
     const userGrants = user.userPermissions
       .filter(up => up.effect === 'ALLOW')
       .map(up => up.permission.permissionKey);
-    
+
     const userDenies = user.userPermissions
       .filter(up => up.effect === 'DENY')
       .map(up => up.permission.permissionKey);
 
     // Final permissions = (role permissions + user grants) - user denies
-    const permissions = [...new Set([...rolePermissions, ...userGrants])]
-      .filter(p => !userDenies.includes(p));
+    const permissions = [...new Set([...rolePermissions, ...userGrants])].filter(
+      p => !userDenies.includes(p),
+    );
 
     return {
       id: user.id,

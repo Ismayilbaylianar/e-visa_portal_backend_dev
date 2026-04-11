@@ -105,9 +105,7 @@ export class AccessControlService {
       });
     }
 
-    return Array.from(permissionMap.values()).filter(
-      p => p.effect === PermissionEffect.ALLOW,
-    );
+    return Array.from(permissionMap.values()).filter(p => p.effect === PermissionEffect.ALLOW);
   }
 
   /**

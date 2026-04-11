@@ -7,8 +7,9 @@ import {
   Param,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { TemplateSectionsService } from './template-sections.service';
 import {
   CreateTemplateSectionDto,
@@ -16,19 +17,25 @@ import {
   TemplateSectionResponseDto,
 } from './dto';
 import { TemplateIdParamDto, SectionIdParamDto } from '@/common/dto';
+import { RequirePermissions } from '@/common/decorators';
+import { JwtAuthGuard } from '@/common/guards';
 
 @ApiTags('Template Sections - Admin')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('admin')
 export class TemplateSectionsController {
   constructor(private readonly templateSectionsService: TemplateSectionsService) {}
 
   @Post('templates/:templateId/sections')
+  @RequirePermissions('templates.update')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create template section',
-    description: 'Create a new section under a template',
+    description:
+      'Create a new section under a template. Section key must be unique within the template.',
   })
+  @ApiParam({ name: 'templateId', description: 'Template UUID' })
   @ApiResponse({
     status: 201,
     description: 'Template section created successfully',
@@ -50,10 +57,12 @@ export class TemplateSectionsController {
   }
 
   @Patch('templateSections/:sectionId')
+  @RequirePermissions('templates.update')
   @ApiOperation({
     summary: 'Update template section',
     description: 'Update template section details',
   })
+  @ApiParam({ name: 'sectionId', description: 'Section UUID' })
   @ApiResponse({
     status: 200,
     description: 'Template section updated successfully',
@@ -75,11 +84,13 @@ export class TemplateSectionsController {
   }
 
   @Delete('templateSections/:sectionId')
+  @RequirePermissions('templates.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete template section',
-    description: 'Soft delete a template section and its fields',
+    description: 'Soft delete a template section and all its fields',
   })
+  @ApiParam({ name: 'sectionId', description: 'Section UUID' })
   @ApiResponse({
     status: 204,
     description: 'Template section deleted successfully',

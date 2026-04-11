@@ -45,11 +45,7 @@ export class SessionsService {
   /**
    * Revoke a specific session
    */
-  async revokeSession(
-    userId: string,
-    sessionId: string,
-    currentSessionId: string,
-  ): Promise<void> {
+  async revokeSession(userId: string, sessionId: string, currentSessionId: string): Promise<void> {
     // Find the session
     const session = await this.prisma.session.findFirst({
       where: {

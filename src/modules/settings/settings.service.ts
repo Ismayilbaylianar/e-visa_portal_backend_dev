@@ -60,7 +60,8 @@ export class SettingsService {
       if (dto.siteName !== undefined) updateData.siteName = dto.siteName;
       if (dto.supportEmail !== undefined) updateData.supportEmail = dto.supportEmail;
       if (dto.defaultCurrency !== undefined) updateData.defaultCurrency = dto.defaultCurrency;
-      if (dto.paymentTimeoutHours !== undefined) updateData.paymentTimeoutHours = dto.paymentTimeoutHours;
+      if (dto.paymentTimeoutHours !== undefined)
+        updateData.paymentTimeoutHours = dto.paymentTimeoutHours;
       if (dto.maintenanceMode !== undefined) updateData.maintenanceMode = dto.maintenanceMode;
 
       settings = await this.prisma.setting.update({

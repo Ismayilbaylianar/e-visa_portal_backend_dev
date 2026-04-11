@@ -8,9 +8,7 @@ export class CustomerPortalService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async getMyApplications(
-    portalIdentityId: string,
-  ): Promise<MyApplicationsResponseDto> {
+  async getMyApplications(portalIdentityId: string): Promise<MyApplicationsResponseDto> {
     const applications = await this.prisma.application.findMany({
       where: {
         portalIdentityId,

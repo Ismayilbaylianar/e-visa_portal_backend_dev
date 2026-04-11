@@ -10,19 +10,13 @@ import {
   HttpStatus,
   UseGuards,
   Headers,
-  Req,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBearerAuth,
-  ApiParam,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import {
   CreatePaymentDto,
   InitializePaymentDto,
+  InitializePaymentResponseDto,
   UpdatePaymentStatusDto,
   PaymentResponseDto,
   GetPaymentsQueryDto,
@@ -30,17 +24,13 @@ import {
   PaymentCallbackDto,
 } from './dto';
 import { PaymentIdParamDto } from '@/common/dto';
-import {
-  ApiPaginatedResponse,
-  CurrentPortalIdentity,
-  CurrentUser,
-} from '@/common/decorators';
-import { PortalAuthGuard } from '@/common/guards';
+import { ApiPaginatedResponse, CurrentPortalIdentity, CurrentUser } from '@/common/decorators';
+import { PortalAuthGuard, JwtAuthGuard } from '@/common/guards';
 import { PortalIdentityUser, AuthenticatedUser } from '@/common/types';
-import { Request } from 'express';
 
 @ApiTags('Payments - Admin')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('admin/payments')
 export class PaymentsAdminController {
   constructor(private readonly paymentsService: PaymentsService) {}
@@ -48,7 +38,8 @@ export class PaymentsAdminController {
   @Get()
   @ApiOperation({
     summary: 'Get all payments',
-    description: 'Get paginated list of payments with optional filters (Admin)',
+    description:
+      'Get paginated list of payments with optional filters (Admin). Supports filtering by applicationId, paymentStatus, and paymentProviderKey.',
   })
   @ApiPaginatedResponse(PaymentResponseDto)
   async findAll(@Query() query: GetPaymentsQueryDto) {
@@ -69,9 +60,7 @@ export class PaymentsAdminController {
     status: 404,
     description: 'Payment not found',
   })
-  async findById(
-    @Param() params: PaymentIdParamDto,
-  ): Promise<PaymentResponseDto> {
+  async findById(@Param() params: PaymentIdParamDto): Promise<PaymentResponseDto> {
     return this.paymentsService.findById(params.paymentId);
   }
 
@@ -89,9 +78,7 @@ export class PaymentsAdminController {
     status: 404,
     description: 'Payment not found',
   })
-  async getTransactions(
-    @Param() params: PaymentIdParamDto,
-  ): Promise<PaymentTransactionDto[]> {
+  async getTransactions(@Param() params: PaymentIdParamDto): Promise<PaymentTransactionDto[]> {
     return this.paymentsService.getTransactions(params.paymentId);
   }
 
@@ -109,9 +96,7 @@ export class PaymentsAdminController {
     status: 404,
     description: 'Payment not found',
   })
-  async getCallbacks(
-    @Param() params: PaymentIdParamDto,
-  ): Promise<PaymentCallbackDto[]> {
+  async getCallbacks(@Param() params: PaymentIdParamDto): Promise<PaymentCallbackDto[]> {
     return this.paymentsService.getCallbacks(params.paymentId);
   }
 
@@ -179,12 +164,13 @@ export class PaymentsPortalController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Initialize payment',
-    description: 'Initialize a payment with a specific payment method (Portal)',
+    description:
+      'Initialize a payment with a specific payment method. Returns provider session ID and redirect URL for payment page.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Payment initialized successfully',
-    type: PaymentResponseDto,
+    description: 'Payment initialized successfully with redirect URL',
+    type: InitializePaymentResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -198,12 +184,8 @@ export class PaymentsPortalController {
     @Param() params: PaymentIdParamDto,
     @Body() dto: InitializePaymentDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
-  ): Promise<PaymentResponseDto> {
-    return this.paymentsService.initialize(
-      params.paymentId,
-      dto,
-      portalIdentity.id,
-    );
+  ): Promise<InitializePaymentResponseDto> {
+    return this.paymentsService.initialize(params.paymentId, dto, portalIdentity.id);
   }
 
   @Get(':paymentId')
@@ -224,10 +206,7 @@ export class PaymentsPortalController {
     @Param() params: PaymentIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<PaymentResponseDto> {
-    return this.paymentsService.findByIdForPortal(
-      params.paymentId,
-      portalIdentity.id,
-    );
+    return this.paymentsService.findByIdForPortal(params.paymentId, portalIdentity.id);
   }
 }
 
@@ -240,20 +219,33 @@ export class PaymentsPublicController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Handle payment callback',
-    description: 'Receive and process payment provider callbacks (Public)',
+    description: `Receive and process payment provider callbacks (Public, no auth required).
+    
+**Behavior:**
+- Stores raw callback data (headers and payload)
+- Attempts to match payment by paymentReference or providerPaymentId
+- Validates callback signature if provider supports it
+- Updates payment status based on callback content
+- Creates transaction record for audit
+
+**Mock Provider:**
+- Accepts any callback with paymentReference field
+- Maps status field to internal payment status
+- No signature validation (marked as NOT_APPLICABLE)`,
   })
   @ApiParam({
     name: 'providerKey',
-    description: 'Payment provider key (e.g., stripe, paypal)',
-    example: 'stripe',
+    description: 'Payment provider key (e.g., mockProvider, stripe, paypal)',
+    example: 'mockProvider',
   })
   @ApiResponse({
     status: 200,
-    description: 'Callback received',
+    description: 'Callback received and processed',
     schema: {
       type: 'object',
       properties: {
         received: { type: 'boolean', example: true },
+        callbackId: { type: 'string', example: '550e8400-e29b-41d4-a716-446655440000' },
       },
     },
   })
@@ -261,7 +253,7 @@ export class PaymentsPublicController {
     @Param('providerKey') providerKey: string,
     @Headers() headers: Record<string, string>,
     @Body() payload: any,
-  ): Promise<{ received: boolean }> {
+  ): Promise<{ received: boolean; callbackId: string }> {
     return this.paymentsService.handleCallback(providerKey, headers, payload);
   }
 }

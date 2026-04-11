@@ -6,6 +6,7 @@ import {
   BindingNationalityFeeResponseDto,
 } from './dto';
 import { NotFoundException, ConflictException } from '@/common/exceptions';
+import { ErrorCodes } from '@/common/constants';
 import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
@@ -14,6 +15,10 @@ export class BindingNationalityFeesService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Create a new nationality fee for a template binding
+   * Nationality must be unique within the binding
+   */
   async create(
     bindingId: string,
     dto: CreateBindingNationalityFeeDto,
@@ -23,9 +28,15 @@ export class BindingNationalityFeesService {
     });
 
     if (!binding) {
-      throw new NotFoundException('Template binding not found');
+      throw new NotFoundException('Template binding not found', [
+        {
+          reason: ErrorCodes.BINDING_NOT_FOUND,
+          message: 'Template binding does not exist or has been deleted',
+        },
+      ]);
     }
 
+    // Check for duplicate nationality within binding
     const existingFee = await this.prisma.bindingNationalityFee.findFirst({
       where: {
         templateBindingId: bindingId,
@@ -35,17 +46,27 @@ export class BindingNationalityFeesService {
     });
 
     if (existingFee) {
-      throw new ConflictException(
-        'A fee already exists for this nationality in this binding',
-      );
+      throw new ConflictException('Nationality fee already exists', [
+        {
+          field: 'nationalityCountryId',
+          reason: ErrorCodes.CONFLICT,
+          message: 'A fee already exists for this nationality in this binding',
+        },
+      ]);
     }
 
+    // Validate nationality country exists
     const nationalityCountry = await this.prisma.country.findFirst({
       where: { id: dto.nationalityCountryId, deletedAt: null },
     });
 
     if (!nationalityCountry) {
-      throw new NotFoundException('Nationality country not found');
+      throw new NotFoundException('Nationality country not found', [
+        {
+          reason: ErrorCodes.COUNTRY_NOT_FOUND,
+          message: 'Nationality country does not exist or has been deleted',
+        },
+      ]);
     }
 
     const fee = await this.prisma.bindingNationalityFee.create({
@@ -54,10 +75,8 @@ export class BindingNationalityFeesService {
         nationalityCountryId: dto.nationalityCountryId,
         governmentFeeAmount: new Decimal(dto.governmentFeeAmount),
         serviceFeeAmount: new Decimal(dto.serviceFeeAmount),
-        expeditedFeeAmount: dto.expeditedFeeAmount
-          ? new Decimal(dto.expeditedFeeAmount)
-          : null,
-        currencyCode: dto.currencyCode,
+        expeditedFeeAmount: dto.expeditedFeeAmount ? new Decimal(dto.expeditedFeeAmount) : null,
+        currencyCode: dto.currencyCode.toUpperCase(),
         expeditedEnabled: dto.expeditedEnabled ?? false,
         isActive: dto.isActive ?? true,
       },
@@ -68,10 +87,13 @@ export class BindingNationalityFeesService {
       },
     });
 
-    this.logger.log(`Binding nationality fee created: ${fee.id}`);
+    this.logger.log(`Binding nationality fee created: ${fee.id} for binding: ${bindingId}`);
     return this.mapToResponse(fee);
   }
 
+  /**
+   * Update nationality fee
+   */
   async update(
     feeId: string,
     dto: UpdateBindingNationalityFeeDto,
@@ -81,9 +103,15 @@ export class BindingNationalityFeesService {
     });
 
     if (!fee) {
-      throw new NotFoundException('Binding nationality fee not found');
+      throw new NotFoundException('Binding nationality fee not found', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Nationality fee does not exist or has been deleted',
+        },
+      ]);
     }
 
+    // Check for duplicate if changing nationality
     if (dto.nationalityCountryId && dto.nationalityCountryId !== fee.nationalityCountryId) {
       const existingFee = await this.prisma.bindingNationalityFee.findFirst({
         where: {
@@ -95,9 +123,13 @@ export class BindingNationalityFeesService {
       });
 
       if (existingFee) {
-        throw new ConflictException(
-          'A fee already exists for this nationality in this binding',
-        );
+        throw new ConflictException('Nationality fee already exists', [
+          {
+            field: 'nationalityCountryId',
+            reason: ErrorCodes.CONFLICT,
+            message: 'A fee already exists for this nationality in this binding',
+          },
+        ]);
       }
 
       const nationalityCountry = await this.prisma.country.findFirst({
@@ -105,33 +137,34 @@ export class BindingNationalityFeesService {
       });
 
       if (!nationalityCountry) {
-        throw new NotFoundException('Nationality country not found');
+        throw new NotFoundException('Nationality country not found', [
+          {
+            reason: ErrorCodes.COUNTRY_NOT_FOUND,
+            message: 'Nationality country does not exist or has been deleted',
+          },
+        ]);
       }
     }
 
+    const updateData: any = {};
+    if (dto.nationalityCountryId !== undefined)
+      updateData.nationalityCountryId = dto.nationalityCountryId;
+    if (dto.governmentFeeAmount !== undefined)
+      updateData.governmentFeeAmount = new Decimal(dto.governmentFeeAmount);
+    if (dto.serviceFeeAmount !== undefined)
+      updateData.serviceFeeAmount = new Decimal(dto.serviceFeeAmount);
+    if (dto.expeditedFeeAmount !== undefined) {
+      updateData.expeditedFeeAmount = dto.expeditedFeeAmount
+        ? new Decimal(dto.expeditedFeeAmount)
+        : null;
+    }
+    if (dto.currencyCode !== undefined) updateData.currencyCode = dto.currencyCode.toUpperCase();
+    if (dto.expeditedEnabled !== undefined) updateData.expeditedEnabled = dto.expeditedEnabled;
+    if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
+
     const updatedFee = await this.prisma.bindingNationalityFee.update({
       where: { id: feeId },
-      data: {
-        ...(dto.nationalityCountryId && {
-          nationalityCountryId: dto.nationalityCountryId,
-        }),
-        ...(dto.governmentFeeAmount !== undefined && {
-          governmentFeeAmount: new Decimal(dto.governmentFeeAmount),
-        }),
-        ...(dto.serviceFeeAmount !== undefined && {
-          serviceFeeAmount: new Decimal(dto.serviceFeeAmount),
-        }),
-        ...(dto.expeditedFeeAmount !== undefined && {
-          expeditedFeeAmount: dto.expeditedFeeAmount
-            ? new Decimal(dto.expeditedFeeAmount)
-            : null,
-        }),
-        ...(dto.currencyCode && { currencyCode: dto.currencyCode }),
-        ...(dto.expeditedEnabled !== undefined && {
-          expeditedEnabled: dto.expeditedEnabled,
-        }),
-        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
-      },
+      data: updateData,
       include: {
         nationalityCountry: {
           select: { id: true, name: true, isoCode: true },
@@ -143,13 +176,21 @@ export class BindingNationalityFeesService {
     return this.mapToResponse(updatedFee);
   }
 
+  /**
+   * Soft delete nationality fee
+   */
   async delete(feeId: string): Promise<void> {
     const fee = await this.prisma.bindingNationalityFee.findFirst({
       where: { id: feeId, deletedAt: null },
     });
 
     if (!fee) {
-      throw new NotFoundException('Binding nationality fee not found');
+      throw new NotFoundException('Binding nationality fee not found', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Nationality fee does not exist or has been deleted',
+        },
+      ]);
     }
 
     await this.prisma.bindingNationalityFee.update({
@@ -157,32 +198,29 @@ export class BindingNationalityFeesService {
       data: { deletedAt: new Date() },
     });
 
-    this.logger.log(`Binding nationality fee deleted: ${feeId}`);
+    this.logger.log(`Binding nationality fee soft deleted: ${feeId}`);
   }
 
   private mapToResponse(fee: any): BindingNationalityFeeResponseDto {
-    const response: BindingNationalityFeeResponseDto = {
+    return {
       id: fee.id,
       templateBindingId: fee.templateBindingId,
       nationalityCountryId: fee.nationalityCountryId,
+      nationalityCountry: fee.nationalityCountry
+        ? {
+            id: fee.nationalityCountry.id,
+            name: fee.nationalityCountry.name,
+            isoCode: fee.nationalityCountry.isoCode,
+          }
+        : undefined,
       governmentFeeAmount: fee.governmentFeeAmount.toString(),
       serviceFeeAmount: fee.serviceFeeAmount.toString(),
-      expeditedFeeAmount: fee.expeditedFeeAmount?.toString() || undefined,
+      expeditedFeeAmount: fee.expeditedFeeAmount?.toString() || null,
       currencyCode: fee.currencyCode,
       expeditedEnabled: fee.expeditedEnabled,
       isActive: fee.isActive,
       createdAt: fee.createdAt,
       updatedAt: fee.updatedAt,
     };
-
-    if (fee.nationalityCountry) {
-      response.nationalityCountry = {
-        id: fee.nationalityCountry.id,
-        name: fee.nationalityCountry.name,
-        isoCode: fee.nationalityCountry.isoCode,
-      };
-    }
-
-    return response;
   }
 }

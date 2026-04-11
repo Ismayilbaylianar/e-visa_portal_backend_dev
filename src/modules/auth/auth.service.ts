@@ -30,18 +30,18 @@ export class AuthService {
   ) {
     this.accessSecret = this.configService.get<string>('app.jwt.accessSecret')!;
     this.refreshSecret = this.configService.get<string>('app.jwt.refreshSecret')!;
-    this.accessExpirationSeconds = this.configService.get<number>('app.jwt.accessExpirationSeconds')!;
-    this.refreshExpirationSeconds = this.configService.get<number>('app.jwt.refreshExpirationSeconds')!;
+    this.accessExpirationSeconds = this.configService.get<number>(
+      'app.jwt.accessExpirationSeconds',
+    )!;
+    this.refreshExpirationSeconds = this.configService.get<number>(
+      'app.jwt.refreshExpirationSeconds',
+    )!;
   }
 
   /**
    * Authenticate user with email and password
    */
-  async login(
-    dto: LoginDto,
-    ipAddress?: string,
-    userAgent?: string,
-  ): Promise<LoginResponseDto> {
+  async login(dto: LoginDto, ipAddress?: string, userAgent?: string): Promise<LoginResponseDto> {
     this.logger.debug(`Login attempt for email: ${dto.email}`);
 
     // Find user by email (including soft-deleted check)
@@ -66,7 +66,10 @@ export class AuthService {
     if (!user.isActive) {
       this.logger.warn(`Login failed: user ${user.id} is inactive`);
       throw new ForbiddenException('Account is inactive', [
-        { reason: ErrorCodes.ACCOUNT_INACTIVE, message: 'Your account has been deactivated. Please contact administrator.' },
+        {
+          reason: ErrorCodes.ACCOUNT_INACTIVE,
+          message: 'Your account has been deactivated. Please contact administrator.',
+        },
       ]);
     }
 
@@ -81,7 +84,13 @@ export class AuthService {
 
     // Create session
     const sessionId = crypto.randomUUID();
-    const refreshToken = this.generateRefreshToken(user.id, user.email, user.roleId, user.role?.key, sessionId);
+    const refreshToken = this.generateRefreshToken(
+      user.id,
+      user.email,
+      user.roleId,
+      user.role?.key,
+      sessionId,
+    );
     const refreshTokenHash = await this.hashToken(refreshToken);
 
     const expiresAt = new Date(Date.now() + this.refreshExpirationSeconds * 1000);
@@ -99,7 +108,13 @@ export class AuthService {
     });
 
     // Generate access token
-    const accessToken = this.generateAccessToken(user.id, user.email, user.roleId, user.role?.key, sessionId);
+    const accessToken = this.generateAccessToken(
+      user.id,
+      user.email,
+      user.roleId,
+      user.role?.key,
+      sessionId,
+    );
 
     // Update last login
     await this.prisma.user.update({

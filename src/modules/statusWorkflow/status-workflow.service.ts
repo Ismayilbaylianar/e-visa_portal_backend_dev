@@ -8,22 +8,29 @@ type StatusType = ApplicationStatus | ApplicantStatus | PaymentStatus;
 export class StatusWorkflowService {
   private readonly logger = new Logger(StatusWorkflowService.name);
 
-  private readonly applicationStatusTransitions: Map<ApplicationStatus, ApplicationStatus[]> = new Map([
-    [ApplicationStatus.DRAFT, [ApplicationStatus.UNPAID, ApplicationStatus.CANCELLED]],
-    [ApplicationStatus.UNPAID, [ApplicationStatus.SUBMITTED, ApplicationStatus.CANCELLED]],
-    [ApplicationStatus.SUBMITTED, [ApplicationStatus.IN_REVIEW, ApplicationStatus.CANCELLED]],
-    [ApplicationStatus.IN_REVIEW, [ApplicationStatus.NEED_DOCS, ApplicationStatus.APPROVED, ApplicationStatus.REJECTED]],
-    [ApplicationStatus.NEED_DOCS, [ApplicationStatus.IN_REVIEW, ApplicationStatus.CANCELLED]],
-    [ApplicationStatus.APPROVED, [ApplicationStatus.READY_TO_DOWNLOAD]],
-    [ApplicationStatus.REJECTED, []],
-    [ApplicationStatus.READY_TO_DOWNLOAD, []],
-    [ApplicationStatus.CANCELLED, []],
-  ]);
+  private readonly applicationStatusTransitions: Map<ApplicationStatus, ApplicationStatus[]> =
+    new Map([
+      [ApplicationStatus.DRAFT, [ApplicationStatus.UNPAID, ApplicationStatus.CANCELLED]],
+      [ApplicationStatus.UNPAID, [ApplicationStatus.SUBMITTED, ApplicationStatus.CANCELLED]],
+      [ApplicationStatus.SUBMITTED, [ApplicationStatus.IN_REVIEW, ApplicationStatus.CANCELLED]],
+      [
+        ApplicationStatus.IN_REVIEW,
+        [ApplicationStatus.NEED_DOCS, ApplicationStatus.APPROVED, ApplicationStatus.REJECTED],
+      ],
+      [ApplicationStatus.NEED_DOCS, [ApplicationStatus.IN_REVIEW, ApplicationStatus.CANCELLED]],
+      [ApplicationStatus.APPROVED, [ApplicationStatus.READY_TO_DOWNLOAD]],
+      [ApplicationStatus.REJECTED, []],
+      [ApplicationStatus.READY_TO_DOWNLOAD, []],
+      [ApplicationStatus.CANCELLED, []],
+    ]);
 
   private readonly applicantStatusTransitions: Map<ApplicantStatus, ApplicantStatus[]> = new Map([
     [ApplicantStatus.DRAFT, [ApplicantStatus.SUBMITTED]],
     [ApplicantStatus.SUBMITTED, [ApplicantStatus.IN_REVIEW]],
-    [ApplicantStatus.IN_REVIEW, [ApplicantStatus.NEED_DOCS, ApplicantStatus.APPROVED, ApplicantStatus.REJECTED]],
+    [
+      ApplicantStatus.IN_REVIEW,
+      [ApplicantStatus.NEED_DOCS, ApplicantStatus.APPROVED, ApplicantStatus.REJECTED],
+    ],
     [ApplicantStatus.NEED_DOCS, [ApplicantStatus.IN_REVIEW]],
     [ApplicantStatus.APPROVED, [ApplicantStatus.READY_TO_DOWNLOAD]],
     [ApplicantStatus.REJECTED, []],
@@ -31,7 +38,10 @@ export class StatusWorkflowService {
   ]);
 
   private readonly paymentStatusTransitions: Map<PaymentStatus, PaymentStatus[]> = new Map([
-    [PaymentStatus.PENDING, [PaymentStatus.PAID, PaymentStatus.FAILED, PaymentStatus.EXPIRED, PaymentStatus.CANCELLED]],
+    [
+      PaymentStatus.PENDING,
+      [PaymentStatus.PAID, PaymentStatus.FAILED, PaymentStatus.EXPIRED, PaymentStatus.CANCELLED],
+    ],
     [PaymentStatus.PAID, [PaymentStatus.REFUNDED]],
     [PaymentStatus.FAILED, [PaymentStatus.PENDING]],
     [PaymentStatus.EXPIRED, []],
@@ -39,7 +49,10 @@ export class StatusWorkflowService {
     [PaymentStatus.REFUNDED, []],
   ]);
 
-  validateApplicationTransition(currentStatus: ApplicationStatus, newStatus: ApplicationStatus): boolean {
+  validateApplicationTransition(
+    currentStatus: ApplicationStatus,
+    newStatus: ApplicationStatus,
+  ): boolean {
     return this.validateTransition(currentStatus, newStatus, this.applicationStatusTransitions);
   }
 
@@ -63,7 +76,10 @@ export class StatusWorkflowService {
     return allowedTransitions.includes(newStatus);
   }
 
-  assertApplicationTransition(currentStatus: ApplicationStatus, newStatus: ApplicationStatus): void {
+  assertApplicationTransition(
+    currentStatus: ApplicationStatus,
+    newStatus: ApplicationStatus,
+  ): void {
     if (!this.validateApplicationTransition(currentStatus, newStatus)) {
       throw new BadRequestException(
         `Invalid status transition from ${currentStatus} to ${newStatus}`,

@@ -6,11 +6,8 @@ import {
   ApplicationResponseDto,
   GetApplicationsQueryDto,
 } from './dto';
-import {
-  NotFoundException,
-  BadRequestException,
-  ForbiddenException,
-} from '@/common/exceptions';
+import { NotFoundException, BadRequestException, ForbiddenException } from '@/common/exceptions';
+import { ErrorCodes } from '@/common/constants';
 import { PaginationMeta } from '@/common/types';
 import { ApplicationStatus, PaymentStatus } from '@/common/enums';
 import { randomBytes } from 'crypto';
@@ -103,24 +100,26 @@ export class ApplicationsService {
         template: true,
         applicants: {
           where: { deletedAt: null },
-          orderBy: { createdAt: 'asc' },
+          orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
         },
       },
     });
 
     if (!application) {
-      throw new NotFoundException('Application not found');
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_FOUND,
+          message: 'Application does not exist or has been deleted',
+        },
+      ]);
     }
 
     return this.mapToResponse(application);
   }
 
-  async findByIdForPortal(
-    id: string,
-    portalIdentityId: string,
-  ): Promise<ApplicationResponseDto> {
+  async findByIdForPortal(id: string, portalIdentityId: string): Promise<ApplicationResponseDto> {
     const application = await this.prisma.application.findFirst({
-      where: { id, portalIdentityId, deletedAt: null },
+      where: { id, deletedAt: null },
       include: {
         portalIdentity: true,
         nationalityCountry: true,
@@ -129,13 +128,25 @@ export class ApplicationsService {
         template: true,
         applicants: {
           where: { deletedAt: null },
-          orderBy: { createdAt: 'asc' },
+          orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
         },
       },
     });
 
     if (!application) {
-      throw new NotFoundException('Application not found');
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_FOUND,
+          message: 'Application does not exist or has been deleted',
+        },
+      ]);
+    }
+
+    // Check ownership
+    if (application.portalIdentityId !== portalIdentityId) {
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this application' },
+      ]);
     }
 
     return this.mapToResponse(application);
@@ -145,12 +156,17 @@ export class ApplicationsService {
     dto: CreateApplicationDto,
     portalIdentityId: string,
   ): Promise<ApplicationResponseDto> {
+    const now = new Date();
+
+    // Find active binding with date validity check
     const templateBinding = await this.prisma.templateBinding.findFirst({
       where: {
+        id: dto.templateBindingId,
         destinationCountryId: dto.destinationCountryId,
         visaTypeId: dto.visaTypeId,
         isActive: true,
         deletedAt: null,
+        OR: [{ validFrom: null }, { validFrom: { lte: now } }],
       },
       include: {
         template: true,
@@ -165,16 +181,32 @@ export class ApplicationsService {
     });
 
     if (!templateBinding) {
-      throw new BadRequestException(
-        'No active template binding found for this destination and visa type combination',
-      );
+      throw new NotFoundException('No valid binding found', [
+        {
+          reason: ErrorCodes.BINDING_NOT_FOUND,
+          message: 'No active template binding found for this combination',
+        },
+      ]);
+    }
+
+    // Check validTo date
+    if (templateBinding.validTo && templateBinding.validTo < now) {
+      throw new NotFoundException('Binding has expired', [
+        {
+          reason: ErrorCodes.BINDING_NOT_FOUND,
+          message: 'The template binding is no longer valid',
+        },
+      ]);
     }
 
     const nationalityFee = templateBinding.nationalityFees[0];
     if (!nationalityFee) {
-      throw new BadRequestException(
-        'No fee configuration found for this nationality',
-      );
+      throw new NotFoundException('No fee configuration found', [
+        {
+          reason: ErrorCodes.BINDING_NOT_FOUND,
+          message: 'No fee configuration found for this nationality',
+        },
+      ]);
     }
 
     const governmentFee = Number(nationalityFee.governmentFeeAmount);
@@ -234,7 +266,7 @@ export class ApplicationsService {
     portalIdentityId: string,
   ): Promise<ApplicationResponseDto> {
     const application = await this.prisma.application.findFirst({
-      where: { id, portalIdentityId, deletedAt: null },
+      where: { id, deletedAt: null },
       include: {
         templateBinding: {
           include: {
@@ -247,13 +279,29 @@ export class ApplicationsService {
     });
 
     if (!application) {
-      throw new NotFoundException('Application not found');
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_FOUND,
+          message: 'Application does not exist or has been deleted',
+        },
+      ]);
     }
 
+    // Check ownership
+    if (application.portalIdentityId !== portalIdentityId) {
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this application' },
+      ]);
+    }
+
+    // Check if editable (only DRAFT status)
     if (application.currentStatus !== ApplicationStatus.DRAFT) {
-      throw new BadRequestException(
-        'Only draft applications can be updated',
-      );
+      throw new BadRequestException('Application is not editable', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_EDITABLE,
+          message: 'Only draft applications can be updated',
+        },
+      ]);
     }
 
     let totalFeeAmount = Number(application.totalFeeAmount);
@@ -298,12 +346,9 @@ export class ApplicationsService {
     return this.mapToResponse(updatedApplication);
   }
 
-  async submitForReview(
-    id: string,
-    portalIdentityId: string,
-  ): Promise<ApplicationResponseDto> {
+  async submitForReview(id: string, portalIdentityId: string): Promise<ApplicationResponseDto> {
     const application = await this.prisma.application.findFirst({
-      where: { id, portalIdentityId, deletedAt: null },
+      where: { id, deletedAt: null },
       include: {
         applicants: {
           where: { deletedAt: null },
@@ -312,19 +357,37 @@ export class ApplicationsService {
     });
 
     if (!application) {
-      throw new NotFoundException('Application not found');
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_FOUND,
+          message: 'Application does not exist or has been deleted',
+        },
+      ]);
+    }
+
+    // Check ownership
+    if (application.portalIdentityId !== portalIdentityId) {
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this application' },
+      ]);
     }
 
     if (application.currentStatus !== ApplicationStatus.DRAFT) {
-      throw new BadRequestException(
-        'Only draft applications can be submitted for review',
-      );
+      throw new BadRequestException('Application cannot be submitted for review', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_EDITABLE,
+          message: 'Only draft applications can be submitted for review',
+        },
+      ]);
     }
 
     if (application.applicants.length === 0) {
-      throw new BadRequestException(
-        'Application must have at least one applicant',
-      );
+      throw new BadRequestException('At least one applicant required', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: 'Application must have at least one applicant before submitting',
+        },
+      ]);
     }
 
     const oldStatus = application.currentStatus;
@@ -363,28 +426,63 @@ export class ApplicationsService {
     return this.mapToResponse(updatedApplication);
   }
 
-  async submit(
-    id: string,
-    portalIdentityId: string,
-  ): Promise<ApplicationResponseDto> {
+  /**
+   * Submit application for processing
+   *
+   * Current stage behavior:
+   * - Payment is not implemented yet, so we allow submission from UNPAID status
+   * - In production, this should require PaymentStatus.PAID
+   * - This is a temporary behavior documented in README
+   */
+  async submit(id: string, portalIdentityId: string): Promise<ApplicationResponseDto> {
     const application = await this.prisma.application.findFirst({
-      where: { id, portalIdentityId, deletedAt: null },
+      where: { id, deletedAt: null },
+      include: {
+        applicants: {
+          where: { deletedAt: null },
+        },
+      },
     });
 
     if (!application) {
-      throw new NotFoundException('Application not found');
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_FOUND,
+          message: 'Application does not exist or has been deleted',
+        },
+      ]);
     }
 
-    if (application.paymentStatus !== PaymentStatus.PAID) {
-      throw new BadRequestException(
-        'Payment must be completed before submitting the application',
-      );
+    // Check ownership
+    if (application.portalIdentityId !== portalIdentityId) {
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this application' },
+      ]);
     }
 
-    if (application.currentStatus !== ApplicationStatus.UNPAID) {
-      throw new BadRequestException(
-        'Application is not in the correct state for submission',
-      );
+    // Check at least one applicant
+    if (application.applicants.length === 0) {
+      throw new BadRequestException('At least one applicant required', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: 'Application must have at least one applicant before submitting',
+        },
+      ]);
+    }
+
+    // Temporary behavior: Allow submission from UNPAID status (payment not implemented yet)
+    // In production, this should check: application.paymentStatus === PaymentStatus.PAID
+    const allowedStatuses: ApplicationStatus[] = [
+      ApplicationStatus.UNPAID,
+      ApplicationStatus.DRAFT,
+    ];
+    if (!allowedStatuses.includes(application.currentStatus as ApplicationStatus)) {
+      throw new BadRequestException('Application cannot be submitted', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_EDITABLE,
+          message: 'Application is not in a submittable state',
+        },
+      ]);
     }
 
     const oldStatus = application.currentStatus;
@@ -422,7 +520,14 @@ export class ApplicationsService {
     return this.mapToResponse(updatedApplication);
   }
 
-  async getByResumeToken(resumeToken: string): Promise<ApplicationResponseDto> {
+  /**
+   * Get application by resume token
+   * Used to resume an incomplete application
+   */
+  async getByResumeToken(
+    resumeToken: string,
+    portalIdentityId: string,
+  ): Promise<ApplicationResponseDto> {
     const application = await this.prisma.application.findFirst({
       where: { resumeToken, deletedAt: null },
       include: {
@@ -433,13 +538,25 @@ export class ApplicationsService {
         template: true,
         applicants: {
           where: { deletedAt: null },
-          orderBy: { createdAt: 'asc' },
+          orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
         },
       },
     });
 
     if (!application) {
-      throw new NotFoundException('Application not found');
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_FOUND,
+          message: 'No application found with this resume token',
+        },
+      ]);
+    }
+
+    // Check ownership
+    if (application.portalIdentityId !== portalIdentityId) {
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this application' },
+      ]);
     }
 
     return this.mapToResponse(application);

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsOptional, IsUrl } from 'class-validator';
 
 export class InitializePaymentDto {
   @ApiProperty({
@@ -9,4 +9,20 @@ export class InitializePaymentDto {
   @IsString()
   @IsNotEmpty()
   paymentMethodKey: string;
+
+  @ApiPropertyOptional({
+    description: 'URL to redirect after successful payment',
+    example: 'https://example.com/payment/success',
+  })
+  @IsOptional()
+  @IsUrl()
+  returnUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'URL to redirect after cancelled payment',
+    example: 'https://example.com/payment/cancel',
+  })
+  @IsOptional()
+  @IsUrl()
+  cancelUrl?: string;
 }

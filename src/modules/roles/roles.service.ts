@@ -97,7 +97,11 @@ export class RolesService {
 
     if (existingByKey) {
       throw new ConflictException('Role key already exists', [
-        { field: 'key', reason: ErrorCodes.CONFLICT, message: 'A role with this key already exists' },
+        {
+          field: 'key',
+          reason: ErrorCodes.CONFLICT,
+          message: 'A role with this key already exists',
+        },
       ]);
     }
 
@@ -108,7 +112,11 @@ export class RolesService {
 
     if (existingByName) {
       throw new ConflictException('Role name already exists', [
-        { field: 'name', reason: ErrorCodes.CONFLICT, message: 'A role with this name already exists' },
+        {
+          field: 'name',
+          reason: ErrorCodes.CONFLICT,
+          message: 'A role with this name already exists',
+        },
       ]);
     }
 
@@ -151,7 +159,11 @@ export class RolesService {
       });
       if (existingByKey) {
         throw new ConflictException('Role key already exists', [
-          { field: 'key', reason: ErrorCodes.CONFLICT, message: 'A role with this key already exists' },
+          {
+            field: 'key',
+            reason: ErrorCodes.CONFLICT,
+            message: 'A role with this key already exists',
+          },
         ]);
       }
     }
@@ -163,7 +175,11 @@ export class RolesService {
       });
       if (existingByName) {
         throw new ConflictException('Role name already exists', [
-          { field: 'name', reason: ErrorCodes.CONFLICT, message: 'A role with this name already exists' },
+          {
+            field: 'name',
+            reason: ErrorCodes.CONFLICT,
+            message: 'A role with this name already exists',
+          },
         ]);
       }
     }

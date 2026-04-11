@@ -1,20 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { DocumentReviewStatus } from '@/common/enums';
+
+export enum ReviewStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  NEEDS_REUPLOAD = 'NEEDS_REUPLOAD',
+}
 
 export class ReviewDocumentDto {
   @ApiProperty({
     description: 'Review status for the document',
-    enum: DocumentReviewStatus,
-    example: DocumentReviewStatus.APPROVED,
+    enum: ReviewStatus,
+    example: 'APPROVED',
   })
   @IsNotEmpty()
-  @IsEnum(DocumentReviewStatus)
-  reviewStatus: DocumentReviewStatus;
+  @IsEnum(ReviewStatus)
+  reviewStatus: ReviewStatus;
 
   @ApiPropertyOptional({
     description: 'Optional note explaining the review decision',
-    example: 'Document is clear and valid',
+    example: 'Document is valid',
   })
   @IsOptional()
   @IsString()

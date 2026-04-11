@@ -12,8 +12,7 @@ export class TrackingController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Track application status',
-    description:
-      'Search for an application using email and application code to check its status',
+    description: 'Search for an application using email and application code to check its status',
   })
   @ApiResponse({
     status: 200,

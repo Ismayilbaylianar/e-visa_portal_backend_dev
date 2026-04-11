@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-class NationalityCountryBasicResponseDto {
+export class NationalityCountryBasicResponseDto {
   @ApiProperty({
     description: 'Country ID',
     example: '550e8400-e29b-41d4-a716-446655440000',
@@ -9,13 +9,13 @@ class NationalityCountryBasicResponseDto {
 
   @ApiProperty({
     description: 'Country name',
-    example: 'United States',
+    example: 'Azerbaijan',
   })
   name: string;
 
   @ApiProperty({
     description: 'Country ISO code',
-    example: 'US',
+    example: 'AZ',
   })
   isoCode: string;
 }
@@ -39,26 +39,32 @@ export class BindingNationalityFeeResponseDto {
   })
   nationalityCountryId: string;
 
+  @ApiPropertyOptional({
+    description: 'Nationality country details',
+    type: NationalityCountryBasicResponseDto,
+  })
+  nationalityCountry?: NationalityCountryBasicResponseDto;
+
   @ApiProperty({
-    description: 'Government fee amount',
-    example: '50.00',
+    description: 'Government fee amount (decimal string)',
+    example: '20.00',
   })
   governmentFeeAmount: string;
 
   @ApiProperty({
-    description: 'Service fee amount',
-    example: '25.00',
+    description: 'Service fee amount (decimal string)',
+    example: '10.00',
   })
   serviceFeeAmount: string;
 
   @ApiPropertyOptional({
-    description: 'Expedited fee amount',
-    example: '30.00',
+    description: 'Expedited fee amount (null if expedited not enabled)',
+    example: '15.00',
   })
-  expeditedFeeAmount?: string;
+  expeditedFeeAmount?: string | null;
 
   @ApiProperty({
-    description: 'Currency code',
+    description: 'Currency code (ISO 4217)',
     example: 'USD',
   })
   currencyCode: string;
@@ -75,19 +81,9 @@ export class BindingNationalityFeeResponseDto {
   })
   isActive: boolean;
 
-  @ApiProperty({
-    description: 'Creation timestamp',
-  })
+  @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
 
-  @ApiProperty({
-    description: 'Last update timestamp',
-  })
+  @ApiProperty({ description: 'Last update timestamp' })
   updatedAt: Date;
-
-  @ApiPropertyOptional({
-    description: 'Nationality country details',
-    type: NationalityCountryBasicResponseDto,
-  })
-  nationalityCountry?: NationalityCountryBasicResponseDto;
 }

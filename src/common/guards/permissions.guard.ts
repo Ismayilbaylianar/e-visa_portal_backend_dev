@@ -28,7 +28,10 @@ export class PermissionsGuard implements CanActivate {
 
     if (!user.permissions || user.permissions.length === 0) {
       throw new ForbiddenException('Permission denied', [
-        { reason: ErrorCodes.PERMISSION_DENIED, message: 'You do not have the required permissions' },
+        {
+          reason: ErrorCodes.PERMISSION_DENIED,
+          message: 'You do not have the required permissions',
+        },
       ]);
     }
 
@@ -38,9 +41,7 @@ export class PermissionsGuard implements CanActivate {
     );
 
     if (!hasAllPermissions) {
-      const missingPermissions = requiredPermissions.filter(
-        p => !user.permissions.includes(p),
-      );
+      const missingPermissions = requiredPermissions.filter(p => !user.permissions.includes(p));
       throw new ForbiddenException('Permission denied', [
         {
           reason: ErrorCodes.PERMISSION_DENIED,

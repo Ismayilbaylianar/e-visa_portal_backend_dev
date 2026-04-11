@@ -17,8 +17,14 @@ export const appConfig = registerAs('app', () => ({
   portalJwt: {
     accessSecret: process.env.PORTAL_JWT_ACCESS_SECRET || 'dev-portal-access-secret',
     refreshSecret: process.env.PORTAL_JWT_REFRESH_SECRET || 'dev-portal-refresh-secret',
-    accessExpirationSeconds: parseInt(process.env.PORTAL_JWT_ACCESS_EXPIRATION_SECONDS || '900', 10), // 15 minutes
-    refreshExpirationSeconds: parseInt(process.env.PORTAL_JWT_REFRESH_EXPIRATION_SECONDS || '604800', 10), // 7 days
+    accessExpirationSeconds: parseInt(
+      process.env.PORTAL_JWT_ACCESS_EXPIRATION_SECONDS || '900',
+      10,
+    ), // 15 minutes
+    refreshExpirationSeconds: parseInt(
+      process.env.PORTAL_JWT_REFRESH_EXPIRATION_SECONDS || '604800',
+      10,
+    ), // 7 days
   },
 
   // OTP Configuration

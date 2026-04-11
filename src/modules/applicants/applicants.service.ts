@@ -7,14 +7,48 @@ import {
   ApplicantResponseDto,
   DocumentResponseDto,
 } from './dto';
-import { NotFoundException, ForbiddenException } from '@/common/exceptions';
-import { ApplicantStatus } from '@/common/enums';
+import { NotFoundException, ForbiddenException, BadRequestException } from '@/common/exceptions';
+import { ErrorCodes } from '@/common/constants';
+import { ApplicantStatus, ApplicationStatus } from '@/common/enums';
 
 @Injectable()
 export class ApplicantsService {
   private readonly logger = new Logger(ApplicantsService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Generate unique application code for an applicant
+   * Format: APP-YYYY-NNNNNN (e.g., APP-2026-000001)
+   *
+   * Application code is generated when applicant is created.
+   */
+  private async generateApplicationCode(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `APP-${year}-`;
+
+    // Find the highest existing code for this year
+    const lastApplicant = await this.prisma.applicationApplicant.findFirst({
+      where: {
+        applicationCode: {
+          startsWith: prefix,
+        },
+      },
+      orderBy: {
+        applicationCode: 'desc',
+      },
+    });
+
+    let nextNumber = 1;
+    if (lastApplicant?.applicationCode) {
+      const lastNumber = parseInt(lastApplicant.applicationCode.replace(prefix, ''), 10);
+      if (!isNaN(lastNumber)) {
+        nextNumber = lastNumber + 1;
+      }
+    }
+
+    return `${prefix}${nextNumber.toString().padStart(6, '0')}`;
+  }
 
   /**
    * Find all applicants for an application
@@ -28,11 +62,18 @@ export class ApplicantsService {
     });
 
     if (!application) {
-      throw new NotFoundException('Application not found');
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_FOUND,
+          message: 'Application does not exist or has been deleted',
+        },
+      ]);
     }
 
     if (application.portalIdentityId !== portalIdentityId) {
-      throw new ForbiddenException('Access denied to this application');
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this application' },
+      ]);
     }
 
     const applicants = await this.prisma.applicationApplicant.findMany({
@@ -51,10 +92,7 @@ export class ApplicantsService {
   /**
    * Find applicant by ID
    */
-  async findById(
-    applicantId: string,
-    portalIdentityId: string,
-  ): Promise<ApplicantResponseDto> {
+  async findById(applicantId: string, portalIdentityId: string): Promise<ApplicantResponseDto> {
     const applicant = await this.prisma.applicationApplicant.findFirst({
       where: { id: applicantId, deletedAt: null },
       include: {
@@ -66,11 +104,18 @@ export class ApplicantsService {
     });
 
     if (!applicant) {
-      throw new NotFoundException('Applicant not found');
+      throw new NotFoundException('Applicant not found', [
+        {
+          reason: ErrorCodes.APPLICANT_NOT_FOUND,
+          message: 'Applicant does not exist or has been deleted',
+        },
+      ]);
     }
 
     if (applicant.application.portalIdentityId !== portalIdentityId) {
-      throw new ForbiddenException('Access denied to this applicant');
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this applicant' },
+      ]);
     }
 
     return this.mapToResponse(applicant);
@@ -90,7 +135,12 @@ export class ApplicantsService {
     });
 
     if (!applicant) {
-      throw new NotFoundException('Applicant not found');
+      throw new NotFoundException('Applicant not found', [
+        {
+          reason: ErrorCodes.APPLICANT_NOT_FOUND,
+          message: 'Applicant does not exist or has been deleted',
+        },
+      ]);
     }
 
     return this.mapToResponse(applicant);
@@ -98,6 +148,11 @@ export class ApplicantsService {
 
   /**
    * Create new applicant under an application
+   *
+   * Main applicant rule:
+   * - Only one main applicant is allowed per application
+   * - If isMainApplicant is true and a main applicant already exists, throw error
+   * - First applicant can be set as main applicant
    */
   async create(
     applicationId: string,
@@ -109,13 +164,31 @@ export class ApplicantsService {
     });
 
     if (!application) {
-      throw new NotFoundException('Application not found');
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_FOUND,
+          message: 'Application does not exist or has been deleted',
+        },
+      ]);
     }
 
     if (application.portalIdentityId !== portalIdentityId) {
-      throw new ForbiddenException('Access denied to this application');
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this application' },
+      ]);
     }
 
+    // Check if application is editable (only DRAFT status)
+    if (application.currentStatus !== ApplicationStatus.DRAFT) {
+      throw new BadRequestException('Application is not editable', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_EDITABLE,
+          message: 'Applicants can only be added to draft applications',
+        },
+      ]);
+    }
+
+    // Check main applicant rule
     if (dto.isMainApplicant) {
       const existingMain = await this.prisma.applicationApplicant.findFirst({
         where: {
@@ -126,20 +199,28 @@ export class ApplicantsService {
       });
 
       if (existingMain) {
-        throw new ForbiddenException(
-          'Application already has a main applicant',
-        );
+        throw new BadRequestException('Main applicant already exists', [
+          {
+            reason: ErrorCodes.CONFLICT,
+            message:
+              'Application already has a main applicant. Only one main applicant is allowed.',
+          },
+        ]);
       }
     }
+
+    // Generate unique application code
+    const applicationCode = await this.generateApplicationCode();
 
     const applicant = await this.prisma.applicationApplicant.create({
       data: {
         applicationId,
-        isMainApplicant: dto.isMainApplicant,
+        isMainApplicant: dto.isMainApplicant ?? false,
         email: dto.email,
         phone: dto.phone,
         formDataJson: dto.formDataJson,
         status: ApplicantStatus.DRAFT,
+        applicationCode,
       },
       include: {
         documents: {
@@ -148,9 +229,18 @@ export class ApplicantsService {
       },
     });
 
-    this.logger.log(
-      `Applicant created: ${applicant.id} for application: ${applicationId}`,
-    );
+    // Create initial status history
+    await this.prisma.applicantStatusHistory.create({
+      data: {
+        applicationApplicantId: applicant.id,
+        oldStatus: ApplicantStatus.DRAFT,
+        newStatus: ApplicantStatus.DRAFT,
+        note: 'Applicant created',
+        changedBySystem: true,
+      },
+    });
+
+    this.logger.log(`Applicant created: ${applicant.id} with code: ${applicationCode}`);
     return this.mapToResponse(applicant);
   }
 
@@ -168,13 +258,31 @@ export class ApplicantsService {
     });
 
     if (!applicant) {
-      throw new NotFoundException('Applicant not found');
+      throw new NotFoundException('Applicant not found', [
+        {
+          reason: ErrorCodes.APPLICANT_NOT_FOUND,
+          message: 'Applicant does not exist or has been deleted',
+        },
+      ]);
     }
 
     if (applicant.application.portalIdentityId !== portalIdentityId) {
-      throw new ForbiddenException('Access denied to this applicant');
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this applicant' },
+      ]);
     }
 
+    // Check if application is editable (only DRAFT status)
+    if (applicant.application.currentStatus !== ApplicationStatus.DRAFT) {
+      throw new BadRequestException('Application is not editable', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_EDITABLE,
+          message: 'Applicants can only be updated in draft applications',
+        },
+      ]);
+    }
+
+    // Check main applicant rule if trying to set as main
     if (dto.isMainApplicant && !applicant.isMainApplicant) {
       const existingMain = await this.prisma.applicationApplicant.findFirst({
         where: {
@@ -186,9 +294,13 @@ export class ApplicantsService {
       });
 
       if (existingMain) {
-        throw new ForbiddenException(
-          'Application already has a main applicant',
-        );
+        throw new BadRequestException('Main applicant already exists', [
+          {
+            reason: ErrorCodes.CONFLICT,
+            message:
+              'Application already has a main applicant. Only one main applicant is allowed.',
+          },
+        ]);
       }
     }
 
@@ -223,11 +335,28 @@ export class ApplicantsService {
     });
 
     if (!applicant) {
-      throw new NotFoundException('Applicant not found');
+      throw new NotFoundException('Applicant not found', [
+        {
+          reason: ErrorCodes.APPLICANT_NOT_FOUND,
+          message: 'Applicant does not exist or has been deleted',
+        },
+      ]);
     }
 
     if (applicant.application.portalIdentityId !== portalIdentityId) {
-      throw new ForbiddenException('Access denied to this applicant');
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this applicant' },
+      ]);
+    }
+
+    // Check if application is editable (only DRAFT status)
+    if (applicant.application.currentStatus !== ApplicationStatus.DRAFT) {
+      throw new BadRequestException('Application is not editable', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_EDITABLE,
+          message: 'Applicants can only be deleted from draft applications',
+        },
+      ]);
     }
 
     await this.prisma.applicationApplicant.update({
@@ -235,7 +364,7 @@ export class ApplicantsService {
       data: { deletedAt: new Date() },
     });
 
-    this.logger.log(`Applicant deleted: ${applicantId}`);
+    this.logger.log(`Applicant soft deleted: ${applicantId}`);
   }
 
   /**
@@ -251,7 +380,12 @@ export class ApplicantsService {
     });
 
     if (!applicant) {
-      throw new NotFoundException('Applicant not found');
+      throw new NotFoundException('Applicant not found', [
+        {
+          reason: ErrorCodes.APPLICANT_NOT_FOUND,
+          message: 'Applicant does not exist or has been deleted',
+        },
+      ]);
     }
 
     const oldStatus = applicant.status;
@@ -278,28 +412,24 @@ export class ApplicantsService {
       }),
     ]);
 
-    this.logger.log(
-      `Applicant status updated: ${applicantId} from ${oldStatus} to ${dto.status}`,
-    );
+    this.logger.log(`Applicant status updated: ${applicantId} from ${oldStatus} to ${dto.status}`);
     return this.mapToResponse(updatedApplicant);
   }
 
   private mapToResponse(applicant: any): ApplicantResponseDto {
-    const documents: DocumentResponseDto[] | undefined = applicant.documents?.map(
-      (doc: any) => ({
-        id: doc.id,
-        documentTypeKey: doc.documentTypeKey,
-        originalFileName: doc.originalFileName,
-        mimeType: doc.mimeType,
-        fileSize: doc.fileSize,
-        reviewStatus: doc.reviewStatus,
-        reviewNote: doc.reviewNote || undefined,
-        uploadedAt: doc.uploadedAt,
-        reviewedAt: doc.reviewedAt || undefined,
-        createdAt: doc.createdAt,
-        updatedAt: doc.updatedAt,
-      }),
-    );
+    const documents: DocumentResponseDto[] | undefined = applicant.documents?.map((doc: any) => ({
+      id: doc.id,
+      documentTypeKey: doc.documentTypeKey,
+      originalFileName: doc.originalFileName,
+      mimeType: doc.mimeType,
+      fileSize: doc.fileSize,
+      reviewStatus: doc.reviewStatus,
+      reviewNote: doc.reviewNote || undefined,
+      uploadedAt: doc.uploadedAt,
+      reviewedAt: doc.reviewedAt || undefined,
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
+    }));
 
     return {
       id: applicant.id,
@@ -312,11 +442,9 @@ export class ApplicantsService {
       applicationCode: applicant.applicationCode || undefined,
       resultFileName: applicant.resultFileName || undefined,
       resultStorageKey: applicant.resultStorageKey || undefined,
-      requiredDocumentsJson:
-        (applicant.requiredDocumentsJson as Record<string, any>) || undefined,
+      requiredDocumentsJson: (applicant.requiredDocumentsJson as Record<string, any>) || undefined,
       additionalDocsRequestedJson:
-        (applicant.additionalDocsRequestedJson as Record<string, any>) ||
-        undefined,
+        (applicant.additionalDocsRequestedJson as Record<string, any>) || undefined,
       documents,
       createdAt: applicant.createdAt,
       updatedAt: applicant.updatedAt,

@@ -7,8 +7,9 @@ import {
   Param,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { BindingNationalityFeesService } from './binding-nationality-fees.service';
 import {
   CreateBindingNationalityFeeDto,
@@ -16,21 +17,25 @@ import {
   BindingNationalityFeeResponseDto,
 } from './dto';
 import { BindingIdParamDto, FeeIdParamDto } from '@/common/dto';
+import { RequirePermissions } from '@/common/decorators';
+import { JwtAuthGuard } from '@/common/guards';
 
 @ApiTags('Binding Nationality Fees - Admin')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('admin')
 export class BindingNationalityFeesController {
-  constructor(
-    private readonly bindingNationalityFeesService: BindingNationalityFeesService,
-  ) {}
+  constructor(private readonly bindingNationalityFeesService: BindingNationalityFeesService) {}
 
   @Post('templateBindings/:bindingId/nationalityFees')
+  @RequirePermissions('templateBindings.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create nationality fee for binding',
-    description: 'Create a new nationality-specific fee for a template binding',
+    description:
+      'Create a new nationality-specific fee for a template binding. Nationality must be unique within the binding.',
   })
+  @ApiParam({ name: 'bindingId', description: 'Template binding UUID' })
   @ApiResponse({
     status: 201,
     description: 'Nationality fee created successfully',
@@ -52,10 +57,12 @@ export class BindingNationalityFeesController {
   }
 
   @Patch('bindingNationalityFees/:feeId')
+  @RequirePermissions('templateBindings.update')
   @ApiOperation({
     summary: 'Update nationality fee',
     description: 'Update an existing binding nationality fee',
   })
+  @ApiParam({ name: 'feeId', description: 'Nationality fee UUID' })
   @ApiResponse({
     status: 200,
     description: 'Nationality fee updated successfully',
@@ -77,11 +84,13 @@ export class BindingNationalityFeesController {
   }
 
   @Delete('bindingNationalityFees/:feeId')
+  @RequirePermissions('templateBindings.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete nationality fee',
     description: 'Soft delete a binding nationality fee',
   })
+  @ApiParam({ name: 'feeId', description: 'Nationality fee UUID' })
   @ApiResponse({
     status: 204,
     description: 'Nationality fee deleted successfully',

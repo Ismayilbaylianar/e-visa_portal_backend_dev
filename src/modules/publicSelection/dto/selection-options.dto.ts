@@ -9,19 +9,19 @@ export class CountryOptionDto {
 
   @ApiProperty({
     description: 'Country name',
-    example: 'United States',
+    example: 'Turkey',
   })
   name: string;
 
   @ApiProperty({
     description: 'Country slug',
-    example: 'united-states',
+    example: 'turkey',
   })
   slug: string;
 
   @ApiProperty({
     description: 'ISO country code',
-    example: 'US',
+    example: 'TR',
   })
   isoCode: string;
 }
@@ -52,8 +52,8 @@ export class VisaTypeOptionDto {
   maxStay: number;
 
   @ApiProperty({
-    description: 'Entry type',
-    example: 'single',
+    description: 'Entry type (SINGLE, DOUBLE, MULTIPLE)',
+    example: 'SINGLE',
   })
   entries: string;
 
@@ -64,12 +64,23 @@ export class VisaTypeOptionDto {
   label: string;
 }
 
+/**
+ * Selection options response
+ * Note: Nationality countries use the same countries table as destination countries.
+ * This is an assumption - in production, you may want a separate nationality source.
+ */
 export class SelectionOptionsResponseDto {
   @ApiProperty({
     type: [CountryOptionDto],
-    description: 'Available destination countries',
+    description: 'Available destination countries (active and published)',
   })
-  countries: CountryOptionDto[];
+  destinationCountries: CountryOptionDto[];
+
+  @ApiProperty({
+    type: [CountryOptionDto],
+    description: 'Available nationality countries (currently uses active countries as source)',
+  })
+  nationalityCountries: CountryOptionDto[];
 
   @ApiProperty({
     type: [VisaTypeOptionDto],

@@ -1,59 +1,46 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ApplicationStatus } from '@prisma/client';
 
-export class ApplicantInfoDto {
-  @ApiProperty({ description: 'Applicant ID' })
-  id: string;
+export class StatusHistoryItemDto {
+  @ApiProperty({ description: 'Previous status', example: 'DRAFT' })
+  oldStatus: string;
 
-  @ApiProperty({ description: 'Applicant email' })
-  email: string;
+  @ApiProperty({ description: 'New status', example: 'SUBMITTED' })
+  newStatus: string;
 
-  @ApiPropertyOptional({ description: 'Applicant phone' })
-  phone?: string;
+  @ApiPropertyOptional({ description: 'Note about the status change' })
+  note?: string | null;
 
-  @ApiProperty({ description: 'Application code' })
-  applicationCode: string;
-
-  @ApiProperty({ description: 'Applicant status' })
-  status: string;
-
-  @ApiProperty({ description: 'Whether this is the main applicant' })
-  isMainApplicant: boolean;
+  @ApiProperty({ description: 'When the status changed' })
+  changedAt: Date;
 }
 
 export class TrackingResponseDto {
   @ApiProperty({
-    description: 'Current application status',
-    enum: ApplicationStatus,
-    example: ApplicationStatus.SUBMITTED,
+    description: 'Application code',
+    example: 'APP-2026-0001',
   })
-  status: ApplicationStatus;
+  applicationCode: string;
 
   @ApiProperty({
-    description: 'Applicant information',
-    type: ApplicantInfoDto,
+    description: 'Current applicant status',
+    example: 'IN_REVIEW',
   })
-  applicantInfo: ApplicantInfoDto;
-
-  @ApiPropertyOptional({
-    description: 'Destination country name',
-    example: 'United States',
-  })
-  destinationCountry?: string;
-
-  @ApiPropertyOptional({
-    description: 'Visa type label',
-    example: 'Tourist Visa - 30 Days',
-  })
-  visaType?: string;
+  currentStatus: string;
 
   @ApiProperty({
-    description: 'Application submission date',
+    description: 'Status change history',
+    type: [StatusHistoryItemDto],
   })
-  submittedAt: Date;
+  statusHistory: StatusHistoryItemDto[];
+
+  @ApiProperty({
+    description: 'Whether result file is available for download',
+    example: false,
+  })
+  resultAvailable: boolean;
 
   @ApiPropertyOptional({
-    description: 'Expected processing completion date',
+    description: 'Result file name if available',
   })
-  expectedCompletionAt?: Date;
+  resultFileName?: string | null;
 }

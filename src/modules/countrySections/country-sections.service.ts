@@ -14,7 +14,10 @@ export class CountrySectionsService {
   /**
    * Create a new section for a country
    */
-  async create(countryId: string, dto: CreateCountrySectionDto): Promise<CountrySectionResponseDto> {
+  async create(
+    countryId: string,
+    dto: CreateCountrySectionDto,
+  ): Promise<CountrySectionResponseDto> {
     // Verify country exists
     const country = await this.prisma.country.findFirst({
       where: { id: countryId, deletedAt: null },
@@ -22,7 +25,10 @@ export class CountrySectionsService {
 
     if (!country) {
       throw new NotFoundException('Country not found', [
-        { reason: ErrorCodes.COUNTRY_NOT_FOUND, message: 'Country does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.COUNTRY_NOT_FOUND,
+          message: 'Country does not exist or has been deleted',
+        },
       ]);
     }
 
@@ -43,14 +49,20 @@ export class CountrySectionsService {
   /**
    * Update a country section
    */
-  async update(sectionId: string, dto: UpdateCountrySectionDto): Promise<CountrySectionResponseDto> {
+  async update(
+    sectionId: string,
+    dto: UpdateCountrySectionDto,
+  ): Promise<CountrySectionResponseDto> {
     const section = await this.prisma.countrySection.findFirst({
       where: { id: sectionId, deletedAt: null },
     });
 
     if (!section) {
       throw new NotFoundException('Section not found', [
-        { reason: ErrorCodes.NOT_FOUND, message: 'Country section does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Country section does not exist or has been deleted',
+        },
       ]);
     }
 
@@ -79,7 +91,10 @@ export class CountrySectionsService {
 
     if (!section) {
       throw new NotFoundException('Section not found', [
-        { reason: ErrorCodes.NOT_FOUND, message: 'Country section does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Country section does not exist or has been deleted',
+        },
       ]);
     }
 

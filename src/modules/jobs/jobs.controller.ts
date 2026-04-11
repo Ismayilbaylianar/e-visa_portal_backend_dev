@@ -1,12 +1,24 @@
-import { Controller, Get, Post, Patch, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JobsService } from './jobs.service';
 import { JobResponseDto, GetJobsQueryDto } from './dto';
 import { JobIdParamDto } from '@/common/dto';
 import { ApiPaginatedResponse } from '@/common/decorators';
+import { JwtAuthGuard } from '@/common/guards';
 
 @ApiTags('Jobs')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('admin/jobs')
 export class JobsController {
   constructor(private readonly jobsService: JobsService) {}

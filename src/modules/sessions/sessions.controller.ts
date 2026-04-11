@@ -24,9 +24,7 @@ export class SessionsController {
     description: 'List of active sessions',
     type: SessionListResponseDto,
   })
-  async getActiveSessions(
-    @CurrentUser() user: CurrentUserData,
-  ): Promise<SessionListResponseDto> {
+  async getActiveSessions(@CurrentUser() user: CurrentUserData): Promise<SessionListResponseDto> {
     return this.sessionsService.getActiveSessions(user.id, user.sessionId);
   }
 

@@ -6,6 +6,7 @@ import {
   TemplateSectionResponseDto,
 } from './dto';
 import { NotFoundException, ConflictException } from '@/common/exceptions';
+import { ErrorCodes } from '@/common/constants';
 
 @Injectable()
 export class TemplateSectionsService {
@@ -13,6 +14,9 @@ export class TemplateSectionsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Create a new section under a template
+   */
   async create(
     templateId: string,
     dto: CreateTemplateSectionDto,
@@ -22,7 +26,12 @@ export class TemplateSectionsService {
     });
 
     if (!template) {
-      throw new NotFoundException('Template not found');
+      throw new NotFoundException('Template not found', [
+        {
+          reason: ErrorCodes.TEMPLATE_NOT_FOUND,
+          message: 'Template does not exist or has been deleted',
+        },
+      ]);
     }
 
     const existingSection = await this.prisma.templateSection.findFirst({
@@ -34,7 +43,13 @@ export class TemplateSectionsService {
     });
 
     if (existingSection) {
-      throw new ConflictException('Section with this key already exists in the template');
+      throw new ConflictException('Section key already exists', [
+        {
+          field: 'key',
+          reason: ErrorCodes.CONFLICT,
+          message: 'A section with this key already exists in the template',
+        },
+      ]);
     }
 
     const section = await this.prisma.templateSection.create({
@@ -54,10 +69,15 @@ export class TemplateSectionsService {
       },
     });
 
-    this.logger.log(`Template section created: ${section.id} for template: ${templateId}`);
+    this.logger.log(
+      `Template section created: ${section.id} (${section.key}) for template: ${templateId}`,
+    );
     return this.mapToResponse(section);
   }
 
+  /**
+   * Update template section
+   */
   async update(
     sectionId: string,
     dto: UpdateTemplateSectionDto,
@@ -67,7 +87,12 @@ export class TemplateSectionsService {
     });
 
     if (!section) {
-      throw new NotFoundException('Template section not found');
+      throw new NotFoundException('Template section not found', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Template section does not exist or has been deleted',
+        },
+      ]);
     }
 
     if (dto.key && dto.key !== section.key) {
@@ -81,13 +106,26 @@ export class TemplateSectionsService {
       });
 
       if (existingSection) {
-        throw new ConflictException('Section with this key already exists in the template');
+        throw new ConflictException('Section key already exists', [
+          {
+            field: 'key',
+            reason: ErrorCodes.CONFLICT,
+            message: 'A section with this key already exists in the template',
+          },
+        ]);
       }
     }
 
+    const updateData: any = {};
+    if (dto.title !== undefined) updateData.title = dto.title;
+    if (dto.key !== undefined) updateData.key = dto.key;
+    if (dto.description !== undefined) updateData.description = dto.description;
+    if (dto.sortOrder !== undefined) updateData.sortOrder = dto.sortOrder;
+    if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
+
     const updatedSection = await this.prisma.templateSection.update({
       where: { id: sectionId },
-      data: dto,
+      data: updateData,
       include: {
         fields: {
           where: { deletedAt: null },
@@ -100,27 +138,37 @@ export class TemplateSectionsService {
     return this.mapToResponse(updatedSection);
   }
 
+  /**
+   * Soft delete template section and all its fields
+   */
   async delete(sectionId: string): Promise<void> {
     const section = await this.prisma.templateSection.findFirst({
       where: { id: sectionId, deletedAt: null },
     });
 
     if (!section) {
-      throw new NotFoundException('Template section not found');
+      throw new NotFoundException('Template section not found', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Template section does not exist or has been deleted',
+        },
+      ]);
     }
+
+    const now = new Date();
 
     await this.prisma.$transaction([
       this.prisma.templateField.updateMany({
         where: { templateSectionId: sectionId, deletedAt: null },
-        data: { deletedAt: new Date() },
+        data: { deletedAt: now },
       }),
       this.prisma.templateSection.update({
         where: { id: sectionId },
-        data: { deletedAt: new Date() },
+        data: { deletedAt: now },
       }),
     ]);
 
-    this.logger.log(`Template section deleted: ${sectionId}`);
+    this.logger.log(`Template section soft deleted: ${sectionId}`);
   }
 
   private mapToResponse(section: any): TemplateSectionResponseDto {
@@ -132,23 +180,24 @@ export class TemplateSectionsService {
       description: section.description || undefined,
       sortOrder: section.sortOrder,
       isActive: section.isActive,
-      fields: section.fields?.map((field: any) => ({
-        id: field.id,
-        fieldKey: field.fieldKey,
-        fieldType: field.fieldType,
-        label: field.label,
-        placeholder: field.placeholder || undefined,
-        helpText: field.helpText || undefined,
-        defaultValue: field.defaultValue || undefined,
-        isRequired: field.isRequired,
-        sortOrder: field.sortOrder,
-        isActive: field.isActive,
-        optionsJson: field.optionsJson || undefined,
-        validationRulesJson: field.validationRulesJson || undefined,
-        visibilityRulesJson: field.visibilityRulesJson || undefined,
-        createdAt: field.createdAt,
-        updatedAt: field.updatedAt,
-      })),
+      fields:
+        section.fields?.map((field: any) => ({
+          id: field.id,
+          fieldKey: field.fieldKey,
+          fieldType: field.fieldType,
+          label: field.label,
+          placeholder: field.placeholder || undefined,
+          helpText: field.helpText || undefined,
+          defaultValue: field.defaultValue || undefined,
+          isRequired: field.isRequired,
+          sortOrder: field.sortOrder,
+          isActive: field.isActive,
+          optionsJson: field.optionsJson ?? [],
+          validationRulesJson: field.validationRulesJson ?? null,
+          visibilityRulesJson: field.visibilityRulesJson ?? [],
+          createdAt: field.createdAt,
+          updatedAt: field.updatedAt,
+        })) ?? [],
       createdAt: section.createdAt,
       updatedAt: section.updatedAt,
     };

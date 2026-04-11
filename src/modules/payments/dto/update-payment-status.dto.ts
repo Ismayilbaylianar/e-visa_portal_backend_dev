@@ -12,12 +12,12 @@ export class UpdatePaymentStatusDto {
   status: PaymentStatus;
 
   @ApiPropertyOptional({
-    description: 'Reason for status change',
-    example: 'Payment confirmed via bank statement',
+    description: 'Note explaining the status change',
+    example: 'Marked as paid by admin for testing',
     maxLength: 500,
   })
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  changeReason?: string;
+  note?: string;
 }

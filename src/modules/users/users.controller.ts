@@ -21,8 +21,9 @@ import {
   UserListResponseDto,
   GetUsersQueryDto,
 } from './dto';
-import { RequirePermissions } from '@/common/decorators';
+import { RequirePermissions, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
+import { AuthenticatedUser } from '@/common/types';
 
 @ApiTags('Users')
 @ApiBearerAuth('JWT-auth')
@@ -109,8 +110,9 @@ export class UsersController {
   async update(
     @Param('userId') userId: string,
     @Body() dto: UpdateUserDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<UserResponseDto> {
-    return this.usersService.update(userId, dto);
+    return this.usersService.update(userId, dto, currentUser.id);
   }
 
   @Patch(':userId/status')
@@ -132,8 +134,9 @@ export class UsersController {
   async updateStatus(
     @Param('userId') userId: string,
     @Body() dto: UpdateUserStatusDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<UserResponseDto> {
-    return this.usersService.updateStatus(userId, dto);
+    return this.usersService.updateStatus(userId, dto, currentUser.id);
   }
 
   @Delete(':userId')
@@ -152,7 +155,10 @@ export class UsersController {
     status: 404,
     description: 'User not found',
   })
-  async delete(@Param('userId') userId: string): Promise<void> {
-    return this.usersService.delete(userId);
+  async delete(
+    @Param('userId') userId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<void> {
+    return this.usersService.delete(userId, currentUser.id);
   }
 }

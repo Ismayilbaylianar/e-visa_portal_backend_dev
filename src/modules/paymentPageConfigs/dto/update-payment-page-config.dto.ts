@@ -1,5 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsBoolean, IsOptional, IsArray, ValidateNested, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsBoolean,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  MaxLength,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class PaymentPageFieldDto {
@@ -69,9 +76,7 @@ export class UpdatePaymentPageConfigDto {
       {
         key: 'summary',
         title: 'Payment Summary',
-        fields: [
-          { fieldKey: 'notes', fieldType: 'textarea', label: 'Notes', isRequired: false },
-        ],
+        fields: [{ fieldKey: 'notes', fieldType: 'textarea', label: 'Notes', isRequired: false }],
       },
     ],
   })

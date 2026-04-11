@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { BaseException } from '../exceptions';
-import { ErrorCodes, ErrorCode } from '../constants';
+import { ErrorCodes } from '../constants';
 import { ApiErrorResponse, ApiErrorDetail } from '../types';
 
 @Catch()

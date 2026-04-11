@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsBoolean, IsOptional, IsInt, MinLength, MaxLength, Matches, Min } from 'class-validator';
+import {
+  IsString,
+  IsBoolean,
+  IsOptional,
+  IsInt,
+  MinLength,
+  MaxLength,
+  Matches,
+  Min,
+} from 'class-validator';
 
 export class CreateTemplateDto {
   @ApiProperty({

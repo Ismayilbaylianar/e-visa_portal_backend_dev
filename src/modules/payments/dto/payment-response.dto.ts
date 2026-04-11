@@ -1,6 +1,29 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentStatus } from '@/common/enums';
 
+export class PaymentReconciliationDto {
+  @ApiProperty({ description: 'Reconciliation ID' })
+  id: string;
+
+  @ApiProperty({ description: 'Reconciliation status' })
+  reconciliationStatus: string;
+
+  @ApiPropertyOptional({ description: 'Provider reported amount' })
+  providerReportedAmount?: string;
+
+  @ApiPropertyOptional({ description: 'Provider reported currency code' })
+  providerReportedCurrencyCode?: string;
+
+  @ApiPropertyOptional({ description: 'Provider reported status' })
+  providerReportedStatus?: string;
+
+  @ApiPropertyOptional({ description: 'When reconciliation was checked' })
+  checkedAt?: Date;
+
+  @ApiPropertyOptional({ description: 'Note' })
+  note?: string;
+}
+
 export class PaymentApplicationDto {
   @ApiProperty({ description: 'Application ID' })
   id: string;
@@ -246,6 +269,12 @@ export class PaymentResponseDto {
     description: 'Payment status history',
   })
   statusHistory?: PaymentStatusHistoryDto[];
+
+  @ApiPropertyOptional({
+    type: PaymentReconciliationDto,
+    description: 'Latest reconciliation record',
+  })
+  reconciliation?: PaymentReconciliationDto;
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;

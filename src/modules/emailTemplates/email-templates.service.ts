@@ -69,7 +69,10 @@ export class EmailTemplatesService {
 
     if (!template) {
       throw new NotFoundException('Email template not found', [
-        { reason: ErrorCodes.NOT_FOUND, message: 'Email template does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Email template does not exist or has been deleted',
+        },
       ]);
     }
 
@@ -87,7 +90,11 @@ export class EmailTemplatesService {
 
     if (existing) {
       throw new ConflictException('Template key already exists', [
-        { field: 'templateKey', reason: ErrorCodes.CONFLICT, message: 'An email template with this key already exists' },
+        {
+          field: 'templateKey',
+          reason: ErrorCodes.CONFLICT,
+          message: 'An email template with this key already exists',
+        },
       ]);
     }
 
@@ -115,7 +122,10 @@ export class EmailTemplatesService {
 
     if (!template) {
       throw new NotFoundException('Email template not found', [
-        { reason: ErrorCodes.NOT_FOUND, message: 'Email template does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Email template does not exist or has been deleted',
+        },
       ]);
     }
 
@@ -126,7 +136,11 @@ export class EmailTemplatesService {
       });
       if (existing) {
         throw new ConflictException('Template key already exists', [
-          { field: 'templateKey', reason: ErrorCodes.CONFLICT, message: 'An email template with this key already exists' },
+          {
+            field: 'templateKey',
+            reason: ErrorCodes.CONFLICT,
+            message: 'An email template with this key already exists',
+          },
         ]);
       }
     }
@@ -157,7 +171,10 @@ export class EmailTemplatesService {
 
     if (!template) {
       throw new NotFoundException('Email template not found', [
-        { reason: ErrorCodes.NOT_FOUND, message: 'Email template does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Email template does not exist or has been deleted',
+        },
       ]);
     }
 

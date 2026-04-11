@@ -34,12 +34,15 @@ enum OtpPurpose {
 }
 
 enum PaymentStatus {
+  CREATED
   PENDING
+  PROCESSING
   PAID
-  EXPIRED
   FAILED
+  EXPIRED
   CANCELLED
   REFUNDED
+  PARTIALLY_REFUNDED
 }
 
 enum ApplicationStatus {
@@ -93,9 +96,11 @@ enum JobStatus {
 }
 
 enum JobExecutionStatus {
+  PENDING
   RUNNING
   COMPLETED
   FAILED
+  CANCELLED
 }
 
 enum ActorType {
@@ -111,6 +116,7 @@ enum TransactionType {
   REFUND
   VOID
   CALLBACK
+  STATUS_UPDATE
 }
 
 enum TransactionStatus {
@@ -121,6 +127,7 @@ enum TransactionStatus {
 
 enum CallbackProcessingStatus {
   PENDING
+  PROCESSING
   PROCESSED
   FAILED
   IGNORED
@@ -130,6 +137,7 @@ enum SignatureValidationStatus {
   VALID
   INVALID
   NOT_CHECKED
+  NOT_APPLICABLE
 }
 
 enum ReconciliationStatus {
@@ -843,18 +851,20 @@ model PaymentReconciliation {
 // ===========================================
 
 model Notification {
-  id           String             @id @default(uuid())
-  channel      NotificationChannel
-  templateKey  String             @map("template_key")
-  recipient    String
-  subject      String?
-  payloadJson  Json               @map("payload_json")
-  status       NotificationStatus @default(PENDING)
-  sentAt       DateTime?          @map("sent_at")
-  failedAt     DateTime?          @map("failed_at")
-  errorMessage String?            @map("error_message")
-  createdAt    DateTime           @default(now()) @map("created_at")
-  updatedAt    DateTime           @updatedAt @map("updated_at")
+  id            String             @id @default(uuid())
+  channel       NotificationChannel
+  templateKey   String             @map("template_key")
+  recipient     String
+  subject       String?
+  payloadJson   Json               @map("payload_json")
+  status        NotificationStatus @default(PENDING)
+  retryCount    Int                @default(0) @map("retry_count")
+  maxRetryCount Int                @default(3) @map("max_retry_count")
+  sentAt        DateTime?          @map("sent_at")
+  failedAt      DateTime?          @map("failed_at")
+  errorMessage  String?            @map("error_message")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
 
   @@index([channel])
   @@index([templateKey])

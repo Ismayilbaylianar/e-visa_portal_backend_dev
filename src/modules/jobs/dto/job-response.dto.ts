@@ -1,5 +1,40 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export class JobExecutionDto {
+  @ApiProperty({
+    description: 'Execution UUID',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  id: string;
+
+  @ApiProperty({
+    description: 'Execution status',
+    example: 'COMPLETED',
+    enum: ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'],
+  })
+  executionStatus: string;
+
+  @ApiProperty({
+    description: 'When the execution started',
+  })
+  startedAt: Date;
+
+  @ApiPropertyOptional({
+    description: 'When the execution finished',
+  })
+  finishedAt?: Date;
+
+  @ApiPropertyOptional({
+    description: 'Error message if execution failed',
+  })
+  errorMessage?: string;
+
+  @ApiProperty({
+    description: 'When the execution record was created',
+  })
+  createdAt: Date;
+}
+
 export class JobResponseDto {
   @ApiProperty({
     description: 'Job UUID',
@@ -51,6 +86,12 @@ export class JobResponseDto {
   maxRetries: number;
 
   @ApiPropertyOptional({
+    description: 'When the job is scheduled to run',
+    example: '2024-01-15T10:00:00.000Z',
+  })
+  scheduledAt?: Date;
+
+  @ApiPropertyOptional({
     description: 'When the job started processing',
     example: '2024-01-15T10:30:00.000Z',
   })
@@ -73,4 +114,10 @@ export class JobResponseDto {
     example: '2024-01-15T10:31:00.000Z',
   })
   updatedAt: Date;
+
+  @ApiPropertyOptional({
+    description: 'Job execution history',
+    type: [JobExecutionDto],
+  })
+  executions?: JobExecutionDto[];
 }

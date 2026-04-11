@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DocumentReviewStatus } from '@/common/enums';
 
 export class DocumentResponseDto {
   @ApiProperty({
@@ -12,25 +11,19 @@ export class DocumentResponseDto {
     description: 'Applicant ID the document belongs to',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
-  applicantId: string;
+  applicationApplicantId: string;
 
   @ApiProperty({
     description: 'Document type key',
-    example: 'passport',
+    example: 'passportScan',
   })
   documentTypeKey: string;
 
   @ApiProperty({
     description: 'Original file name',
-    example: 'passport_scan.pdf',
+    example: 'passport.pdf',
   })
   originalFileName: string;
-
-  @ApiProperty({
-    description: 'Storage key for the file',
-    example: 'documents/550e8400/passport_scan.pdf',
-  })
-  storageKey: string;
 
   @ApiProperty({
     description: 'MIME type of the file',
@@ -40,50 +33,41 @@ export class DocumentResponseDto {
 
   @ApiProperty({
     description: 'File size in bytes',
-    example: 1024000,
+    example: 102400,
   })
   fileSize: number;
 
   @ApiProperty({
     description: 'Review status of the document',
-    enum: DocumentReviewStatus,
-    example: DocumentReviewStatus.PENDING,
+    enum: ['PENDING', 'APPROVED', 'REJECTED', 'NEEDS_REUPLOAD'],
+    example: 'PENDING',
   })
-  reviewStatus: DocumentReviewStatus;
+  reviewStatus: string;
 
   @ApiPropertyOptional({
     description: 'Review note from admin',
-    example: 'Document is clear and valid',
+    example: 'Document is valid',
   })
-  reviewNote?: string;
+  reviewNote?: string | null;
 
   @ApiProperty({
     description: 'Timestamp when the document was uploaded',
-    example: '2024-01-15T10:30:00.000Z',
+    example: '2026-04-01T10:00:00.000Z',
   })
   uploadedAt: Date;
 
   @ApiPropertyOptional({
     description: 'Timestamp when the document was reviewed',
-    example: '2024-01-16T14:00:00.000Z',
   })
-  reviewedAt?: Date;
-
-  @ApiPropertyOptional({
-    description: 'ID of the user who reviewed the document',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  reviewedByUserId?: string;
+  reviewedAt?: Date | null;
 
   @ApiProperty({
     description: 'Creation timestamp',
-    example: '2024-01-15T10:30:00.000Z',
   })
   createdAt: Date;
 
   @ApiProperty({
     description: 'Last update timestamp',
-    example: '2024-01-16T14:00:00.000Z',
   })
   updatedAt: Date;
 }

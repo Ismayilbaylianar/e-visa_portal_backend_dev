@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsUUID, IsBoolean } from 'class-validator';
+import { IsNotEmpty, IsUUID } from 'class-validator';
 
 export class SelectionPreviewRequestDto {
   @ApiProperty({
@@ -25,83 +25,103 @@ export class SelectionPreviewRequestDto {
   @IsUUID()
   @IsNotEmpty()
   visaTypeId: string;
-
-  @ApiPropertyOptional({
-    description: 'Whether expedited processing is requested',
-    example: false,
-    default: false,
-  })
-  @IsBoolean()
-  @IsOptional()
-  expedited?: boolean;
 }
 
-export class FeeBreakdownDto {
+/**
+ * Fee preview structure matching the requirements
+ */
+export class FeePreviewDto {
   @ApiProperty({
-    description: 'Government fee amount',
-    example: '50.00',
+    description: 'Government fee amount (decimal string)',
+    example: '20.00',
   })
-  governmentFee: string;
+  governmentFeeAmount: string;
 
   @ApiProperty({
-    description: 'Service fee amount',
-    example: '25.00',
+    description: 'Service fee amount (decimal string)',
+    example: '10.00',
   })
-  serviceFee: string;
+  serviceFeeAmount: string;
 
   @ApiPropertyOptional({
-    description: 'Expedited processing fee amount',
-    example: '30.00',
+    description: 'Expedited fee amount (null if not enabled)',
+    example: '15.00',
   })
-  expeditedFee?: string;
+  expeditedFeeAmount: string | null;
 
   @ApiProperty({
-    description: 'Total fee amount',
-    example: '75.00',
-  })
-  totalFee: string;
-
-  @ApiProperty({
-    description: 'Currency code',
+    description: 'Currency code (ISO 4217)',
     example: 'USD',
   })
   currencyCode: string;
+
+  @ApiProperty({
+    description: 'Total amount (government + service, without expedited)',
+    example: '30.00',
+  })
+  totalAmount: string;
+
+  @ApiProperty({
+    description: 'Whether expedited processing is enabled for this nationality',
+    example: true,
+  })
+  expeditedEnabled: boolean;
 }
 
+/**
+ * Selection preview success response
+ */
+export class SelectionPreviewSuccessDto {
+  @ApiProperty({
+    description: 'Whether the case is supported/eligible',
+    example: true,
+  })
+  isEligible: boolean;
+
+  @ApiProperty({
+    description: 'Matching binding ID',
+    example: '550e8400-e29b-41d4-a716-446655440003',
+  })
+  bindingId: string;
+
+  @ApiProperty({
+    description: 'Template ID for the application form',
+    example: '550e8400-e29b-41d4-a716-446655440004',
+  })
+  templateId: string;
+
+  @ApiProperty({
+    description: 'Fee preview breakdown',
+    type: FeePreviewDto,
+  })
+  fees: FeePreviewDto;
+}
+
+/**
+ * Selection preview response (can be success or not eligible)
+ */
 export class SelectionPreviewResponseDto {
   @ApiProperty({
-    description: 'Whether the combination is available',
+    description: 'Whether the case is supported/eligible',
     example: true,
   })
-  available: boolean;
+  isEligible: boolean;
 
   @ApiPropertyOptional({
-    description: 'Fee breakdown',
-    type: FeeBreakdownDto,
+    description: 'Matching binding ID (only if eligible)',
+    example: '550e8400-e29b-41d4-a716-446655440003',
   })
-  feeBreakdown?: FeeBreakdownDto;
+  bindingId?: string;
 
   @ApiPropertyOptional({
-    description: 'Whether expedited processing is available',
-    example: true,
+    description: 'Template ID for the application form (only if eligible)',
+    example: '550e8400-e29b-41d4-a716-446655440004',
   })
-  expeditedAvailable?: boolean;
+  templateId?: string;
 
   @ApiPropertyOptional({
-    description: 'Standard processing time in days',
-    example: 7,
+    description: 'Fee preview breakdown (only if eligible)',
+    type: FeePreviewDto,
   })
-  processingDays?: number;
-
-  @ApiPropertyOptional({
-    description: 'Expedited processing time in days',
-    example: 3,
-  })
-  expeditedProcessingDays?: number;
-
-  @ApiPropertyOptional({
-    description: 'Message if combination is not available',
-    example: 'This visa type is not available for your nationality',
-  })
-  message?: string;
+  fees?: FeePreviewDto;
 }

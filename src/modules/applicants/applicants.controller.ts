@@ -10,12 +10,7 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBearerAuth,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ApplicantsService } from './applicants.service';
 import {
   CreateApplicantDto,
@@ -23,10 +18,7 @@ import {
   UpdateApplicantStatusDto,
   ApplicantResponseDto,
 } from './dto';
-import {
-  ApplicationIdParamDto,
-  ApplicantIdParamDto,
-} from '@/common/dto';
+import { ApplicationIdParamDto, ApplicantIdParamDto } from '@/common/dto';
 import { CurrentPortalIdentity, CurrentUser } from '@/common/decorators';
 import { PortalAuthGuard, JwtAuthGuard } from '@/common/guards';
 import { PortalIdentityUser, AuthenticatedUser } from '@/common/types';
@@ -56,10 +48,7 @@ export class ApplicantsPortalController {
     @Param() params: ApplicationIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<ApplicantResponseDto[]> {
-    return this.applicantsService.findByApplication(
-      params.applicationId,
-      portalIdentity.id,
-    );
+    return this.applicantsService.findByApplication(params.applicationId, portalIdentity.id);
   }
 
   @Get('applicants/:applicantId')
@@ -80,10 +69,7 @@ export class ApplicantsPortalController {
     @Param() params: ApplicantIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<ApplicantResponseDto> {
-    return this.applicantsService.findById(
-      params.applicantId,
-      portalIdentity.id,
-    );
+    return this.applicantsService.findById(params.applicantId, portalIdentity.id);
   }
 
   @Post('applications/:applicationId/applicants')
@@ -110,11 +96,7 @@ export class ApplicantsPortalController {
     @Body() dto: CreateApplicantDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<ApplicantResponseDto> {
-    return this.applicantsService.create(
-      params.applicationId,
-      portalIdentity.id,
-      dto,
-    );
+    return this.applicantsService.create(params.applicationId, portalIdentity.id, dto);
   }
 
   @Patch('applicants/:applicantId')
@@ -140,11 +122,7 @@ export class ApplicantsPortalController {
     @Body() dto: UpdateApplicantDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<ApplicantResponseDto> {
-    return this.applicantsService.update(
-      params.applicantId,
-      portalIdentity.id,
-      dto,
-    );
+    return this.applicantsService.update(params.applicantId, portalIdentity.id, dto);
   }
 
   @Delete('applicants/:applicantId')
@@ -169,10 +147,7 @@ export class ApplicantsPortalController {
     @Param() params: ApplicantIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<void> {
-    return this.applicantsService.delete(
-      params.applicantId,
-      portalIdentity.id,
-    );
+    return this.applicantsService.delete(params.applicantId, portalIdentity.id);
   }
 }
 
@@ -202,10 +177,6 @@ export class ApplicantsAdminController {
     @Body() dto: UpdateApplicantStatusDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ApplicantResponseDto> {
-    return this.applicantsService.updateStatus(
-      params.applicantId,
-      user.id,
-      dto,
-    );
+    return this.applicantsService.updateStatus(params.applicantId, user.id, dto);
   }
 }

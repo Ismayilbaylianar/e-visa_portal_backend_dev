@@ -21,7 +21,8 @@ export class UpdateRoleDto {
   @MinLength(2, { message: 'Key must be at least 2 characters' })
   @MaxLength(50, { message: 'Key must not exceed 50 characters' })
   @Matches(/^[a-z][a-z0-9_]*$/, {
-    message: 'Key must start with lowercase letter and contain only lowercase letters, numbers, and underscores',
+    message:
+      'Key must start with lowercase letter and contain only lowercase letters, numbers, and underscores',
   })
   key?: string;
 

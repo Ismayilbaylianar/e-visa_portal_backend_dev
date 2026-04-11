@@ -82,7 +82,7 @@ export class PermissionsService {
 
     // Group permissions by module
     const moduleMap = new Map<string, PermissionModuleDto>();
-    
+
     for (const perm of permissions) {
       if (!moduleMap.has(perm.moduleKey)) {
         moduleMap.set(perm.moduleKey, {
@@ -91,7 +91,7 @@ export class PermissionsService {
           permissions: [],
         });
       }
-      
+
       moduleMap.get(perm.moduleKey)!.permissions.push({
         id: perm.id,
         actionKey: perm.actionKey,
@@ -141,7 +141,10 @@ export class PermissionsService {
       const foundIds = permissions.map(p => p.id);
       const missingIds = dto.permissionIds.filter(id => !foundIds.includes(id));
       throw new NotFoundException('Some permissions not found', [
-        { reason: ErrorCodes.NOT_FOUND, message: `Permission IDs not found: ${missingIds.join(', ')}` },
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: `Permission IDs not found: ${missingIds.join(', ')}`,
+        },
       ]);
     }
 
@@ -158,7 +161,9 @@ export class PermissionsService {
       }),
     ]);
 
-    this.logger.log(`Updated permissions for role ${roleId}: ${dto.permissionIds.length} permissions`);
+    this.logger.log(
+      `Updated permissions for role ${roleId}: ${dto.permissionIds.length} permissions`,
+    );
 
     return {
       roleId,
@@ -197,13 +202,16 @@ export class PermissionsService {
         const foundIds = permissions.map(p => p.id);
         const missingIds = allPermissionIds.filter(id => !foundIds.includes(id));
         throw new NotFoundException('Some permissions not found', [
-          { reason: ErrorCodes.NOT_FOUND, message: `Permission IDs not found: ${missingIds.join(', ')}` },
+          {
+            reason: ErrorCodes.NOT_FOUND,
+            message: `Permission IDs not found: ${missingIds.join(', ')}`,
+          },
         ]);
       }
     }
 
     // Delete existing user permissions and create new ones
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async tx => {
       await tx.userPermission.deleteMany({
         where: { userId },
       });

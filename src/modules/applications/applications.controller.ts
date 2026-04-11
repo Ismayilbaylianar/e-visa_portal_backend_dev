@@ -10,13 +10,7 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBearerAuth,
-  ApiParam,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { ApplicationsService } from './applications.service';
 import {
   CreateApplicationDto,
@@ -59,9 +53,7 @@ export class ApplicationsAdminController {
     status: 404,
     description: 'Application not found',
   })
-  async findById(
-    @Param() params: ApplicationIdParamDto,
-  ): Promise<ApplicationResponseDto> {
+  async findById(@Param() params: ApplicationIdParamDto): Promise<ApplicationResponseDto> {
     return this.applicationsService.findById(params.applicationId);
   }
 }
@@ -113,10 +105,7 @@ export class ApplicationsPortalController {
     @Param() params: ApplicationIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<ApplicationResponseDto> {
-    return this.applicationsService.findByIdForPortal(
-      params.applicationId,
-      portalIdentity.id,
-    );
+    return this.applicationsService.findByIdForPortal(params.applicationId, portalIdentity.id);
   }
 
   @Patch('applications/:applicationId')
@@ -142,11 +131,7 @@ export class ApplicationsPortalController {
     @Body() dto: UpdateApplicationDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<ApplicationResponseDto> {
-    return this.applicationsService.update(
-      params.applicationId,
-      dto,
-      portalIdentity.id,
-    );
+    return this.applicationsService.update(params.applicationId, dto, portalIdentity.id);
   }
 
   @Post('applications/:applicationId/review')
@@ -172,10 +157,7 @@ export class ApplicationsPortalController {
     @Param() params: ApplicationIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<ApplicationResponseDto> {
-    return this.applicationsService.submitForReview(
-      params.applicationId,
-      portalIdentity.id,
-    );
+    return this.applicationsService.submitForReview(params.applicationId, portalIdentity.id);
   }
 
   @Post('applications/:applicationId/submit')
@@ -201,16 +183,14 @@ export class ApplicationsPortalController {
     @Param() params: ApplicationIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<ApplicationResponseDto> {
-    return this.applicationsService.submit(
-      params.applicationId,
-      portalIdentity.id,
-    );
+    return this.applicationsService.submit(params.applicationId, portalIdentity.id);
   }
 
   @Get('applications/resume/:resumeToken')
   @ApiOperation({
     summary: 'Get application by resume token',
-    description: 'Resume an application using the resume token (Portal)',
+    description:
+      'Resume an application using the resume token. Must belong to current portal identity.',
   })
   @ApiParam({
     name: 'resumeToken',
@@ -226,9 +206,14 @@ export class ApplicationsPortalController {
     status: 404,
     description: 'Application not found',
   })
+  @ApiResponse({
+    status: 403,
+    description: 'Access denied - application belongs to another user',
+  })
   async getByResumeToken(
     @Param('resumeToken') resumeToken: string,
+    @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<ApplicationResponseDto> {
-    return this.applicationsService.getByResumeToken(resumeToken);
+    return this.applicationsService.getByResumeToken(resumeToken, portalIdentity.id);
   }
 }

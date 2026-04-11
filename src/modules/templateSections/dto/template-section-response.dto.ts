@@ -1,16 +1,21 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { FIELD_TYPES } from '@/modules/templates/dto';
 
-export class TemplateFieldResponseDto {
+export class SectionFieldResponseDto {
   @ApiProperty({ description: 'Field ID' })
   id: string;
 
-  @ApiProperty({ description: 'Field key' })
+  @ApiProperty({ description: 'Field key (unique within template)', example: 'firstName' })
   fieldKey: string;
 
-  @ApiProperty({ description: 'Field type' })
+  @ApiProperty({
+    description: 'Field type',
+    enum: FIELD_TYPES,
+    example: 'text',
+  })
   fieldType: string;
 
-  @ApiProperty({ description: 'Field label' })
+  @ApiProperty({ description: 'Field label', example: 'First Name' })
   label: string;
 
   @ApiPropertyOptional({ description: 'Placeholder text' })
@@ -25,20 +30,26 @@ export class TemplateFieldResponseDto {
   @ApiProperty({ description: 'Whether field is required' })
   isRequired: boolean;
 
-  @ApiProperty({ description: 'Sort order' })
+  @ApiProperty({ description: 'Sort order within section' })
   sortOrder: number;
 
   @ApiProperty({ description: 'Whether field is active' })
   isActive: boolean;
 
-  @ApiPropertyOptional({ description: 'Field options (JSON)' })
-  optionsJson?: any;
+  @ApiProperty({
+    description: 'Options for select/radio/checkbox fields',
+    type: 'array',
+  })
+  optionsJson: any[];
 
-  @ApiPropertyOptional({ description: 'Validation rules (JSON)' })
-  validationRulesJson?: any;
+  @ApiPropertyOptional({ description: 'Validation rules (JSON object)' })
+  validationRulesJson?: Record<string, any> | null;
 
-  @ApiPropertyOptional({ description: 'Visibility rules (JSON)' })
-  visibilityRulesJson?: any;
+  @ApiProperty({
+    description: 'Visibility rules for conditional display',
+    type: 'array',
+  })
+  visibilityRulesJson: any[];
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
@@ -51,29 +62,29 @@ export class TemplateSectionResponseDto {
   @ApiProperty({ description: 'Section ID' })
   id: string;
 
-  @ApiProperty({ description: 'Template ID' })
+  @ApiProperty({ description: 'Template ID this section belongs to' })
   templateId: string;
 
-  @ApiProperty({ description: 'Section title' })
+  @ApiProperty({ description: 'Section title', example: 'Personal Info' })
   title: string;
 
-  @ApiProperty({ description: 'Section key' })
+  @ApiProperty({ description: 'Section key (unique within template)', example: 'personalInfo' })
   key: string;
 
   @ApiPropertyOptional({ description: 'Section description' })
   description?: string;
 
-  @ApiProperty({ description: 'Sort order' })
+  @ApiProperty({ description: 'Sort order within template' })
   sortOrder: number;
 
   @ApiProperty({ description: 'Whether section is active' })
   isActive: boolean;
 
-  @ApiPropertyOptional({
-    type: [TemplateFieldResponseDto],
-    description: 'Section fields',
+  @ApiProperty({
+    type: [SectionFieldResponseDto],
+    description: 'Section fields ordered by sortOrder',
   })
-  fields?: TemplateFieldResponseDto[];
+  fields: SectionFieldResponseDto[];
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;

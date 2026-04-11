@@ -1,11 +1,16 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { Request } from 'express';
 import { PortalAuthService } from './portal-auth.service';
-import { SendOtpDto, VerifyOtpDto, PortalAuthResponseDto } from './dto';
-import { Public, CurrentPortalIdentity } from '@/common/decorators';
-import { PortalIdentityUser } from '@/common/types';
-import { RefreshTokenDto } from '../auth/dto';
+import {
+  SendOtpDto,
+  VerifyOtpDto,
+  RefreshPortalTokenDto,
+  LogoutPortalDto,
+  PortalAuthResponseDto,
+  SendOtpResponseDto,
+} from './dto';
+import { Public } from '@/common/decorators';
 
 @ApiTags('Portal Auth')
 @Controller('portal/auth')
@@ -17,24 +22,20 @@ export class PortalAuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Send OTP',
-    description: 'Send OTP code to the provided email address for portal authentication',
+    description:
+      'Send OTP code to the provided email address for portal authentication. In development mode, the OTP code is returned in the response.',
   })
   @ApiBody({ type: SendOtpDto })
   @ApiResponse({
     status: 200,
     description: 'OTP sent successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string', example: 'OTP sent successfully' },
-      },
-    },
+    type: SendOtpResponseDto,
   })
   @ApiResponse({
     status: 400,
-    description: 'Invalid email or rate limit exceeded',
+    description: 'Invalid email format',
   })
-  async sendOtp(@Body() dto: SendOtpDto): Promise<{ message: string }> {
+  async sendOtp(@Body() dto: SendOtpDto): Promise<SendOtpResponseDto> {
     return this.portalAuthService.sendOtp(dto);
   }
 
@@ -43,17 +44,18 @@ export class PortalAuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Verify OTP',
-    description: 'Verify OTP code and authenticate portal user',
+    description:
+      'Verify OTP code and authenticate portal user. Creates portal identity if it does not exist.',
   })
   @ApiBody({ type: VerifyOtpDto })
   @ApiResponse({
     status: 200,
-    description: 'OTP verified successfully',
+    description: 'OTP verified successfully, returns access and refresh tokens',
     type: PortalAuthResponseDto,
   })
   @ApiResponse({
-    status: 401,
-    description: 'Invalid or expired OTP',
+    status: 400,
+    description: 'Invalid or expired OTP (otpInvalid, otpExpired)',
   })
   async verifyOtp(@Body() dto: VerifyOtpDto, @Req() req: Request): Promise<PortalAuthResponseDto> {
     const ipAddress = req.ip || req.socket.remoteAddress;
@@ -66,9 +68,9 @@ export class PortalAuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Refresh access token',
-    description: 'Get new access token using refresh token',
+    description: 'Get new access and refresh tokens using the current refresh token',
   })
-  @ApiBody({ type: RefreshTokenDto })
+  @ApiBody({ type: RefreshPortalTokenDto })
   @ApiResponse({
     status: 200,
     description: 'Token refreshed successfully',
@@ -78,26 +80,23 @@ export class PortalAuthController {
     status: 401,
     description: 'Invalid or expired refresh token',
   })
-  async refresh(@Body() dto: RefreshTokenDto): Promise<PortalAuthResponseDto> {
+  async refresh(@Body() dto: RefreshPortalTokenDto): Promise<PortalAuthResponseDto> {
     return this.portalAuthService.refreshToken(dto.refreshToken);
   }
 
   @Post('logout')
+  @Public()
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Logout',
-    description: 'Revoke current session and logout from portal',
+    description: 'Revoke the session associated with the provided refresh token',
   })
+  @ApiBody({ type: LogoutPortalDto })
   @ApiResponse({
     status: 204,
     description: 'Logout successful',
   })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized',
-  })
-  async logout(@CurrentPortalIdentity() identity: PortalIdentityUser): Promise<void> {
-    await this.portalAuthService.logout(identity.id);
+  async logout(@Body() dto: LogoutPortalDto): Promise<void> {
+    await this.portalAuthService.logout(dto.refreshToken);
   }
 }

@@ -75,7 +75,10 @@ export class VisaTypesService {
 
     if (!visaType) {
       throw new NotFoundException('Visa type not found', [
-        { reason: ErrorCodes.VISA_TYPE_NOT_FOUND, message: 'Visa type does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.VISA_TYPE_NOT_FOUND,
+          message: 'Visa type does not exist or has been deleted',
+        },
       ]);
     }
 
@@ -97,7 +100,10 @@ export class VisaTypesService {
 
     if (existing) {
       throw new ConflictException('Visa type already exists', [
-        { reason: ErrorCodes.CONFLICT, message: 'A visa type with this purpose and entry type already exists' },
+        {
+          reason: ErrorCodes.CONFLICT,
+          message: 'A visa type with this purpose and entry type already exists',
+        },
       ]);
     }
 
@@ -128,7 +134,10 @@ export class VisaTypesService {
 
     if (!visaType) {
       throw new NotFoundException('Visa type not found', [
-        { reason: ErrorCodes.VISA_TYPE_NOT_FOUND, message: 'Visa type does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.VISA_TYPE_NOT_FOUND,
+          message: 'Visa type does not exist or has been deleted',
+        },
       ]);
     }
 
@@ -148,7 +157,10 @@ export class VisaTypesService {
 
       if (existing) {
         throw new ConflictException('Visa type already exists', [
-          { reason: ErrorCodes.CONFLICT, message: 'A visa type with this purpose and entry type already exists' },
+          {
+            reason: ErrorCodes.CONFLICT,
+            message: 'A visa type with this purpose and entry type already exists',
+          },
         ]);
       }
     }
@@ -182,7 +194,10 @@ export class VisaTypesService {
 
     if (!visaType) {
       throw new NotFoundException('Visa type not found', [
-        { reason: ErrorCodes.VISA_TYPE_NOT_FOUND, message: 'Visa type does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.VISA_TYPE_NOT_FOUND,
+          message: 'Visa type does not exist or has been deleted',
+        },
       ]);
     }
 

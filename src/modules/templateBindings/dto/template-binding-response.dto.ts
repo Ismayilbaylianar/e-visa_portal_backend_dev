@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-class CountryBasicResponseDto {
+export class CountryBasicResponseDto {
   @ApiProperty({
     description: 'Country ID',
     example: '550e8400-e29b-41d4-a716-446655440000',
@@ -20,7 +20,7 @@ class CountryBasicResponseDto {
   isoCode: string;
 }
 
-class VisaTypeBasicResponseDto {
+export class VisaTypeBasicResponseDto {
   @ApiProperty({
     description: 'Visa type ID',
     example: '550e8400-e29b-41d4-a716-446655440001',
@@ -40,7 +40,7 @@ class VisaTypeBasicResponseDto {
   purpose: string;
 }
 
-class TemplateBasicResponseDto {
+export class TemplateBasicResponseDto {
   @ApiProperty({
     description: 'Template ID',
     example: '550e8400-e29b-41d4-a716-446655440002',
@@ -60,7 +60,7 @@ class TemplateBasicResponseDto {
   key: string;
 }
 
-class NationalityFeeBasicResponseDto {
+export class NationalityFeeResponseDto {
   @ApiProperty({
     description: 'Fee ID',
     example: '550e8400-e29b-41d4-a716-446655440003',
@@ -72,6 +72,12 @@ class NationalityFeeBasicResponseDto {
     example: '550e8400-e29b-41d4-a716-446655440004',
   })
   nationalityCountryId: string;
+
+  @ApiPropertyOptional({
+    description: 'Nationality country details',
+    type: CountryBasicResponseDto,
+  })
+  nationalityCountry?: CountryBasicResponseDto;
 
   @ApiProperty({
     description: 'Government fee amount',
@@ -86,13 +92,13 @@ class NationalityFeeBasicResponseDto {
   serviceFeeAmount: string;
 
   @ApiPropertyOptional({
-    description: 'Expedited fee amount',
+    description: 'Expedited fee amount (null if expedited not enabled)',
     example: '30.00',
   })
-  expeditedFeeAmount?: string;
+  expeditedFeeAmount?: string | null;
 
   @ApiProperty({
-    description: 'Currency code',
+    description: 'Currency code (ISO 4217)',
     example: 'USD',
   })
   currencyCode: string;
@@ -108,8 +114,17 @@ class NationalityFeeBasicResponseDto {
     example: true,
   })
   isActive: boolean;
+
+  @ApiProperty({ description: 'Creation timestamp' })
+  createdAt: Date;
+
+  @ApiProperty({ description: 'Last update timestamp' })
+  updatedAt: Date;
 }
 
+/**
+ * Full template binding response with nested nationality fees
+ */
 export class TemplateBindingResponseDto {
   @ApiProperty({
     description: 'Template binding ID',
@@ -142,25 +157,21 @@ export class TemplateBindingResponseDto {
   isActive: boolean;
 
   @ApiPropertyOptional({
-    description: 'Date from which the binding is valid',
-    example: '2024-01-01T00:00:00.000Z',
+    description: 'Date from which the binding is valid (null means always valid from past)',
+    example: '2026-04-01T00:00:00.000Z',
   })
-  validFrom?: Date;
+  validFrom?: Date | null;
 
   @ApiPropertyOptional({
-    description: 'Date until which the binding is valid',
-    example: '2024-12-31T23:59:59.999Z',
+    description: 'Date until which the binding is valid (null means no end date)',
+    example: '2026-12-31T23:59:59.999Z',
   })
-  validTo?: Date;
+  validTo?: Date | null;
 
-  @ApiProperty({
-    description: 'Creation timestamp',
-  })
+  @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
 
-  @ApiProperty({
-    description: 'Last update timestamp',
-  })
+  @ApiProperty({ description: 'Last update timestamp' })
   updatedAt: Date;
 
   @ApiPropertyOptional({
@@ -181,9 +192,53 @@ export class TemplateBindingResponseDto {
   })
   template?: TemplateBasicResponseDto;
 
-  @ApiPropertyOptional({
-    description: 'Nationality fees associated with this binding',
-    type: [NationalityFeeBasicResponseDto],
+  @ApiProperty({
+    description: 'Nationality fees associated with this binding (ordered by country name)',
+    type: [NationalityFeeResponseDto],
   })
-  nationalityFees?: NationalityFeeBasicResponseDto[];
+  nationalityFees: NationalityFeeResponseDto[];
+}
+
+/**
+ * Summary response for list endpoints (without nested nationality fees)
+ */
+export class TemplateBindingListItemResponseDto {
+  @ApiProperty({ description: 'Template binding ID' })
+  id: string;
+
+  @ApiProperty({ description: 'Destination country ID' })
+  destinationCountryId: string;
+
+  @ApiProperty({ description: 'Visa type ID' })
+  visaTypeId: string;
+
+  @ApiProperty({ description: 'Template ID' })
+  templateId: string;
+
+  @ApiProperty({ description: 'Whether the binding is active' })
+  isActive: boolean;
+
+  @ApiPropertyOptional({ description: 'Date from which the binding is valid' })
+  validFrom?: Date | null;
+
+  @ApiPropertyOptional({ description: 'Date until which the binding is valid' })
+  validTo?: Date | null;
+
+  @ApiProperty({ description: 'Number of nationality fees configured' })
+  nationalityFeesCount: number;
+
+  @ApiProperty({ description: 'Creation timestamp' })
+  createdAt: Date;
+
+  @ApiProperty({ description: 'Last update timestamp' })
+  updatedAt: Date;
+
+  @ApiPropertyOptional({ type: CountryBasicResponseDto })
+  destinationCountry?: CountryBasicResponseDto;
+
+  @ApiPropertyOptional({ type: VisaTypeBasicResponseDto })
+  visaType?: VisaTypeBasicResponseDto;
+
+  @ApiPropertyOptional({ type: TemplateBasicResponseDto })
+  template?: TemplateBasicResponseDto;
 }

@@ -89,7 +89,10 @@ export class CountriesService {
 
     if (!country) {
       throw new NotFoundException('Country not found', [
-        { reason: ErrorCodes.COUNTRY_NOT_FOUND, message: 'Country does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.COUNTRY_NOT_FOUND,
+          message: 'Country does not exist or has been deleted',
+        },
       ]);
     }
 
@@ -107,7 +110,11 @@ export class CountriesService {
 
     if (existingBySlug) {
       throw new ConflictException('Slug already exists', [
-        { field: 'slug', reason: ErrorCodes.CONFLICT, message: 'A country with this slug already exists' },
+        {
+          field: 'slug',
+          reason: ErrorCodes.CONFLICT,
+          message: 'A country with this slug already exists',
+        },
       ]);
     }
 
@@ -118,7 +125,11 @@ export class CountriesService {
 
     if (existingByIso) {
       throw new ConflictException('ISO code already exists', [
-        { field: 'isoCode', reason: ErrorCodes.CONFLICT, message: 'A country with this ISO code already exists' },
+        {
+          field: 'isoCode',
+          reason: ErrorCodes.CONFLICT,
+          message: 'A country with this ISO code already exists',
+        },
       ]);
     }
 
@@ -154,7 +165,10 @@ export class CountriesService {
 
     if (!country) {
       throw new NotFoundException('Country not found', [
-        { reason: ErrorCodes.COUNTRY_NOT_FOUND, message: 'Country does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.COUNTRY_NOT_FOUND,
+          message: 'Country does not exist or has been deleted',
+        },
       ]);
     }
 
@@ -165,7 +179,11 @@ export class CountriesService {
       });
       if (existingBySlug) {
         throw new ConflictException('Slug already exists', [
-          { field: 'slug', reason: ErrorCodes.CONFLICT, message: 'A country with this slug already exists' },
+          {
+            field: 'slug',
+            reason: ErrorCodes.CONFLICT,
+            message: 'A country with this slug already exists',
+          },
         ]);
       }
     }
@@ -177,7 +195,11 @@ export class CountriesService {
       });
       if (existingByIso) {
         throw new ConflictException('ISO code already exists', [
-          { field: 'isoCode', reason: ErrorCodes.CONFLICT, message: 'A country with this ISO code already exists' },
+          {
+            field: 'isoCode',
+            reason: ErrorCodes.CONFLICT,
+            message: 'A country with this ISO code already exists',
+          },
         ]);
       }
     }
@@ -216,7 +238,10 @@ export class CountriesService {
 
     if (!country) {
       throw new NotFoundException('Country not found', [
-        { reason: ErrorCodes.COUNTRY_NOT_FOUND, message: 'Country does not exist or has been deleted' },
+        {
+          reason: ErrorCodes.COUNTRY_NOT_FOUND,
+          message: 'Country does not exist or has been deleted',
+        },
       ]);
     }
 
@@ -283,7 +308,10 @@ export class CountriesService {
 
     if (!country) {
       throw new NotFoundException('Country not found', [
-        { reason: ErrorCodes.COUNTRY_NOT_FOUND, message: 'Country does not exist or is not available' },
+        {
+          reason: ErrorCodes.COUNTRY_NOT_FOUND,
+          message: 'Country does not exist or is not available',
+        },
       ]);
     }
 

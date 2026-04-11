@@ -23,6 +23,13 @@ export class CreateApplicationDto {
   @IsUUID()
   visaTypeId: string;
 
+  @ApiProperty({
+    description: 'Template binding ID (from public selection preview)',
+    example: '550e8400-e29b-41d4-a716-446655440003',
+  })
+  @IsUUID()
+  templateBindingId: string;
+
   @ApiPropertyOptional({
     description: 'Whether expedited processing is requested',
     default: false,

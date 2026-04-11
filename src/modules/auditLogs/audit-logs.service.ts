@@ -2,13 +2,99 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogResponseDto, GetAuditLogsQueryDto } from './dto';
 import { NotFoundException } from '@/common/exceptions';
+import { ErrorCodes } from '@/common/constants';
 import { PaginationMeta } from '@/common/types';
+import { ActorType } from '@prisma/client';
+
+export interface CreateAuditLogParams {
+  actorUserId?: string;
+  actorType: ActorType;
+  actionKey: string;
+  entityType: string;
+  entityId: string;
+  oldValue?: Record<string, any>;
+  newValue?: Record<string, any>;
+  ipAddress?: string;
+  userAgent?: string;
+}
 
 @Injectable()
 export class AuditLogsService {
   private readonly logger = new Logger(AuditLogsService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Create an audit log entry
+   */
+  async create(params: CreateAuditLogParams): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          actorUserId: params.actorUserId,
+          actorType: params.actorType,
+          actionKey: params.actionKey,
+          entityType: params.entityType,
+          entityId: params.entityId,
+          oldValueJson: params.oldValue,
+          newValueJson: params.newValue,
+          ipAddress: params.ipAddress,
+          userAgent: params.userAgent,
+        },
+      });
+      this.logger.debug(
+        `Audit log created: ${params.actionKey} on ${params.entityType}:${params.entityId}`,
+      );
+    } catch (error) {
+      this.logger.error(`Failed to create audit log: ${error}`);
+    }
+  }
+
+  /**
+   * Helper method for logging admin user actions
+   */
+  async logAdminAction(
+    userId: string,
+    actionKey: string,
+    entityType: string,
+    entityId: string,
+    oldValue?: Record<string, any>,
+    newValue?: Record<string, any>,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<void> {
+    await this.create({
+      actorUserId: userId,
+      actorType: ActorType.USER,
+      actionKey,
+      entityType,
+      entityId,
+      oldValue,
+      newValue,
+      ipAddress,
+      userAgent,
+    });
+  }
+
+  /**
+   * Helper method for logging system actions
+   */
+  async logSystemAction(
+    actionKey: string,
+    entityType: string,
+    entityId: string,
+    oldValue?: Record<string, any>,
+    newValue?: Record<string, any>,
+  ): Promise<void> {
+    await this.create({
+      actorType: ActorType.SYSTEM,
+      actionKey,
+      entityType,
+      entityId,
+      oldValue,
+      newValue,
+    });
+  }
 
   async findAll(
     query: GetAuditLogsQueryDto,
@@ -76,7 +162,9 @@ export class AuditLogsService {
     });
 
     if (!log) {
-      throw new NotFoundException('Audit log not found');
+      throw new NotFoundException('Audit log not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Audit log not found' },
+      ]);
     }
 
     return this.mapToResponse(log);

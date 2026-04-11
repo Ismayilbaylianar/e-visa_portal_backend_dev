@@ -42,7 +42,9 @@ export class PaymentTransactionsService {
       },
     });
 
-    this.logger.log(`Payment transaction created: ${transaction.id} for payment ${input.paymentId}`);
+    this.logger.log(
+      `Payment transaction created: ${transaction.id} for payment ${input.paymentId}`,
+    );
     return this.mapToResponse(transaction);
   }
 

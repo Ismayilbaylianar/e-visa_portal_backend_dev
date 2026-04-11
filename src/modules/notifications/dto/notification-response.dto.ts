@@ -47,6 +47,12 @@ export class NotificationResponseDto {
   status: NotificationStatus;
 
   @ApiPropertyOptional({
+    description: 'Retry count',
+    example: 0,
+  })
+  retryCount?: number;
+
+  @ApiPropertyOptional({
     description: 'Timestamp when notification was sent',
   })
   sentAt?: Date;
