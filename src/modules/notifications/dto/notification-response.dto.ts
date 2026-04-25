@@ -47,10 +47,28 @@ export class NotificationResponseDto {
   status: NotificationStatus;
 
   @ApiPropertyOptional({
-    description: 'Retry count',
+    description: 'Current retry count',
     example: 0,
   })
   retryCount?: number;
+
+  @ApiPropertyOptional({
+    description: 'Maximum retry attempts allowed',
+    example: 3,
+  })
+  maxRetryCount?: number;
+
+  @ApiPropertyOptional({
+    description: 'Provider used for sending (smtp, console, mock)',
+    example: 'smtp',
+  })
+  provider?: string;
+
+  @ApiPropertyOptional({
+    description: 'External message ID from provider',
+    example: '<abc123@smtp.example.com>',
+  })
+  messageId?: string;
 
   @ApiPropertyOptional({
     description: 'Timestamp when notification was sent',

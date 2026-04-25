@@ -207,16 +207,53 @@ This repository contains the complete backend architecture with fully functional
   - Amount matching validation
   - Ready for future reconciliation workflows
 
+#### Email Infrastructure (Production-Ready)
+- [x] **Provider-Agnostic Architecture**
+  - Email provider abstraction interface
+  - SmtpEmailProvider for real SMTP sending
+  - ConsoleEmailProvider for development/testing
+  - Environment-based provider selection (auto/smtp/console)
+  - Configuration validation on startup (fail-fast in production)
+- [x] **Template-Based Sending**
+  - Database templates via EmailTemplate model
+  - Built-in default templates (OTP, notifications, status updates, invites, payments)
+  - Variable substitution with `{{variable}}` syntax
+  - Simple conditional blocks `{{#if variable}}...{{/if}}`
+  - Required variable validation with clear error messages
+- [x] **OTP Email Delivery (Hardened)**
+  - Real email sending for OTP codes
+  - Resend cooldown protection (configurable, default 60s)
+  - Hourly rate limiting (configurable, default 10 attempts)
+  - Graceful fallback if email fails (OTP still valid)
+  - Development mode still returns OTP in response
+- [x] **Notification Email Integration**
+  - EMAIL channel notifications use real SMTP
+  - Robust state machine (PENDING → PROCESSING → SENT/FAILED)
+  - Provider and messageId tracking
+  - Configurable retry count per notification
+  - Error tracking for failed deliveries
+- [x] **Email Logging & Observability**
+  - EmailLog table for all send attempts
+  - Captures: template, recipient, provider, status, errors
+  - Related entity tracking (OTP, Notification, etc.)
+  - Admin endpoint for email statistics and failures
+- [x] **Admin Utilities**
+  - Test email endpoint (`POST /admin/email/test`)
+  - Email status endpoint (`GET /admin/email/status`)
+  - Statistics endpoint (`GET /admin/email/statistics`)
+  - Failures endpoint (`GET /admin/email/failures`)
+  - Config validation endpoint (`GET /admin/email/config/validate`)
+
 #### Notifications (Fully Functional)
 - [x] **Notification Management**
   - List notifications with filters (channel, status, templateKey, recipient)
   - Get notification details
   - Retry failed/pending notifications
-  - Mock sending behavior (marks as SENT after 1 second)
+  - Real EMAIL sending when SMTP configured, mock for SMS/PUSH
 - [x] **Notification Status Tracking**
-  - PENDING, SENT, FAILED, DELIVERED statuses
+  - PENDING, PROCESSING, SENT, FAILED, DELIVERED statuses
   - Retry count tracking
-  - Error message storage
+  - Error message storage for failed deliveries
 
 #### Jobs (Fully Functional)
 - [x] **Background Job Management**
@@ -255,11 +292,12 @@ This repository contains the complete backend architecture with fully functional
 ### What's NOT Implemented Yet
 
 - [ ] Real payment provider integrations (Stripe, PayPal, etc.)
-- [ ] Real SMTP email sending
-- [ ] Real SMS sending
+- [x] ~~Real SMTP email sending~~ - **Implemented via Email Infrastructure**
+- [ ] Real SMS sending (SMS/PUSH channels still mock)
 - [ ] Background job worker/processor
 - [ ] S3/cloud storage
 - [ ] External queue systems (Redis, etc.)
+- [ ] Email delivery tracking/webhooks
 
 ## Tech Stack
 
@@ -823,8 +861,44 @@ In production, you may want to:
 | `JWT_PORTAL_REFRESH_EXPIRATION_SECONDS` | Portal refresh token TTL | `604800` |
 | `BCRYPT_SALT_ROUNDS` | Password hashing rounds | `12` |
 | `UPLOAD_PATH` | Local file upload directory | `./uploads` |
+| `OTP_EXPIRY_MINUTES` | OTP code expiry time | `10` |
+| `OTP_RESEND_COOLDOWN_SECONDS` | Minimum wait between OTP requests | `60` |
+| `OTP_MAX_ATTEMPTS_PER_HOUR` | Max OTP requests per hour per email | `10` |
+| `EMAIL_PROVIDER` | Email provider: `smtp`, `console`, `auto` | `auto` |
+| `SMTP_HOST` | SMTP server hostname | - |
+| `SMTP_PORT` | SMTP server port | `587` |
+| `SMTP_SECURE` | Use TLS for SMTP | `false` |
+| `SMTP_USER` | SMTP authentication username | - |
+| `SMTP_PASS` | SMTP authentication password | - |
+| `SMTP_FROM_EMAIL` | Default sender email address | - |
+| `SMTP_FROM_NAME` | Default sender display name | `E-Visa Portal` |
 
 See `.env.example` for all available variables.
+
+### Email Provider Configuration
+
+The email system supports multiple providers:
+
+- **`auto`** (default): Uses SMTP if configured, otherwise console
+- **`smtp`**: Force real SMTP sending (requires SMTP_* config)
+- **`console`**: Log emails to console (development/testing)
+
+Example for Gmail SMTP:
+```env
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM_EMAIL=your-email@gmail.com
+SMTP_FROM_NAME=E-Visa Portal
+```
+
+For development without SMTP:
+```env
+EMAIL_PROVIDER=console
+```
 
 ## Portal Authentication
 
@@ -833,9 +907,12 @@ See `.env.example` for all available variables.
 Portal users authenticate using OTP (One-Time Password) sent to their email:
 
 1. User enters email → `POST /portal/auth/sendOtp`
-2. User receives OTP (in dev mode, returned in response)
+2. OTP is sent via email (using configured EMAIL_PROVIDER)
+   - In development mode, OTP is also returned in response for testing
 3. User verifies OTP → `POST /portal/auth/verifyOtp`
 4. User receives access + refresh tokens
+
+**Note**: If email sending fails, OTP is still created and can be used. The response indicates whether email delivery succeeded.
 5. Use access token for portal endpoints
 
 ### Development Mode OTP Behavior

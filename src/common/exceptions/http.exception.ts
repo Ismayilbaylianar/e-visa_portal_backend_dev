@@ -101,3 +101,14 @@ export class DatabaseException extends BaseException {
     });
   }
 }
+
+export class TooManyRequestsException extends BaseException {
+  constructor(message = 'Too many requests', details?: ApiErrorDetail[]) {
+    super({
+      code: ErrorCodes.TOO_MANY_REQUESTS,
+      message,
+      statusCode: HttpStatus.TOO_MANY_REQUESTS,
+      details,
+    });
+  }
+}

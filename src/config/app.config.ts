@@ -46,4 +46,18 @@ export const appConfig = registerAs('app', () => ({
 
   // Logging
   logLevel: process.env.LOG_LEVEL || 'debug',
+
+  // Email Configuration
+  email: {
+    provider: process.env.EMAIL_PROVIDER || 'auto',
+    smtp: {
+      host: process.env.SMTP_HOST || '',
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: process.env.SMTP_SECURE === 'true',
+      user: process.env.SMTP_USER || '',
+      pass: process.env.SMTP_PASS || '',
+      fromEmail: process.env.SMTP_FROM_EMAIL || '',
+      fromName: process.env.SMTP_FROM_NAME || 'E-Visa Portal',
+    },
+  },
 }));

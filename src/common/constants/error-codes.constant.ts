@@ -64,6 +64,21 @@ export const ErrorCodes = {
   PAYMENT_ALREADY_PROCESSED: 'paymentAlreadyProcessed',
   PAYMENT_AMOUNT_MISMATCH: 'paymentAmountMismatch',
   PAYMENT_EXPIRED: 'paymentExpired',
+
+  // ==========================================
+  // Email errors
+  // ==========================================
+  EMAIL_SEND_FAILED: 'emailSendFailed',
+  EMAIL_PROVIDER_NOT_CONFIGURED: 'emailProviderNotConfigured',
+  EMAIL_TEMPLATE_NOT_FOUND: 'emailTemplateNotFound',
+  EMAIL_TEMPLATE_INVALID: 'emailTemplateInvalid',
+  EMAIL_MISSING_VARIABLES: 'emailMissingVariables',
+
+  // ==========================================
+  // OTP throttling errors
+  // ==========================================
+  OTP_RESEND_COOLDOWN: 'otpResendCooldown',
+  OTP_MAX_ATTEMPTS_EXCEEDED: 'otpMaxAttemptsExceeded',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -123,4 +138,15 @@ export const ErrorCodeHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.PAYMENT_ALREADY_PROCESSED]: 409,
   [ErrorCodes.PAYMENT_AMOUNT_MISMATCH]: 400,
   [ErrorCodes.PAYMENT_EXPIRED]: 410,
+
+  // Email
+  [ErrorCodes.EMAIL_SEND_FAILED]: 500,
+  [ErrorCodes.EMAIL_PROVIDER_NOT_CONFIGURED]: 503,
+  [ErrorCodes.EMAIL_TEMPLATE_NOT_FOUND]: 404,
+  [ErrorCodes.EMAIL_TEMPLATE_INVALID]: 400,
+  [ErrorCodes.EMAIL_MISSING_VARIABLES]: 400,
+
+  // OTP throttling
+  [ErrorCodes.OTP_RESEND_COOLDOWN]: 429,
+  [ErrorCodes.OTP_MAX_ATTEMPTS_EXCEEDED]: 429,
 };

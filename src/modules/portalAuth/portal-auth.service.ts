@@ -4,8 +4,9 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { OtpService } from '../otp/otp.service';
 import { PortalSessionsService } from '../portalSessions/portal-sessions.service';
+import { EmailService } from '../email/email.service';
 import { SendOtpDto, VerifyOtpDto, PortalAuthResponseDto, SendOtpResponseDto } from './dto';
-import { UnauthorizedException, BadRequestException } from '@/common/exceptions';
+import { UnauthorizedException, BadRequestException, TooManyRequestsException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import { OtpPurpose } from '@prisma/client';
 import * as crypto from 'crypto';
@@ -19,7 +20,9 @@ interface PortalJwtPayload {
 @Injectable()
 export class PortalAuthService {
   private readonly logger = new Logger(PortalAuthService.name);
-  private readonly OTP_EXPIRY_MINUTES = 10;
+  private readonly OTP_EXPIRY_MINUTES: number;
+  private readonly OTP_RESEND_COOLDOWN_SECONDS: number;
+  private readonly OTP_MAX_ATTEMPTS_PER_HOUR: number;
   private readonly ACCESS_TOKEN_EXPIRY_SECONDS: number;
   private readonly REFRESH_TOKEN_EXPIRY_SECONDS: number;
   private readonly isDevelopment: boolean;
@@ -30,7 +33,17 @@ export class PortalAuthService {
     private readonly configService: ConfigService,
     private readonly otpService: OtpService,
     private readonly portalSessionsService: PortalSessionsService,
+    private readonly emailService: EmailService,
   ) {
+    this.OTP_EXPIRY_MINUTES = this.configService.get<number>('OTP_EXPIRY_MINUTES', 10);
+    this.OTP_RESEND_COOLDOWN_SECONDS = this.configService.get<number>(
+      'OTP_RESEND_COOLDOWN_SECONDS',
+      60,
+    );
+    this.OTP_MAX_ATTEMPTS_PER_HOUR = this.configService.get<number>(
+      'OTP_MAX_ATTEMPTS_PER_HOUR',
+      10,
+    );
     this.ACCESS_TOKEN_EXPIRY_SECONDS = this.configService.get<number>(
       'JWT_PORTAL_ACCESS_EXPIRATION_SECONDS',
       3600,
@@ -44,11 +57,30 @@ export class PortalAuthService {
 
   /**
    * Send OTP to the provided email address
-   * In development mode, the OTP code is returned in the response for testing
+   *
+   * Behavior:
+   * - Checks resend cooldown (prevents rapid re-requests)
+   * - Checks hourly rate limit (prevents abuse)
+   * - Generates a 6-digit OTP code
+   * - Invalidates any existing unused OTPs for this email
+   * - Stores hashed OTP in database
+   * - Sends OTP via email using the configured email provider
+   * - In development mode, also returns the OTP code in response for testing
+   *
+   * Production Safety:
+   * - OTP is created even if email send fails (user can retry via verify endpoint feedback)
+   * - Rate limiting protects against abuse
+   * - Email failure is logged but doesn't block OTP creation
    */
   async sendOtp(dto: SendOtpDto): Promise<SendOtpResponseDto> {
     const email = dto.email.toLowerCase().trim();
     this.logger.debug(`Send OTP request for email: ${email}`);
+
+    // Check resend cooldown
+    await this.checkResendCooldown(email);
+
+    // Check hourly rate limit
+    await this.checkHourlyRateLimit(email);
 
     // Generate OTP code
     const otpCode = this.generateOtpCode();
@@ -66,7 +98,7 @@ export class PortalAuthService {
     });
 
     // Create new OTP
-    await this.prisma.otpCode.create({
+    const otpRecord = await this.prisma.otpCode.create({
       data: {
         email,
         codeHash,
@@ -77,19 +109,105 @@ export class PortalAuthService {
 
     this.logger.log(`OTP generated for ${email}, expires at ${expiresAt.toISOString()}`);
 
-    // In development mode, return the OTP code for testing
-    // In production, this would be sent via email
+    // Send OTP via email (fire-and-forget approach for production resilience)
+    // OTP is valid regardless of email delivery status
+    const emailResult = await this.emailService.sendOtpEmail(
+      email,
+      otpCode,
+      this.OTP_EXPIRY_MINUTES,
+      otpRecord.id,
+    );
+
+    if (!emailResult.success) {
+      this.logger.warn(
+        `Failed to send OTP email to ${email}: ${emailResult.error} (provider: ${emailResult.provider})`,
+      );
+    } else {
+      this.logger.log(
+        `OTP email sent to ${email} via ${emailResult.provider} [${emailResult.messageId}]`,
+      );
+    }
+
+    // Build response
     const response: SendOtpResponseDto = {
-      message: 'OTP sent successfully',
+      message: emailResult.success
+        ? 'OTP sent successfully'
+        : 'OTP generated but email delivery may have failed. Please check your email or try again.',
       expiresAt,
     };
 
+    // In development mode, return the OTP code for testing convenience
     if (this.isDevelopment) {
       response.devOtpCode = otpCode;
       this.logger.warn(`[DEV MODE] OTP code for ${email}: ${otpCode}`);
     }
 
     return response;
+  }
+
+  /**
+   * Check if enough time has passed since the last OTP request
+   */
+  private async checkResendCooldown(email: string): Promise<void> {
+    const cooldownTime = new Date(Date.now() - this.OTP_RESEND_COOLDOWN_SECONDS * 1000);
+
+    const recentOtp = await this.prisma.otpCode.findFirst({
+      where: {
+        email,
+        purpose: OtpPurpose.LOGIN,
+        createdAt: { gte: cooldownTime },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (recentOtp) {
+      const waitSeconds = Math.ceil(
+        (recentOtp.createdAt.getTime() + this.OTP_RESEND_COOLDOWN_SECONDS * 1000 - Date.now()) / 1000,
+      );
+
+      this.logger.warn(`OTP resend cooldown active for ${email}, ${waitSeconds}s remaining`);
+
+      throw new TooManyRequestsException(
+        `Please wait ${waitSeconds} seconds before requesting a new OTP`,
+        [
+          {
+            reason: ErrorCodes.OTP_RESEND_COOLDOWN,
+            message: `OTP resend cooldown active. Please wait ${waitSeconds} seconds.`,
+          },
+        ],
+      );
+    }
+  }
+
+  /**
+   * Check if the hourly OTP request limit has been exceeded
+   */
+  private async checkHourlyRateLimit(email: string): Promise<void> {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    const recentCount = await this.prisma.otpCode.count({
+      where: {
+        email,
+        purpose: OtpPurpose.LOGIN,
+        createdAt: { gte: oneHourAgo },
+      },
+    });
+
+    if (recentCount >= this.OTP_MAX_ATTEMPTS_PER_HOUR) {
+      this.logger.warn(
+        `OTP hourly limit exceeded for ${email}: ${recentCount}/${this.OTP_MAX_ATTEMPTS_PER_HOUR}`,
+      );
+
+      throw new TooManyRequestsException(
+        'Too many OTP requests. Please try again later.',
+        [
+          {
+            reason: ErrorCodes.OTP_MAX_ATTEMPTS_EXCEEDED,
+            message: `Maximum OTP requests (${this.OTP_MAX_ATTEMPTS_PER_HOUR}) per hour exceeded.`,
+          },
+        ],
+      );
+    }
   }
 
   /**

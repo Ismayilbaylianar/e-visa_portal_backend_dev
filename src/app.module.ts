@@ -56,6 +56,7 @@ import { JobsModule } from './modules/jobs/jobs.module';
 import { AuditLogsModule } from './modules/auditLogs/audit-logs.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { GeoLookupModule } from './modules/geoLookup/geo-lookup.module';
+import { EmailModule } from './modules/email/email.module';
 
 @Module({
   imports: [
@@ -118,6 +119,9 @@ import { GeoLookupModule } from './modules/geoLookup/geo-lookup.module';
     AuditLogsModule,
     DashboardModule,
     GeoLookupModule,
+
+    // Email Infrastructure
+    EmailModule.forRoot(),
   ],
 })
 export class AppModule {}
