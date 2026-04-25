@@ -8,9 +8,10 @@ import {
 import { PaymentsService } from './payments.service';
 import { MockPaymentProvider } from './providers';
 import { AuditLogsModule } from '../auditLogs/audit-logs.module';
+import { PortalAuthModule } from '../portalAuth/portal-auth.module';
 
 @Module({
-  imports: [ConfigModule, AuditLogsModule],
+  imports: [ConfigModule, AuditLogsModule, PortalAuthModule],
   controllers: [PaymentsAdminController, PaymentsPortalController, PaymentsPublicController],
   providers: [PaymentsService, MockPaymentProvider],
   exports: [PaymentsService],
