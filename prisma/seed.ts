@@ -1,4 +1,4 @@
-import { PrismaClient, PermissionEffect } from '@prisma/client';
+import { PrismaClient, PermissionEffect, VisaEntryType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -321,6 +321,355 @@ async function main() {
   }
   console.log('─'.repeat(50));
   console.log('\n⚠️  Remember to change these passwords in production!\n');
+
+  // ===========================================
+  // Pre-Sprint 3 minimal config seed
+  // ===========================================
+  // Adds the bare-minimum config records needed to test Sprint 3 admin
+  // CRUD wiring. Idempotent (re-runs are no-ops). Full demo seed lives
+  // in a separate Sprint 1 / Task A.
+  console.log('🌍 Seeding minimal config data (pre-Sprint 3)...\n');
+
+  // A. Countries — upsert by isoCode (unique)
+  console.log('🏳️  Countries:');
+  const COUNTRY_DATA = [
+    {
+      name: 'Türkiye',
+      slug: 'turkey',
+      isoCode: 'TR',
+      isPublished: true,
+      seoTitle: 'Türkiye Visa',
+      seoDescription: 'Visa to Türkiye',
+    },
+    {
+      name: 'Azerbaijan',
+      slug: 'azerbaijan',
+      isoCode: 'AZ',
+      isPublished: true,
+      seoTitle: 'Azerbaijan Visa',
+      seoDescription: 'Visa to Azerbaijan',
+    },
+    {
+      name: 'United Arab Emirates',
+      slug: 'uae',
+      isoCode: 'AE',
+      isPublished: true,
+      seoTitle: 'UAE Visa',
+      seoDescription: 'Visa to UAE',
+    },
+  ];
+  const countryIds: Record<string, string> = {};
+  for (const c of COUNTRY_DATA) {
+    const country = await prisma.country.upsert({
+      where: { isoCode: c.isoCode },
+      update: {},
+      create: c,
+    });
+    countryIds[c.isoCode] = country.id;
+    console.log(`  ✅ ${c.name} (${c.isoCode})`);
+  }
+
+  // B. CountrySections for Türkiye — findFirst by (countryId, title) since
+  // there is no unique constraint on this pair.
+  console.log('\n📑 Country sections (Türkiye):');
+  const SECTION_DATA = [
+    {
+      title: 'Overview',
+      content:
+        'Türkiye is a transcontinental country bridging Europe and Asia, offering rich history, diverse landscapes, and vibrant culture.',
+      sortOrder: 0,
+    },
+    {
+      title: 'Requirements',
+      content:
+        'Valid passport with 6+ months validity, 2 recent passport photos, completed application form, proof of accommodation, and return ticket.',
+      sortOrder: 1,
+    },
+    {
+      title: 'FAQ',
+      content:
+        'Q: How long does processing take?\nA: Typically 3-5 business days.\n\nQ: Can I extend my visa?\nA: Extensions are possible at local immigration offices.',
+      sortOrder: 2,
+    },
+  ];
+  for (const s of SECTION_DATA) {
+    const existing = await prisma.countrySection.findFirst({
+      where: { countryId: countryIds['TR'], title: s.title, deletedAt: null },
+    });
+    if (existing) {
+      console.log(`  ⏭️  ${s.title} (exists)`);
+    } else {
+      await prisma.countrySection.create({
+        data: { ...s, countryId: countryIds['TR'], isActive: true },
+      });
+      console.log(`  ✅ ${s.title}`);
+    }
+  }
+
+  // C. Visa Types — findFirst by purpose (no unique constraint).
+  console.log('\n🛂 Visa types:');
+  const VISA_TYPE_DATA: Array<{
+    purpose: string;
+    label: string;
+    entries: VisaEntryType;
+    validityDays: number;
+    maxStay: number;
+    description?: string;
+  }> = [
+    {
+      purpose: 'tourism',
+      label: 'Tourism Visa',
+      entries: VisaEntryType.SINGLE,
+      validityDays: 90,
+      maxStay: 30,
+      description: 'Single-entry tourism visa for short stays.',
+    },
+    {
+      purpose: 'business',
+      label: 'Business Visa',
+      entries: VisaEntryType.MULTIPLE,
+      validityDays: 180,
+      maxStay: 30,
+      description: 'Multiple-entry business visa for meetings and trade.',
+    },
+  ];
+  const visaTypeIds: Record<string, string> = {};
+  for (const v of VISA_TYPE_DATA) {
+    let visaType = await prisma.visaType.findFirst({
+      where: { purpose: v.purpose, deletedAt: null },
+    });
+    if (visaType) {
+      console.log(`  ⏭️  ${v.label} (${v.purpose}) (exists)`);
+    } else {
+      visaType = await prisma.visaType.create({
+        data: { ...v, isActive: true },
+      });
+      console.log(`  ✅ ${v.label} (${v.purpose})`);
+    }
+    visaTypeIds[v.purpose] = visaType.id;
+  }
+
+  // D. Email Templates — upsert by templateKey (unique). Use the keys the
+  // codebase actually consumes (see EmailTemplateService TEMPLATE_REQUIRED_VARIABLES).
+  console.log('\n📧 Email templates:');
+  const EMAIL_TEMPLATE_DATA = [
+    {
+      templateKey: 'otp_verification',
+      subject: 'Your E-Visa OTP Code',
+      bodyHtml:
+        '<p>Your verification code is: <strong>{{otpCode}}</strong></p><p>This code expires in {{expiryMinutes}} minutes.</p>',
+      bodyText:
+        'Your verification code is: {{otpCode}}\n\nThis code expires in {{expiryMinutes}} minutes.',
+    },
+    {
+      templateKey: 'application_status_update',
+      subject: 'Your application is now {{status}}',
+      bodyHtml:
+        '<p>Your application <strong>{{applicationRef}}</strong> is now <strong>{{status}}</strong>.</p>',
+      bodyText:
+        'Your application {{applicationRef}} is now {{status}}.',
+    },
+  ];
+  for (const t of EMAIL_TEMPLATE_DATA) {
+    await prisma.emailTemplate.upsert({
+      where: { templateKey: t.templateKey },
+      update: {},
+      create: { ...t, isActive: true },
+    });
+    console.log(`  ✅ ${t.templateKey}`);
+  }
+
+  // E. Form Template — upsert by key (unique).
+  console.log('\n📋 Form template:');
+  const formTemplate = await prisma.template.upsert({
+    where: { key: 'test-tourism' },
+    update: {},
+    create: {
+      key: 'test-tourism',
+      name: 'Test Tourism Form',
+      version: 1,
+      isActive: true,
+      description: 'Minimal tourism application form for Sprint 3 testing.',
+    },
+  });
+  console.log(`  ✅ test-tourism`);
+
+  // F. Template section — composite unique (templateId, key).
+  console.log('\n📂 Template section:');
+  const templateSection = await prisma.templateSection.upsert({
+    where: {
+      templateId_key: { templateId: formTemplate.id, key: 'personal' },
+    },
+    update: {},
+    create: {
+      templateId: formTemplate.id,
+      key: 'personal',
+      title: 'Personal Info',
+      sortOrder: 0,
+      isActive: true,
+    },
+  });
+  console.log(`  ✅ personal`);
+
+  // G. Template fields — composite unique (templateSectionId, fieldKey).
+  console.log('\n📝 Template fields:');
+  const FIELD_DATA = [
+    {
+      fieldKey: 'fullName',
+      fieldType: 'text',
+      label: 'Full Name',
+      isRequired: true,
+      sortOrder: 0,
+      validationRulesJson: { minLength: 2, maxLength: 200 },
+    },
+    {
+      fieldKey: 'email',
+      fieldType: 'email',
+      label: 'Email',
+      isRequired: true,
+      sortOrder: 1,
+      validationRulesJson: undefined,
+    },
+  ];
+  for (const f of FIELD_DATA) {
+    await prisma.templateField.upsert({
+      where: {
+        templateSectionId_fieldKey: {
+          templateSectionId: templateSection.id,
+          fieldKey: f.fieldKey,
+        },
+      },
+      update: {},
+      create: {
+        templateSectionId: templateSection.id,
+        fieldKey: f.fieldKey,
+        fieldType: f.fieldType,
+        label: f.label,
+        isRequired: f.isRequired,
+        sortOrder: f.sortOrder,
+        isActive: true,
+        ...(f.validationRulesJson
+          ? { validationRulesJson: f.validationRulesJson }
+          : {}),
+      },
+    });
+    console.log(`  ✅ ${f.fieldKey} (${f.fieldType})`);
+  }
+
+  // H. Template binding — composite unique (destinationCountryId, visaTypeId).
+  console.log('\n🔗 Template binding:');
+  const binding = await prisma.templateBinding.upsert({
+    where: {
+      destinationCountryId_visaTypeId: {
+        destinationCountryId: countryIds['TR'],
+        visaTypeId: visaTypeIds['tourism'],
+      },
+    },
+    update: {},
+    create: {
+      destinationCountryId: countryIds['TR'],
+      visaTypeId: visaTypeIds['tourism'],
+      templateId: formTemplate.id,
+      isActive: true,
+    },
+  });
+  console.log(`  ✅ TR + tourism + test-tourism`);
+
+  // I. Binding nationality fees — composite unique
+  // (templateBindingId, nationalityCountryId).
+  console.log('\n💰 Binding nationality fees:');
+  const FEE_DATA = [
+    {
+      nationalityIso: 'AZ',
+      governmentFeeAmount: 50,
+      serviceFeeAmount: 20,
+      expeditedFeeAmount: 50,
+    },
+    {
+      nationalityIso: 'AE',
+      governmentFeeAmount: 80,
+      serviceFeeAmount: 25,
+      expeditedFeeAmount: 50,
+    },
+  ];
+  for (const fee of FEE_DATA) {
+    await prisma.bindingNationalityFee.upsert({
+      where: {
+        templateBindingId_nationalityCountryId: {
+          templateBindingId: binding.id,
+          nationalityCountryId: countryIds[fee.nationalityIso],
+        },
+      },
+      update: {},
+      create: {
+        templateBindingId: binding.id,
+        nationalityCountryId: countryIds[fee.nationalityIso],
+        governmentFeeAmount: fee.governmentFeeAmount,
+        serviceFeeAmount: fee.serviceFeeAmount,
+        expeditedFeeAmount: fee.expeditedFeeAmount,
+        currencyCode: 'USD',
+        expeditedEnabled: true,
+        isActive: true,
+      },
+    });
+    console.log(
+      `  ✅ TR/${fee.nationalityIso} — gov ${fee.governmentFeeAmount}, svc ${fee.serviceFeeAmount}, exp ${fee.expeditedFeeAmount} USD`,
+    );
+  }
+
+  // J. Settings (singleton) — findFirst + create.
+  console.log('\n⚙️  Settings (singleton):');
+  const existingSetting = await prisma.setting.findFirst();
+  if (existingSetting) {
+    console.log(`  ⏭️  Settings exist`);
+  } else {
+    await prisma.setting.create({
+      data: {
+        siteName: 'E-Visa Portal',
+        supportEmail: 'support@evisaglobal.com',
+        defaultCurrency: 'USD',
+        paymentTimeoutHours: 3,
+        maintenanceMode: false,
+      },
+    });
+    console.log(`  ✅ Settings created`);
+  }
+
+  // K. PaymentPageConfig (singleton) — findFirst + create.
+  console.log('\n💳 Payment page config (singleton):');
+  const existingPaymentConfig = await prisma.paymentPageConfig.findFirst();
+  if (existingPaymentConfig) {
+    console.log(`  ⏭️  Payment page config exists`);
+  } else {
+    await prisma.paymentPageConfig.create({
+      data: {
+        title: 'Complete Your Payment',
+        description: 'Secure payment for your visa application.',
+        sectionsJson: { header: 'Complete Your Payment' },
+        isActive: true,
+      },
+    });
+    console.log(`  ✅ Payment page config created`);
+  }
+
+  console.log('\n📊 Pre-Sprint 3 config tally:');
+  console.log('─'.repeat(50));
+  console.log(`  Countries:                3 (TR, AZ, AE)`);
+  console.log(`  Country sections:         3 (Türkiye)`);
+  console.log(`  Visa types:               2 (tourism, business)`);
+  console.log(
+    `  Email templates:          2 (otp_verification, application_status_update)`,
+  );
+  console.log(`  Form template:            1 (test-tourism)`);
+  console.log(`  Template section:         1 (personal)`);
+  console.log(`  Template fields:          2 (fullName, email)`);
+  console.log(`  Template binding:         1 (TR + tourism)`);
+  console.log(`  Binding nationality fees: 2 (AZ, AE)`);
+  console.log(`  Settings:                 1 (singleton)`);
+  console.log(`  Payment page config:      1 (singleton)`);
+  console.log('─'.repeat(50));
+  console.log(`  Total config records:     19`);
+  console.log('─'.repeat(50));
 }
 
 main()
