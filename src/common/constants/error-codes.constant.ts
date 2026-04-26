@@ -48,11 +48,17 @@ export const ErrorCodes = {
   APPLICANT_NOT_FOUND: 'applicantNotFound',
 
   // ==========================================
-  // Upload errors
+  // Upload/Storage errors
   // ==========================================
   FILE_TOO_LARGE: 'fileTooLarge',
   FILE_TYPE_NOT_ALLOWED: 'fileTypeNotAllowed',
   FILE_UPLOAD_FAILED: 'fileUploadFailed',
+  FILE_NOT_FOUND: 'fileNotFound',
+  FILE_DOWNLOAD_FAILED: 'fileDownloadFailed',
+  FILE_DELETE_FAILED: 'fileDeleteFailed',
+  FILE_EXTENSION_NOT_ALLOWED: 'fileExtensionNotAllowed',
+  FILE_CHECKSUM_MISMATCH: 'fileChecksumMismatch',
+  STORAGE_PROVIDER_ERROR: 'storageProviderError',
 
   // ==========================================
   // Payment errors
@@ -125,10 +131,16 @@ export const ErrorCodeHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.VISA_TYPE_NOT_FOUND]: 404,
   [ErrorCodes.APPLICANT_NOT_FOUND]: 404,
 
-  // Upload
+  // Upload/Storage
   [ErrorCodes.FILE_TOO_LARGE]: 413,
   [ErrorCodes.FILE_TYPE_NOT_ALLOWED]: 415,
   [ErrorCodes.FILE_UPLOAD_FAILED]: 500,
+  [ErrorCodes.FILE_NOT_FOUND]: 404,
+  [ErrorCodes.FILE_DOWNLOAD_FAILED]: 500,
+  [ErrorCodes.FILE_DELETE_FAILED]: 500,
+  [ErrorCodes.FILE_EXTENSION_NOT_ALLOWED]: 415,
+  [ErrorCodes.FILE_CHECKSUM_MISMATCH]: 422,
+  [ErrorCodes.STORAGE_PROVIDER_ERROR]: 500,
 
   // Payment
   [ErrorCodes.PAYMENT_NOT_FOUND]: 404,

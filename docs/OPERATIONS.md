@@ -371,6 +371,55 @@ To test failure handling:
 
 ---
 
+## Storage
+
+### Current Configuration
+```
+STORAGE_PROVIDER=local
+STORAGE_LOCAL_PATH=/var/www/evisa-backend/uploads
+```
+
+Files are stored on local filesystem under `/var/www/evisa-backend/uploads/documents/`.
+
+### Document Storage Location
+```
+/var/www/evisa-backend/uploads/
+└── documents/
+    └── {applicantId}/
+        └── {timestamp}_{random}.{ext}
+```
+
+### Check Storage Usage
+```bash
+# Total storage usage
+du -sh /var/www/evisa-backend/uploads/
+
+# Document count
+ls -la /var/www/evisa-backend/uploads/documents/ | wc -l
+```
+
+### Verify Document File Exists
+```bash
+# Get document storage key from DB
+psql -h localhost -U evisa_app -d evisa_prod -c \
+  "SELECT id, storage_key, storage_path, storage_file_name FROM documents WHERE id='xxx';"
+
+# Check if file exists
+ls -la /var/www/evisa-backend/uploads/documents/{applicantId}/{filename}
+```
+
+### Future S3 Migration
+When ready to switch to S3:
+1. Install AWS SDK packages
+2. Add S3 credentials to `.env`
+3. Sync existing files to S3
+4. Change `STORAGE_PROVIDER=s3`
+5. Restart application
+
+See `docs/STORAGE.md` for detailed migration guide.
+
+---
+
 ## Deployment Updates
 
 ### Standard Update Process

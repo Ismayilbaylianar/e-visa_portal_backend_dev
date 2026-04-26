@@ -6,13 +6,16 @@ import {
   Delete,
   Body,
   Param,
+  Res,
   HttpCode,
   HttpStatus,
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  StreamableFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -20,9 +23,15 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiBody,
+  ApiProduces,
 } from '@nestjs/swagger';
 import { DocumentsService } from './documents.service';
-import { UploadDocumentBodyDto, ReviewDocumentDto, DocumentResponseDto } from './dto';
+import {
+  UploadDocumentBodyDto,
+  ReviewDocumentDto,
+  DocumentResponseDto,
+  DocumentUrlResponseDto,
+} from './dto';
 import { ApplicantIdParamDto, DocumentIdParamDto } from '@/common/dto';
 import { CurrentPortalIdentity, CurrentUser } from '@/common/decorators';
 import { PortalAuthGuard, JwtAuthGuard } from '@/common/guards';
@@ -45,14 +54,8 @@ export class DocumentsPortalController {
     description: 'List of documents',
     type: [DocumentResponseDto],
   })
-  @ApiResponse({
-    status: 404,
-    description: 'Applicant not found',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Access denied',
-  })
+  @ApiResponse({ status: 404, description: 'Applicant not found' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
   async findByApplicant(
     @Param() params: ApplicantIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
@@ -77,14 +80,10 @@ export class DocumentsPortalController {
     description: 'Document uploaded successfully',
     type: DocumentResponseDto,
   })
-  @ApiResponse({
-    status: 404,
-    description: 'Applicant not found',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Access denied',
-  })
+  @ApiResponse({ status: 404, description: 'Applicant not found' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 413, description: 'File too large' })
+  @ApiResponse({ status: 415, description: 'File type not allowed' })
   async upload(
     @Body() dto: UploadDocumentBodyDto,
     @UploadedFile() file: any,
@@ -110,19 +109,61 @@ export class DocumentsPortalController {
     description: 'Document details',
     type: DocumentResponseDto,
   })
-  @ApiResponse({
-    status: 404,
-    description: 'Document not found',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Access denied',
-  })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
   async findById(
     @Param() params: DocumentIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<DocumentResponseDto> {
     return this.documentsService.findById(params.documentId, portalIdentity.id);
+  }
+
+  @Get('documents/:documentId/download')
+  @ApiOperation({
+    summary: 'Download document file',
+    description: 'Download the actual file for a document',
+  })
+  @ApiProduces('application/pdf', 'image/jpeg', 'image/png', 'application/octet-stream')
+  @ApiResponse({ status: 200, description: 'File stream' })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  async downloadFile(
+    @Param() params: DocumentIdParamDto,
+    @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, contentType, filename } = await this.documentsService.downloadFile(
+      params.documentId,
+      portalIdentity.id,
+    );
+
+    res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
+      'Content-Length': buffer.length,
+    });
+
+    return new StreamableFile(buffer);
+  }
+
+  @Get('documents/:documentId/url')
+  @ApiOperation({
+    summary: 'Get signed URL for document',
+    description: 'Get a time-limited signed URL for direct file access',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Signed URL',
+    type: DocumentUrlResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  async getSignedUrl(
+    @Param() params: DocumentIdParamDto,
+    @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
+  ): Promise<DocumentUrlResponseDto> {
+    const url = await this.documentsService.getSignedUrl(params.documentId, portalIdentity.id);
+    return { url, expiresIn: 3600 };
   }
 
   @Delete('documents/:documentId')
@@ -131,18 +172,9 @@ export class DocumentsPortalController {
     summary: 'Delete document',
     description: 'Soft delete a document',
   })
-  @ApiResponse({
-    status: 204,
-    description: 'Document deleted successfully',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Document not found',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Access denied',
-  })
+  @ApiResponse({ status: 204, description: 'Document deleted successfully' })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
   async delete(
     @Param() params: DocumentIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
@@ -158,6 +190,46 @@ export class DocumentsPortalController {
 export class DocumentsAdminController {
   constructor(private readonly documentsService: DocumentsService) {}
 
+  @Get(':documentId')
+  @ApiOperation({
+    summary: 'Get document by ID (admin)',
+    description: 'Get document details by ID without ownership check',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Document details',
+    type: DocumentResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  async findById(@Param() params: DocumentIdParamDto): Promise<DocumentResponseDto> {
+    return this.documentsService.findByIdAdmin(params.documentId);
+  }
+
+  @Get(':documentId/download')
+  @ApiOperation({
+    summary: 'Download document file (admin)',
+    description: 'Download the actual file for a document without ownership check',
+  })
+  @ApiProduces('application/pdf', 'image/jpeg', 'image/png', 'application/octet-stream')
+  @ApiResponse({ status: 200, description: 'File stream' })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  async downloadFile(
+    @Param() params: DocumentIdParamDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, contentType, filename } = await this.documentsService.downloadFileAdmin(
+      params.documentId,
+    );
+
+    res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
+      'Content-Length': buffer.length,
+    });
+
+    return new StreamableFile(buffer);
+  }
+
   @Patch(':documentId/review')
   @ApiOperation({
     summary: 'Review document',
@@ -168,15 +240,48 @@ export class DocumentsAdminController {
     description: 'Document reviewed successfully',
     type: DocumentResponseDto,
   })
-  @ApiResponse({
-    status: 404,
-    description: 'Document not found',
-  })
+  @ApiResponse({ status: 404, description: 'Document not found' })
   async review(
     @Param() params: DocumentIdParamDto,
     @Body() dto: ReviewDocumentDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<DocumentResponseDto> {
     return this.documentsService.review(params.documentId, user.id, dto);
+  }
+
+  @Get(':documentId/verify')
+  @ApiOperation({
+    summary: 'Verify document integrity',
+    description: 'Verify that the document file has not been tampered with',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Verification result',
+    schema: {
+      type: 'object',
+      properties: {
+        verified: { type: 'boolean' },
+        documentId: { type: 'string' },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  async verifyIntegrity(
+    @Param() params: DocumentIdParamDto,
+  ): Promise<{ verified: boolean; documentId: string }> {
+    const verified = await this.documentsService.verifyIntegrity(params.documentId);
+    return { verified, documentId: params.documentId };
+  }
+
+  @Delete(':documentId/hard')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Hard delete document',
+    description: 'Permanently delete document and file from storage (admin only)',
+  })
+  @ApiResponse({ status: 204, description: 'Document permanently deleted' })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  async hardDelete(@Param() params: DocumentIdParamDto): Promise<void> {
+    return this.documentsService.hardDelete(params.documentId);
   }
 }

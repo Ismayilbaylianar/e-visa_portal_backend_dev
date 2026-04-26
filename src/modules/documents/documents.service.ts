@@ -1,35 +1,32 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService, StorageConfigService } from '../storage';
 import { UploadDocumentDto, ReviewDocumentDto, DocumentResponseDto, MulterFile } from './dto';
 import { NotFoundException, ForbiddenException, BadRequestException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import { DocumentReviewStatus, ApplicationStatus } from '@prisma/client';
-import * as fs from 'fs';
 import * as path from 'path';
-import * as crypto from 'crypto';
-
-const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
-  private readonly uploadPath: string;
+  private readonly allowedMimeTypes: string[];
+  private readonly allowedExtensions: string[];
+  private readonly maxFileSizeBytes: number;
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService,
+    private readonly storageService: StorageService,
+    private readonly storageConfigService: StorageConfigService,
   ) {
-    this.uploadPath = this.configService.get<string>('UPLOAD_PATH') || './uploads';
-    this.ensureUploadDirectory();
-  }
+    const validationConfig = this.storageConfigService.getValidationConfig();
+    this.allowedMimeTypes = validationConfig.allowedMimeTypes;
+    this.allowedExtensions = validationConfig.allowedExtensions;
+    this.maxFileSizeBytes = validationConfig.maxFileSizeBytes;
 
-  private ensureUploadDirectory(): void {
-    if (!fs.existsSync(this.uploadPath)) {
-      fs.mkdirSync(this.uploadPath, { recursive: true });
-      this.logger.log(`Created upload directory: ${this.uploadPath}`);
-    }
+    this.logger.log(
+      `DocumentsService initialized with ${this.storageService.getProviderName()} storage provider`,
+    );
   }
 
   /**
@@ -61,7 +58,7 @@ export class DocumentsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return documents.map(doc => this.mapToResponse(doc));
+    return documents.map((doc) => this.mapToResponse(doc));
   }
 
   /**
@@ -110,11 +107,12 @@ export class DocumentsService {
   }
 
   /**
-   * Upload a document with local filesystem storage
+   * Upload a document using storage abstraction
    *
    * Validates:
-   * - File size (max 10MB)
-   * - MIME type (pdf, jpeg, png)
+   * - File size
+   * - MIME type
+   * - File extension
    * - Applicant ownership
    * - Application is in editable state (DRAFT)
    */
@@ -123,34 +121,8 @@ export class DocumentsService {
     file: MulterFile,
     portalIdentityId: string,
   ): Promise<DocumentResponseDto> {
-    // Validate file exists
-    if (!file) {
-      throw new BadRequestException('No file provided', [
-        { reason: ErrorCodes.BAD_REQUEST, message: 'File is required' },
-      ]);
-    }
+    this.validateFile(file);
 
-    // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
-      throw new BadRequestException('File too large', [
-        {
-          reason: ErrorCodes.FILE_TOO_LARGE,
-          message: `File size exceeds maximum allowed (${MAX_FILE_SIZE / 1024 / 1024}MB)`,
-        },
-      ]);
-    }
-
-    // Validate MIME type
-    if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      throw new BadRequestException('Invalid file type', [
-        {
-          reason: ErrorCodes.FILE_TYPE_NOT_ALLOWED,
-          message: `Allowed types: ${ALLOWED_MIME_TYPES.join(', ')}`,
-        },
-      ]);
-    }
-
-    // Find applicant and verify ownership
     const applicant = await this.prisma.applicationApplicant.findFirst({
       where: { id: dto.applicantId, deletedAt: null },
       include: { application: true },
@@ -168,7 +140,6 @@ export class DocumentsService {
       ]);
     }
 
-    // Check if application is editable (only DRAFT status)
     if (applicant.application.currentStatus !== ApplicationStatus.DRAFT) {
       throw new BadRequestException('Application is not editable', [
         {
@@ -178,51 +149,133 @@ export class DocumentsService {
       ]);
     }
 
-    // Generate safe storage filename
-    const fileExtension = path.extname(file.originalname);
-    const uniqueId = crypto.randomBytes(16).toString('hex');
-    const storageFileName = `${uniqueId}${fileExtension}`;
-    const storagePath = `documents/${dto.applicantId}`;
-    const fullStoragePath = path.join(this.uploadPath, storagePath);
-    const fullFilePath = path.join(fullStoragePath, storageFileName);
+    const prefix = `documents/${dto.applicantId}`;
 
-    // Ensure directory exists
-    if (!fs.existsSync(fullStoragePath)) {
-      fs.mkdirSync(fullStoragePath, { recursive: true });
-    }
-
-    // Write file to disk
     try {
-      fs.writeFileSync(fullFilePath, file.buffer);
+      const uploadResult = await this.storageService.upload(file.buffer, {
+        contentType: file.mimetype,
+        prefix,
+        originalFilename: file.originalname,
+        metadata: {
+          applicantId: dto.applicantId,
+          documentTypeKey: dto.documentTypeKey,
+        },
+      });
+
+      const document = await this.prisma.document.create({
+        data: {
+          applicationApplicantId: dto.applicantId,
+          documentTypeKey: dto.documentTypeKey,
+          originalFileName: file.originalname,
+          storageFileName: uploadResult.filename,
+          storagePath: prefix,
+          storageKey: uploadResult.storageKey,
+          storageProvider: this.storageService.getProviderName(),
+          mimeType: file.mimetype,
+          fileSize: uploadResult.size,
+          checksum: uploadResult.checksum,
+          reviewStatus: DocumentReviewStatus.PENDING,
+          uploadedAt: new Date(),
+        },
+      });
+
+      this.logger.log(
+        `Document uploaded: ${document.id} for applicant: ${dto.applicantId} (${uploadResult.storageKey})`,
+      );
+
+      return this.mapToResponse(document);
     } catch (error) {
-      this.logger.error(`Failed to write file: ${error}`);
+      this.logger.error(`Failed to upload document: ${error.message}`, error.stack);
       throw new BadRequestException('File upload failed', [
         { reason: ErrorCodes.FILE_UPLOAD_FAILED, message: 'Failed to save file to storage' },
       ]);
     }
+  }
 
-    // Create document record
-    const document = await this.prisma.document.create({
-      data: {
-        applicationApplicantId: dto.applicantId,
-        documentTypeKey: dto.documentTypeKey,
-        originalFileName: file.originalname,
-        storageFileName,
-        storagePath,
-        mimeType: file.mimetype,
-        fileSize: file.size,
-        reviewStatus: DocumentReviewStatus.PENDING,
-        uploadedAt: new Date(),
+  /**
+   * Download a document file
+   */
+  async downloadFile(
+    documentId: string,
+    portalIdentityId: string,
+  ): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, deletedAt: null },
+      include: {
+        applicationApplicant: {
+          include: { application: true },
+        },
       },
     });
 
-    this.logger.log(`Document uploaded: ${document.id} for applicant: ${dto.applicantId}`);
-    return this.mapToResponse(document);
+    if (!document) {
+      throw new NotFoundException('Document not found', [
+        { reason: ErrorCodes.DOCUMENT_NOT_FOUND, message: 'Document does not exist' },
+      ]);
+    }
+
+    if (document.applicationApplicant.application.portalIdentityId !== portalIdentityId) {
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this document' },
+      ]);
+    }
+
+    return this.getDocumentFile(document);
+  }
+
+  /**
+   * Download a document file (admin - no ownership check)
+   */
+  async downloadFileAdmin(
+    documentId: string,
+  ): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, deletedAt: null },
+    });
+
+    if (!document) {
+      throw new NotFoundException('Document not found', [
+        { reason: ErrorCodes.DOCUMENT_NOT_FOUND, message: 'Document does not exist' },
+      ]);
+    }
+
+    return this.getDocumentFile(document);
+  }
+
+  /**
+   * Get signed URL for document access
+   */
+  async getSignedUrl(documentId: string, portalIdentityId: string): Promise<string> {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, deletedAt: null },
+      include: {
+        applicationApplicant: {
+          include: { application: true },
+        },
+      },
+    });
+
+    if (!document) {
+      throw new NotFoundException('Document not found', [
+        { reason: ErrorCodes.DOCUMENT_NOT_FOUND, message: 'Document does not exist' },
+      ]);
+    }
+
+    if (document.applicationApplicant.application.portalIdentityId !== portalIdentityId) {
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not have access to this document' },
+      ]);
+    }
+
+    const storageKey = this.getStorageKey(document);
+    return this.storageService.getSignedUrl(storageKey, {
+      expiresIn: 3600,
+      contentDisposition: `attachment; filename="${document.originalFileName}"`,
+    });
   }
 
   /**
    * Soft delete a document
-   * Note: File is kept on disk for audit purposes. Manual cleanup may be needed.
    */
   async delete(documentId: string, portalIdentityId: string): Promise<void> {
     const document = await this.prisma.document.findFirst({
@@ -246,7 +299,6 @@ export class DocumentsService {
       ]);
     }
 
-    // Check if application is editable (only DRAFT status)
     if (document.applicationApplicant.application.currentStatus !== ApplicationStatus.DRAFT) {
       throw new BadRequestException('Application is not editable', [
         {
@@ -262,6 +314,36 @@ export class DocumentsService {
     });
 
     this.logger.log(`Document soft deleted: ${documentId}`);
+  }
+
+  /**
+   * Hard delete a document and its file from storage (admin only)
+   */
+  async hardDelete(documentId: string): Promise<void> {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId },
+    });
+
+    if (!document) {
+      throw new NotFoundException('Document not found', [
+        { reason: ErrorCodes.DOCUMENT_NOT_FOUND, message: 'Document does not exist' },
+      ]);
+    }
+
+    const storageKey = this.getStorageKey(document);
+
+    try {
+      await this.storageService.delete(storageKey);
+      this.logger.log(`File deleted from storage: ${storageKey}`);
+    } catch (error) {
+      this.logger.warn(`Failed to delete file from storage: ${storageKey} - ${error.message}`);
+    }
+
+    await this.prisma.document.delete({
+      where: { id: documentId },
+    });
+
+    this.logger.log(`Document hard deleted: ${documentId}`);
   }
 
   /**
@@ -294,6 +376,96 @@ export class DocumentsService {
 
     this.logger.log(`Document reviewed: ${documentId} with status: ${dto.reviewStatus}`);
     return this.mapToResponse(updatedDocument);
+  }
+
+  /**
+   * Verify document file integrity
+   */
+  async verifyIntegrity(documentId: string): Promise<boolean> {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, deletedAt: null },
+    });
+
+    if (!document || !document.checksum) {
+      return false;
+    }
+
+    const storageKey = this.getStorageKey(document);
+    return this.storageService.verifyChecksum(storageKey, document.checksum);
+  }
+
+  private validateFile(file: MulterFile): void {
+    if (!file) {
+      throw new BadRequestException('No file provided', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'File is required' },
+      ]);
+    }
+
+    if (file.size > this.maxFileSizeBytes) {
+      throw new BadRequestException('File too large', [
+        {
+          reason: ErrorCodes.FILE_TOO_LARGE,
+          message: `File size exceeds maximum allowed (${this.maxFileSizeBytes / 1024 / 1024}MB)`,
+        },
+      ]);
+    }
+
+    if (!this.allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException('Invalid file type', [
+        {
+          reason: ErrorCodes.FILE_TYPE_NOT_ALLOWED,
+          message: `Allowed types: ${this.allowedMimeTypes.join(', ')}`,
+        },
+      ]);
+    }
+
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (this.allowedExtensions.length > 0 && !this.allowedExtensions.includes(ext)) {
+      throw new BadRequestException('Invalid file extension', [
+        {
+          reason: ErrorCodes.FILE_EXTENSION_NOT_ALLOWED,
+          message: `Allowed extensions: ${this.allowedExtensions.join(', ')}`,
+        },
+      ]);
+    }
+
+    const sanitizedName = this.sanitizeFilename(file.originalname);
+    if (sanitizedName !== file.originalname && sanitizedName.includes('..')) {
+      throw new BadRequestException('Invalid filename', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'Filename contains invalid characters' },
+      ]);
+    }
+  }
+
+  private sanitizeFilename(filename: string): string {
+    return filename.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\.{2,}/g, '.');
+  }
+
+  private getStorageKey(document: any): string {
+    if (document.storageKey) {
+      return document.storageKey;
+    }
+    return `${document.storagePath}/${document.storageFileName}`;
+  }
+
+  private async getDocumentFile(
+    document: any,
+  ): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
+    const storageKey = this.getStorageKey(document);
+
+    try {
+      const result = await this.storageService.download(storageKey);
+      return {
+        buffer: result.buffer,
+        contentType: result.contentType,
+        filename: document.originalFileName,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to download file: ${storageKey}`, error);
+      throw new NotFoundException('File not found', [
+        { reason: ErrorCodes.FILE_NOT_FOUND, message: 'Document file not found in storage' },
+      ]);
+    }
   }
 
   private mapToResponse(document: any): DocumentResponseDto {
