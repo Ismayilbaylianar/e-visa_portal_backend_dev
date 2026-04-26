@@ -169,6 +169,7 @@ model User {
   userPermissions           UserPermission[]
   applicationStatusHistory  ApplicationStatusHistory[] @relation("ChangedByUser")
   applicantStatusHistory    ApplicantStatusHistory[]   @relation("ChangedByUser")
+  applicationReviews        Application[]              @relation("ApplicationReviewedByUser")
   documentReviews           Document[]                 @relation("ReviewedByUser")
   paymentStatusHistory      PaymentStatusHistory[]     @relation("ChangedByUser")
   auditLogs                 AuditLog[]
@@ -572,23 +573,30 @@ model Setting {
 // ===========================================
 
 model Application {
-  id                   String            @id @default(uuid())
-  portalIdentityId     String            @map("portal_identity_id")
-  nationalityCountryId String            @map("nationality_country_id")
-  destinationCountryId String            @map("destination_country_id")
-  visaTypeId           String            @map("visa_type_id")
-  templateId           String            @map("template_id")
-  templateBindingId    String            @map("template_binding_id")
-  totalFeeAmount       Decimal           @map("total_fee_amount") @db.Decimal(10, 2)
-  currencyCode         String            @map("currency_code")
-  expedited            Boolean           @default(false)
-  paymentStatus        PaymentStatus     @default(PENDING) @map("payment_status")
-  paymentDeadlineAt    DateTime?         @map("payment_deadline_at")
-  resumeToken          String            @unique @map("resume_token")
-  currentStatus        ApplicationStatus @default(DRAFT) @map("current_status")
-  createdAt            DateTime          @default(now()) @map("created_at")
-  updatedAt            DateTime          @updatedAt @map("updated_at")
-  deletedAt            DateTime?         @map("deleted_at")
+  id                      String            @id @default(uuid())
+  portalIdentityId        String            @map("portal_identity_id")
+  nationalityCountryId    String            @map("nationality_country_id")
+  destinationCountryId    String            @map("destination_country_id")
+  visaTypeId              String            @map("visa_type_id")
+  templateId              String            @map("template_id")
+  templateBindingId       String            @map("template_binding_id")
+  totalFeeAmount          Decimal           @map("total_fee_amount") @db.Decimal(10, 2)
+  currencyCode            String            @map("currency_code")
+  expedited               Boolean           @default(false)
+  paymentStatus           PaymentStatus     @default(PENDING) @map("payment_status")
+  paymentDeadlineAt       DateTime?         @map("payment_deadline_at")
+  resumeToken             String            @unique @map("resume_token")
+  currentStatus           ApplicationStatus @default(DRAFT) @map("current_status")
+  // Admin review fields
+  reviewedAt              DateTime?         @map("reviewed_at")
+  reviewedByUserId        String?           @map("reviewed_by_user_id")
+  adminNote               String?           @map("admin_note") @db.Text
+  rejectionReason         String?           @map("rejection_reason") @db.Text
+  requestedDocumentTypes  String[]          @default([]) @map("requested_document_types")
+  // Timestamps
+  createdAt               DateTime          @default(now()) @map("created_at")
+  updatedAt               DateTime          @updatedAt @map("updated_at")
+  deletedAt               DateTime?         @map("deleted_at")
 
   portalIdentity     PortalIdentity             @relation(fields: [portalIdentityId], references: [id])
   nationalityCountry Country                    @relation("NationalityCountry", fields: [nationalityCountryId], references: [id])
@@ -596,6 +604,7 @@ model Application {
   visaType           VisaType                   @relation(fields: [visaTypeId], references: [id])
   template           Template                   @relation(fields: [templateId], references: [id])
   templateBinding    TemplateBinding            @relation(fields: [templateBindingId], references: [id])
+  reviewedByUser     User?                      @relation("ApplicationReviewedByUser", fields: [reviewedByUserId], references: [id])
   applicants         ApplicationApplicant[]
   statusHistory      ApplicationStatusHistory[]
   payments           Payment[]
@@ -609,6 +618,7 @@ model Application {
   @@index([resumeToken])
   @@index([currentStatus])
   @@index([paymentStatus])
+  @@index([reviewedByUserId])
   @@index([createdAt])
   @@index([deletedAt])
   @@map("applications")

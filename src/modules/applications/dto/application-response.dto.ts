@@ -173,6 +173,32 @@ export class ApplicationResponseDto {
   currentStatus: ApplicationStatus;
 
   @ApiPropertyOptional({
+    description: 'When the application was reviewed',
+  })
+  reviewedAt?: Date;
+
+  @ApiPropertyOptional({
+    description: 'ID of the admin user who reviewed the application',
+  })
+  reviewedByUserId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Admin note on the application',
+  })
+  adminNote?: string;
+
+  @ApiPropertyOptional({
+    description: 'Rejection reason (if rejected)',
+  })
+  rejectionReason?: string;
+
+  @ApiPropertyOptional({
+    description: 'List of requested document type keys',
+    type: [String],
+  })
+  requestedDocumentTypes?: string[];
+
+  @ApiPropertyOptional({
     type: PortalIdentityDto,
     description: 'Portal identity details',
   })

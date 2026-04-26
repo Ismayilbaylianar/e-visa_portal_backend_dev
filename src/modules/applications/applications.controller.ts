@@ -17,14 +17,18 @@ import {
   UpdateApplicationDto,
   ApplicationResponseDto,
   GetApplicationsQueryDto,
+  ApproveApplicationDto,
+  RejectApplicationDto,
+  RequestDocumentsDto,
 } from './dto';
 import { ApplicationIdParamDto } from '@/common/dto';
-import { ApiPaginatedResponse, CurrentPortalIdentity } from '@/common/decorators';
-import { PortalAuthGuard } from '@/common/guards';
-import { PortalIdentityUser } from '@/common/types';
+import { ApiPaginatedResponse, CurrentPortalIdentity, CurrentUser } from '@/common/decorators';
+import { PortalAuthGuard, JwtAuthGuard } from '@/common/guards';
+import { PortalIdentityUser, AuthenticatedUser } from '@/common/types';
 
 @ApiTags('Applications - Admin')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('admin/applications')
 export class ApplicationsAdminController {
   constructor(private readonly applicationsService: ApplicationsService) {}
@@ -55,6 +59,113 @@ export class ApplicationsAdminController {
   })
   async findById(@Param() params: ApplicationIdParamDto): Promise<ApplicationResponseDto> {
     return this.applicationsService.findById(params.applicationId);
+  }
+
+  @Post(':applicationId/approve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Approve application',
+    description: 'Approve a submitted application. Status must be SUBMITTED or IN_REVIEW.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Application approved successfully',
+    type: ApplicationResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Application cannot be approved in current status',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Application not found',
+  })
+  async approve(
+    @Param() params: ApplicationIdParamDto,
+    @Body() dto: ApproveApplicationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ApplicationResponseDto> {
+    return this.applicationsService.approveApplication(params.applicationId, dto, user.id);
+  }
+
+  @Post(':applicationId/reject')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reject application',
+    description: 'Reject a submitted application with a required reason.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Application rejected successfully',
+    type: ApplicationResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Application cannot be rejected in current status',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Application not found',
+  })
+  async reject(
+    @Param() params: ApplicationIdParamDto,
+    @Body() dto: RejectApplicationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ApplicationResponseDto> {
+    return this.applicationsService.rejectApplication(params.applicationId, dto, user.id);
+  }
+
+  @Post(':applicationId/request-documents')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Request additional documents',
+    description: 'Request applicant to provide additional or corrected documents.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Documents requested successfully',
+    type: ApplicationResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Cannot request documents for application in current status',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Application not found',
+  })
+  async requestDocuments(
+    @Param() params: ApplicationIdParamDto,
+    @Body() dto: RequestDocumentsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ApplicationResponseDto> {
+    return this.applicationsService.requestDocuments(params.applicationId, dto, user.id);
+  }
+
+  @Post(':applicationId/start-review')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Start application review',
+    description: 'Move application from SUBMITTED to IN_REVIEW status.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Application moved to IN_REVIEW status',
+    type: ApplicationResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Application cannot be moved to review in current status',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Application not found',
+  })
+  async startReview(
+    @Param() params: ApplicationIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ApplicationResponseDto> {
+    return this.applicationsService.startReview(params.applicationId, user.id);
   }
 }
 

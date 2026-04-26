@@ -1,11 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
+import { EmailService } from '../email/email.service';
 import {
   CreateApplicationDto,
   UpdateApplicationDto,
   ApplicationResponseDto,
   GetApplicationsQueryDto,
+  ApproveApplicationDto,
+  RejectApplicationDto,
+  RequestDocumentsDto,
 } from './dto';
 import { NotFoundException, BadRequestException, ForbiddenException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
@@ -21,6 +25,7 @@ export class ApplicationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly emailService: EmailService,
   ) {}
 
   private generateResumeToken(): string {
@@ -602,6 +607,365 @@ export class ApplicationsService {
     return this.mapToResponse(application);
   }
 
+  // =====================
+  // Admin Review Actions
+  // =====================
+
+  /**
+   * Valid statuses that can be approved
+   */
+  private readonly APPROVABLE_STATUSES: ApplicationStatus[] = [
+    ApplicationStatus.SUBMITTED,
+    ApplicationStatus.IN_REVIEW,
+  ];
+
+  /**
+   * Valid statuses that can be rejected
+   */
+  private readonly REJECTABLE_STATUSES: ApplicationStatus[] = [
+    ApplicationStatus.SUBMITTED,
+    ApplicationStatus.IN_REVIEW,
+    ApplicationStatus.NEED_DOCS,
+  ];
+
+  /**
+   * Valid statuses that can have documents requested
+   */
+  private readonly DOCS_REQUESTABLE_STATUSES: ApplicationStatus[] = [
+    ApplicationStatus.SUBMITTED,
+    ApplicationStatus.IN_REVIEW,
+  ];
+
+  /**
+   * Approve an application (Admin)
+   */
+  async approveApplication(
+    id: string,
+    dto: ApproveApplicationDto,
+    adminUserId: string,
+  ): Promise<ApplicationResponseDto> {
+    const application = await this.getApplicationWithRelations(id);
+
+    // Validate status transition
+    if (!this.APPROVABLE_STATUSES.includes(application.currentStatus as ApplicationStatus)) {
+      throw new BadRequestException('Application cannot be approved', [
+        {
+          reason: ErrorCodes.INVALID_STATUS_TRANSITION,
+          message: `Application in ${application.currentStatus} status cannot be approved. Must be in SUBMITTED or IN_REVIEW status.`,
+        },
+      ]);
+    }
+
+    const oldStatus = application.currentStatus;
+    const newStatus = ApplicationStatus.APPROVED;
+
+    // Update application status
+    const updatedApplication = await this.prisma.application.update({
+      where: { id },
+      data: {
+        currentStatus: newStatus,
+        reviewedAt: new Date(),
+        reviewedByUserId: adminUserId,
+        adminNote: dto.note || null,
+      },
+      include: this.getApplicationIncludes(),
+    });
+
+    // Create status history
+    await this.prisma.applicationStatusHistory.create({
+      data: {
+        applicationId: id,
+        oldStatus,
+        newStatus,
+        note: dto.note || 'Application approved by admin',
+        changedByUserId: adminUserId,
+        changedBySystem: false,
+      },
+    });
+
+    // Audit log
+    await this.auditLogsService.logAdminAction(
+      adminUserId,
+      'application.approve',
+      'Application',
+      id,
+      { status: oldStatus },
+      { status: newStatus, note: dto.note },
+    );
+
+    // Send notification email
+    await this.sendStatusNotificationEmail(
+      updatedApplication,
+      'Approved',
+      dto.note || 'Your visa application has been approved.',
+    );
+
+    this.logger.log(`Application approved: ${id} by admin ${adminUserId}`);
+    return this.mapToResponse(updatedApplication);
+  }
+
+  /**
+   * Reject an application (Admin)
+   */
+  async rejectApplication(
+    id: string,
+    dto: RejectApplicationDto,
+    adminUserId: string,
+  ): Promise<ApplicationResponseDto> {
+    const application = await this.getApplicationWithRelations(id);
+
+    // Validate status transition
+    if (!this.REJECTABLE_STATUSES.includes(application.currentStatus as ApplicationStatus)) {
+      throw new BadRequestException('Application cannot be rejected', [
+        {
+          reason: ErrorCodes.INVALID_STATUS_TRANSITION,
+          message: `Application in ${application.currentStatus} status cannot be rejected.`,
+        },
+      ]);
+    }
+
+    const oldStatus = application.currentStatus;
+    const newStatus = ApplicationStatus.REJECTED;
+
+    // Update application status
+    const updatedApplication = await this.prisma.application.update({
+      where: { id },
+      data: {
+        currentStatus: newStatus,
+        reviewedAt: new Date(),
+        reviewedByUserId: adminUserId,
+        adminNote: dto.reason,
+        rejectionReason: dto.reason,
+      },
+      include: this.getApplicationIncludes(),
+    });
+
+    // Create status history
+    await this.prisma.applicationStatusHistory.create({
+      data: {
+        applicationId: id,
+        oldStatus,
+        newStatus,
+        note: dto.reason,
+        changedByUserId: adminUserId,
+        changedBySystem: false,
+      },
+    });
+
+    // Audit log
+    await this.auditLogsService.logAdminAction(
+      adminUserId,
+      'application.reject',
+      'Application',
+      id,
+      { status: oldStatus },
+      { status: newStatus, reason: dto.reason },
+    );
+
+    // Send notification email
+    await this.sendStatusNotificationEmail(
+      updatedApplication,
+      'Rejected',
+      dto.reason,
+    );
+
+    this.logger.log(`Application rejected: ${id} by admin ${adminUserId}`);
+    return this.mapToResponse(updatedApplication);
+  }
+
+  /**
+   * Request additional documents for an application (Admin)
+   */
+  async requestDocuments(
+    id: string,
+    dto: RequestDocumentsDto,
+    adminUserId: string,
+  ): Promise<ApplicationResponseDto> {
+    const application = await this.getApplicationWithRelations(id);
+
+    // Validate status transition
+    if (!this.DOCS_REQUESTABLE_STATUSES.includes(application.currentStatus as ApplicationStatus)) {
+      throw new BadRequestException('Cannot request documents for this application', [
+        {
+          reason: ErrorCodes.INVALID_STATUS_TRANSITION,
+          message: `Application in ${application.currentStatus} status cannot have documents requested.`,
+        },
+      ]);
+    }
+
+    const oldStatus = application.currentStatus;
+    const newStatus = ApplicationStatus.NEED_DOCS;
+
+    // Update application status
+    const updatedApplication = await this.prisma.application.update({
+      where: { id },
+      data: {
+        currentStatus: newStatus,
+        adminNote: dto.note,
+        requestedDocumentTypes: dto.documentTypeKeys || [],
+      },
+      include: this.getApplicationIncludes(),
+    });
+
+    // Create status history
+    await this.prisma.applicationStatusHistory.create({
+      data: {
+        applicationId: id,
+        oldStatus,
+        newStatus,
+        note: dto.note,
+        changedByUserId: adminUserId,
+        changedBySystem: false,
+      },
+    });
+
+    // Audit log
+    await this.auditLogsService.logAdminAction(
+      adminUserId,
+      'application.request_documents',
+      'Application',
+      id,
+      { status: oldStatus },
+      { status: newStatus, note: dto.note, documentTypeKeys: dto.documentTypeKeys },
+    );
+
+    // Send notification email
+    await this.sendStatusNotificationEmail(
+      updatedApplication,
+      'Additional Documents Required',
+      dto.note,
+    );
+
+    this.logger.log(`Documents requested for application: ${id} by admin ${adminUserId}`);
+    return this.mapToResponse(updatedApplication);
+  }
+
+  /**
+   * Move application to IN_REVIEW status (Admin)
+   */
+  async startReview(id: string, adminUserId: string): Promise<ApplicationResponseDto> {
+    const application = await this.getApplicationWithRelations(id);
+
+    if (application.currentStatus !== ApplicationStatus.SUBMITTED) {
+      throw new BadRequestException('Application cannot be moved to review', [
+        {
+          reason: ErrorCodes.INVALID_STATUS_TRANSITION,
+          message: `Only SUBMITTED applications can be moved to IN_REVIEW status.`,
+        },
+      ]);
+    }
+
+    const oldStatus = application.currentStatus;
+    const newStatus = ApplicationStatus.IN_REVIEW;
+
+    const updatedApplication = await this.prisma.application.update({
+      where: { id },
+      data: {
+        currentStatus: newStatus,
+        reviewedByUserId: adminUserId,
+      },
+      include: this.getApplicationIncludes(),
+    });
+
+    await this.prisma.applicationStatusHistory.create({
+      data: {
+        applicationId: id,
+        oldStatus,
+        newStatus,
+        note: 'Application review started',
+        changedByUserId: adminUserId,
+        changedBySystem: false,
+      },
+    });
+
+    await this.auditLogsService.logAdminAction(
+      adminUserId,
+      'application.start_review',
+      'Application',
+      id,
+      { status: oldStatus },
+      { status: newStatus },
+    );
+
+    this.logger.log(`Application review started: ${id} by admin ${adminUserId}`);
+    return this.mapToResponse(updatedApplication);
+  }
+
+  /**
+   * Get application with all necessary relations for admin operations
+   */
+  private async getApplicationWithRelations(id: string) {
+    const application = await this.prisma.application.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        portalIdentity: true,
+        nationalityCountry: true,
+        destinationCountry: true,
+        visaType: true,
+        template: true,
+        applicants: {
+          where: { deletedAt: null },
+          orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
+        },
+      },
+    });
+
+    if (!application) {
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_FOUND,
+          message: 'Application does not exist or has been deleted',
+        },
+      ]);
+    }
+
+    return application;
+  }
+
+  /**
+   * Helper for application includes
+   */
+  private getApplicationIncludes() {
+    return {
+      portalIdentity: true,
+      nationalityCountry: true,
+      destinationCountry: true,
+      visaType: true,
+      template: true,
+      applicants: {
+        where: { deletedAt: null },
+        orderBy: [{ isMainApplicant: 'desc' as const }, { createdAt: 'asc' as const }],
+      },
+    };
+  }
+
+  /**
+   * Send status notification email to applicant
+   */
+  private async sendStatusNotificationEmail(
+    application: any,
+    statusLabel: string,
+    notes?: string,
+  ): Promise<void> {
+    if (!application.portalIdentity?.email) {
+      this.logger.warn(`No email found for application ${application.id}`);
+      return;
+    }
+
+    try {
+      const applicationRef = application.code || application.id.slice(0, 8).toUpperCase();
+      await this.emailService.sendApplicationStatusEmail(
+        application.portalIdentity.email,
+        applicationRef,
+        statusLabel,
+        notes,
+      );
+      this.logger.log(`Status notification email sent for application ${application.id}`);
+    } catch (error) {
+      this.logger.error(`Failed to send status notification email: ${error}`);
+    }
+  }
+
   private mapToResponse(application: any): ApplicationResponseDto {
     return {
       id: application.id,
@@ -618,6 +982,11 @@ export class ApplicationsService {
       paymentDeadlineAt: application.paymentDeadlineAt || undefined,
       resumeToken: application.resumeToken,
       currentStatus: application.currentStatus,
+      reviewedAt: application.reviewedAt || undefined,
+      reviewedByUserId: application.reviewedByUserId || undefined,
+      adminNote: application.adminNote || undefined,
+      rejectionReason: application.rejectionReason || undefined,
+      requestedDocumentTypes: application.requestedDocumentTypes || undefined,
       portalIdentity: application.portalIdentity
         ? {
             id: application.portalIdentity.id,
