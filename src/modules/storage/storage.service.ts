@@ -40,7 +40,9 @@ export class StorageService {
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: StorageProvider,
   ) {
-    this.logger.log(`StorageService initialized with provider: ${this.storageProvider.providerName}`);
+    this.logger.log(
+      `StorageService initialized with provider: ${this.storageProvider.providerName}`,
+    );
   }
 
   /**
@@ -61,7 +63,9 @@ export class StorageService {
     const filename = this.generateFilename(options);
     const storageKey = this.buildStorageKey(filename, options.prefix);
 
-    this.logger.debug(`Uploading file: ${storageKey} (${data.length} bytes, checksum: ${checksum})`);
+    this.logger.debug(
+      `Uploading file: ${storageKey} (${data.length} bytes, checksum: ${checksum})`,
+    );
 
     const result = await this.storageProvider.upload(storageKey, data, {
       contentType: options.contentType,

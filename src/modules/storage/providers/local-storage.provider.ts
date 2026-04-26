@@ -27,11 +27,13 @@ export class LocalStorageProvider implements StorageProvider {
   private readonly baseUrl: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.basePath = this.configService.get<string>('STORAGE_LOCAL_PATH') ||
+    this.basePath =
+      this.configService.get<string>('STORAGE_LOCAL_PATH') ||
       this.configService.get<string>('UPLOAD_PATH') ||
       './uploads';
 
-    this.baseUrl = this.configService.get<string>('STORAGE_LOCAL_BASE_URL') ||
+    this.baseUrl =
+      this.configService.get<string>('STORAGE_LOCAL_BASE_URL') ||
       this.configService.get<string>('APP_URL') ||
       'http://localhost:3000';
 
@@ -83,11 +85,14 @@ export class LocalStorageProvider implements StorageProvider {
 
       if (options.metadata) {
         const metadataPath = `${absolutePath}.meta.json`;
-        fs.writeFileSync(metadataPath, JSON.stringify({
-          contentType: options.contentType,
-          metadata: options.metadata,
-          uploadedAt: new Date().toISOString(),
-        }));
+        fs.writeFileSync(
+          metadataPath,
+          JSON.stringify({
+            contentType: options.contentType,
+            metadata: options.metadata,
+            uploadedAt: new Date().toISOString(),
+          }),
+        );
       }
 
       this.logger.debug(`File uploaded: ${key} (${data.length} bytes)`);

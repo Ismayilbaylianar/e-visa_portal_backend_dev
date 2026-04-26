@@ -22,7 +22,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Admin login',
-    description: 'Authenticate admin user with email and password. Returns JWT tokens. Rate limited to 10 requests per minute.',
+    description:
+      'Authenticate admin user with email and password. Returns JWT tokens. Rate limited to 10 requests per minute.',
   })
   @ApiBody({ type: LoginDto })
   @ApiResponse({

@@ -60,7 +60,7 @@ export class DocumentsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return documents.map((doc) => this.mapToResponse(doc));
+    return documents.map(doc => this.mapToResponse(doc));
   }
 
   /**

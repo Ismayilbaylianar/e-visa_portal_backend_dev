@@ -7,7 +7,11 @@ import { PortalSessionsService } from '../portalSessions/portal-sessions.service
 import { EmailService } from '../email/email.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { SendOtpDto, VerifyOtpDto, PortalAuthResponseDto, SendOtpResponseDto } from './dto';
-import { UnauthorizedException, BadRequestException, TooManyRequestsException } from '@/common/exceptions';
+import {
+  UnauthorizedException,
+  BadRequestException,
+  TooManyRequestsException,
+} from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import { OtpPurpose, ActorType } from '@prisma/client';
 import * as crypto from 'crypto';
@@ -164,7 +168,8 @@ export class PortalAuthService {
 
     if (recentOtp) {
       const waitSeconds = Math.ceil(
-        (recentOtp.createdAt.getTime() + this.OTP_RESEND_COOLDOWN_SECONDS * 1000 - Date.now()) / 1000,
+        (recentOtp.createdAt.getTime() + this.OTP_RESEND_COOLDOWN_SECONDS * 1000 - Date.now()) /
+          1000,
       );
 
       this.logger.warn(`OTP resend cooldown active for ${email}, ${waitSeconds}s remaining`);
@@ -200,15 +205,12 @@ export class PortalAuthService {
         `OTP hourly limit exceeded for ${email}: ${recentCount}/${this.OTP_MAX_ATTEMPTS_PER_HOUR}`,
       );
 
-      throw new TooManyRequestsException(
-        'Too many OTP requests. Please try again later.',
-        [
-          {
-            reason: ErrorCodes.OTP_MAX_ATTEMPTS_EXCEEDED,
-            message: `Maximum OTP requests (${this.OTP_MAX_ATTEMPTS_PER_HOUR}) per hour exceeded.`,
-          },
-        ],
-      );
+      throw new TooManyRequestsException('Too many OTP requests. Please try again later.', [
+        {
+          reason: ErrorCodes.OTP_MAX_ATTEMPTS_EXCEEDED,
+          message: `Maximum OTP requests (${this.OTP_MAX_ATTEMPTS_PER_HOUR}) per hour exceeded.`,
+        },
+      ]);
     }
   }
 

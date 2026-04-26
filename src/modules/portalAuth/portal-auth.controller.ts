@@ -10,7 +10,12 @@ import {
   PortalAuthResponseDto,
   SendOtpResponseDto,
 } from './dto';
-import { Public, RateLimitOtpSend, RateLimitOtpVerify, RateLimitAuthRefresh } from '@/common/decorators';
+import {
+  Public,
+  RateLimitOtpSend,
+  RateLimitOtpVerify,
+  RateLimitAuthRefresh,
+} from '@/common/decorators';
 
 @ApiTags('Portal Auth')
 @Controller('portal/auth')

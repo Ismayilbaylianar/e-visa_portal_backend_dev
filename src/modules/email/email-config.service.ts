@@ -105,10 +105,7 @@ export class EmailConfigService implements OnModuleInit {
           this.configService.get<string>('OTP_MAX_ATTEMPTS_PER_HOUR', '10'),
           10,
         ),
-        expiryMinutes: parseInt(
-          this.configService.get<string>('OTP_EXPIRY_MINUTES', '10'),
-          10,
-        ),
+        expiryMinutes: parseInt(this.configService.get<string>('OTP_EXPIRY_MINUTES', '10'), 10),
       },
       isProduction,
       isDevelopment: !isProduction,

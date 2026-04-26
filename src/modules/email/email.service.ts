@@ -1,10 +1,6 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  EmailProvider,
-  EmailMessage,
-  EMAIL_PROVIDER,
-} from './providers/email-provider.interface';
+import { EmailProvider, EmailMessage, EMAIL_PROVIDER } from './providers/email-provider.interface';
 import { EmailTemplateService, TemplateVariables } from './templates/email-template.service';
 import { EmailLogService } from './email-log.service';
 import { EmailLogStatus } from '@prisma/client';
@@ -78,9 +74,7 @@ export class EmailService {
     private readonly configService: ConfigService,
   ) {
     this.isDevelopment = this.configService.get<string>('NODE_ENV') !== 'production';
-    this.logger.log(
-      `Email service initialized with provider: ${this.emailProvider.providerName}`,
-    );
+    this.logger.log(`Email service initialized with provider: ${this.emailProvider.providerName}`);
   }
 
   /**
@@ -129,7 +123,9 @@ export class EmailService {
       return {
         success: false,
         error: renderResult.error,
-        errorCode: renderResult.missingVariables ? 'emailMissingVariables' : 'emailTemplateNotFound',
+        errorCode: renderResult.missingVariables
+          ? 'emailMissingVariables'
+          : 'emailTemplateNotFound',
         provider: this.emailProvider.providerName,
         logId,
       };
@@ -184,7 +180,11 @@ export class EmailService {
     if (!this.emailProvider.isConfigured()) {
       this.logger.warn('Email provider not configured, skipping email send');
 
-      await this.emailLogService.markFailed(logId, 'Email provider not configured', 'PROVIDER_NOT_CONFIGURED');
+      await this.emailLogService.markFailed(
+        logId,
+        'Email provider not configured',
+        'PROVIDER_NOT_CONFIGURED',
+      );
 
       return {
         success: false,
@@ -225,7 +225,11 @@ export class EmailService {
     } catch (error: any) {
       this.logger.error(`Unexpected error sending email to ${to}: ${error.message}`);
 
-      await this.emailLogService.markFailed(logId, error.message || 'Unexpected error', 'UNEXPECTED_ERROR');
+      await this.emailLogService.markFailed(
+        logId,
+        error.message || 'Unexpected error',
+        'UNEXPECTED_ERROR',
+      );
 
       return {
         success: false,

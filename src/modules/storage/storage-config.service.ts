@@ -42,11 +42,11 @@ export class StorageConfigService implements OnModuleInit {
     const validation = this.validate();
 
     if (validation.warnings.length > 0) {
-      validation.warnings.forEach((w) => this.logger.warn(w));
+      validation.warnings.forEach(w => this.logger.warn(w));
     }
 
     if (!validation.isValid) {
-      validation.errors.forEach((e) => this.logger.error(e));
+      validation.errors.forEach(e => this.logger.error(e));
       const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
       if (isProduction && this.config.provider === 's3') {
         throw new Error(`Invalid storage configuration: ${validation.errors.join(', ')}`);
@@ -103,17 +103,14 @@ export class StorageConfigService implements OnModuleInit {
   }
 
   private parseAllowedMimeTypes(): string[] {
-    const defaultTypes = [
-      'application/pdf',
-      'image/jpeg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-    ];
+    const defaultTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
     const envTypes = this.configService.get<string>('STORAGE_ALLOWED_MIME_TYPES');
     if (envTypes) {
-      return envTypes.split(',').map((t) => t.trim()).filter(Boolean);
+      return envTypes
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean);
     }
     return defaultTypes;
   }
@@ -123,7 +120,10 @@ export class StorageConfigService implements OnModuleInit {
 
     const envExtensions = this.configService.get<string>('STORAGE_ALLOWED_EXTENSIONS');
     if (envExtensions) {
-      return envExtensions.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+      return envExtensions
+        .split(',')
+        .map(e => e.trim().toLowerCase())
+        .filter(Boolean);
     }
     return defaultExtensions;
   }

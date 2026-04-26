@@ -129,10 +129,7 @@ export class EmailTemplateService {
   /**
    * Validate that all required variables are provided
    */
-  private validateRequiredVariables(
-    required: string[],
-    provided: TemplateVariables,
-  ): string[] {
+  private validateRequiredVariables(required: string[], provided: TemplateVariables): string[] {
     const missing: string[] = [];
     for (const varName of required) {
       if (provided[varName] === undefined || provided[varName] === null) {
@@ -372,12 +369,9 @@ export class EmailTemplateService {
     }
 
     // Handle simple conditional blocks {{#if variable}}...{{/if}}
-    result = result.replace(
-      /\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g,
-      (_, varName, content) => {
-        return variables[varName] ? content : '';
-      },
-    );
+    result = result.replace(/\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, varName, content) => {
+      return variables[varName] ? content : '';
+    });
 
     return result;
   }

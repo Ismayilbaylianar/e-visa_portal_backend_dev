@@ -194,7 +194,7 @@ export class NotificationsService {
 
     // Process notification (fire-and-forget, don't block the response)
     // TODO [FUTURE QUEUE INTEGRATION]: Replace with job queue dispatch
-    this.processNotification(id).catch((error) => {
+    this.processNotification(id).catch(error => {
       this.logger.error(`Error processing notification retry ${id}: ${error.message}`);
     });
 
@@ -233,7 +233,7 @@ export class NotificationsService {
 
     // Process notification (fire-and-forget, don't block the response)
     // The notification will be processed asynchronously
-    this.processNotification(notification.id).catch((error) => {
+    this.processNotification(notification.id).catch(error => {
       this.logger.error(`Error processing notification ${notification.id}: ${error.message}`);
     });
 
@@ -353,10 +353,7 @@ export class NotificationsService {
   /**
    * Process EMAIL channel notification with real sending
    */
-  private async processEmailNotification(
-    notificationId: string,
-    notification: any,
-  ): Promise<void> {
+  private async processEmailNotification(notificationId: string, notification: any): Promise<void> {
     try {
       const payload = notification.payloadJson as Record<string, any>;
 
@@ -401,10 +398,7 @@ export class NotificationsService {
   /**
    * Process mock notification (for dev mode or unsupported channels)
    */
-  private processMockNotification(
-    notificationId: string,
-    channel: NotificationChannel,
-  ): void {
+  private processMockNotification(notificationId: string, channel: NotificationChannel): void {
     // Simulate async processing
     setTimeout(async () => {
       try {

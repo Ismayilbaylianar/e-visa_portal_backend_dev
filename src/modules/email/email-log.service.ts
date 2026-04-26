@@ -56,7 +56,9 @@ export class EmailLogService {
       },
     });
 
-    this.logger.debug(`Email log created: ${log.id} (${params.templateKey} to ${params.recipient})`);
+    this.logger.debug(
+      `Email log created: ${log.id} (${params.templateKey} to ${params.recipient})`,
+    );
     return log.id;
   }
 
@@ -138,10 +140,7 @@ export class EmailLogService {
   /**
    * Get email logs for a related entity
    */
-  async getByRelatedEntity(
-    relatedEntity: string,
-    relatedEntityId: string,
-  ): Promise<any[]> {
+  async getByRelatedEntity(relatedEntity: string, relatedEntityId: string): Promise<any[]> {
     return this.prisma.emailLog.findMany({
       where: { relatedEntity, relatedEntityId },
       orderBy: { createdAt: 'desc' },

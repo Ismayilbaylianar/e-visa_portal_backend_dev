@@ -97,7 +97,13 @@ export class EmailModule {
         // Main email service
         EmailService,
       ],
-      exports: [EmailService, EmailTemplateService, EmailLogService, EmailConfigService, EMAIL_PROVIDER],
+      exports: [
+        EmailService,
+        EmailTemplateService,
+        EmailLogService,
+        EmailConfigService,
+        EMAIL_PROVIDER,
+      ],
     };
   }
 }
