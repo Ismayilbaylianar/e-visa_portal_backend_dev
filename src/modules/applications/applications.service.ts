@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import {
   CreateApplicationDto,
   UpdateApplicationDto,
@@ -10,13 +11,17 @@ import { NotFoundException, BadRequestException, ForbiddenException } from '@/co
 import { ErrorCodes } from '@/common/constants';
 import { PaginationMeta } from '@/common/types';
 import { ApplicationStatus, PaymentStatus } from '@/common/enums';
+import { ActorType } from '@prisma/client';
 import { randomBytes } from 'crypto';
 
 @Injectable()
 export class ApplicationsService {
   private readonly logger = new Logger(ApplicationsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogsService: AuditLogsService,
+  ) {}
 
   private generateResumeToken(): string {
     return randomBytes(32).toString('hex');
@@ -256,6 +261,21 @@ export class ApplicationsService {
       },
     });
 
+    // Audit log for application creation
+    await this.auditLogsService.create({
+      actorType: ActorType.PORTAL_IDENTITY,
+      actionKey: 'application.create',
+      entityType: 'Application',
+      entityId: application.id,
+      newValue: {
+        destinationCountryId: dto.destinationCountryId,
+        visaTypeId: dto.visaTypeId,
+        nationalityCountryId: dto.nationalityCountryId,
+        expedited: dto.expedited,
+        totalFeeAmount,
+      },
+    });
+
     this.logger.log(`Application created: ${application.id}`);
     return this.mapToResponse(application);
   }
@@ -422,6 +442,16 @@ export class ApplicationsService {
       },
     });
 
+    // Audit log for status change
+    await this.auditLogsService.create({
+      actorType: ActorType.PORTAL_IDENTITY,
+      actionKey: 'application.status_change',
+      entityType: 'Application',
+      entityId: id,
+      oldValue: { status: oldStatus },
+      newValue: { status: newStatus, action: 'submit_for_review' },
+    });
+
     this.logger.log(`Application submitted for review: ${id}`);
     return this.mapToResponse(updatedApplication);
   }
@@ -514,6 +544,16 @@ export class ApplicationsService {
         note: 'Application submitted for processing',
         changedBySystem: true,
       },
+    });
+
+    // Audit log for final submission
+    await this.auditLogsService.create({
+      actorType: ActorType.PORTAL_IDENTITY,
+      actionKey: 'application.submit',
+      entityType: 'Application',
+      entityId: id,
+      oldValue: { status: oldStatus },
+      newValue: { status: newStatus, applicantCount: application.applicants.length },
     });
 
     this.logger.log(`Application submitted: ${id}`);

@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService, StorageConfigService } from '../storage';
+import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { UploadDocumentDto, ReviewDocumentDto, DocumentResponseDto, MulterFile } from './dto';
 import { NotFoundException, ForbiddenException, BadRequestException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
-import { DocumentReviewStatus, ApplicationStatus } from '@prisma/client';
+import { DocumentReviewStatus, ApplicationStatus, ActorType } from '@prisma/client';
 import * as path from 'path';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class DocumentsService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly storageConfigService: StorageConfigService,
+    private readonly auditLogsService: AuditLogsService,
   ) {
     const validationConfig = this.storageConfigService.getValidationConfig();
     this.allowedMimeTypes = validationConfig.allowedMimeTypes;
@@ -182,6 +184,21 @@ export class DocumentsService {
       this.logger.log(
         `Document uploaded: ${document.id} for applicant: ${dto.applicantId} (${uploadResult.storageKey})`,
       );
+
+      // Audit log for document upload
+      await this.auditLogsService.create({
+        actorType: ActorType.PORTAL_IDENTITY,
+        actionKey: 'document.upload',
+        entityType: 'Document',
+        entityId: document.id,
+        newValue: {
+          applicantId: dto.applicantId,
+          documentTypeKey: dto.documentTypeKey,
+          filename: file.originalname,
+          mimeType: file.mimetype,
+          fileSize: uploadResult.size,
+        },
+      });
 
       return this.mapToResponse(document);
     } catch (error) {
@@ -375,6 +392,17 @@ export class DocumentsService {
     });
 
     this.logger.log(`Document reviewed: ${documentId} with status: ${dto.reviewStatus}`);
+
+    // Audit log for document review
+    await this.auditLogsService.logAdminAction(
+      userId,
+      'document.review',
+      'Document',
+      documentId,
+      { reviewStatus: document.reviewStatus },
+      { reviewStatus: dto.reviewStatus, reviewNote: dto.reviewNote },
+    );
+
     return this.mapToResponse(updatedDocument);
   }
 

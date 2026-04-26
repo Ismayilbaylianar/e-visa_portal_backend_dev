@@ -5,3 +5,4 @@ export * from './current-user.decorator';
 export * from './portal-identity.decorator';
 export * from './request-id.decorator';
 export * from './api-paginated-response.decorator';
+export * from './rate-limit.decorator';

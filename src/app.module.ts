@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { appConfig } from './config/app.config';
 import { dbConfig } from './config/db.config';
 import { swaggerConfig } from './config/swagger.config';
+import { ThrottlerBehindProxyGuard } from './common/guards';
 
 // Core modules
 import { PrismaModule } from './modules/prisma/prisma.module';
@@ -68,6 +71,22 @@ import { StorageModule } from './modules/storage/storage.module';
       envFilePath: ['.env', '.env.local'],
     }),
 
+    // Rate Limiting
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [
+          {
+            name: 'default',
+            ttl: config.get<number>('THROTTLE_TTL', 60) * 1000,
+            limit: config.get<number>('THROTTLE_LIMIT', 100),
+          },
+        ],
+        errorMessage: 'Too many requests. Please try again later.',
+      }),
+    }),
+
     // Core modules
     PrismaModule,
     HealthModule,
@@ -126,6 +145,13 @@ import { StorageModule } from './modules/storage/storage.module';
 
     // Storage Infrastructure
     StorageModule,
+  ],
+  providers: [
+    // Global rate limiting guard
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerBehindProxyGuard,
+    },
   ],
 })
 export class AppModule {}

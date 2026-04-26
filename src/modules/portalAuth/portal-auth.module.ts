@@ -5,11 +5,13 @@ import { PortalAuthController } from './portal-auth.controller';
 import { PortalAuthService } from './portal-auth.service';
 import { OtpModule } from '../otp/otp.module';
 import { PortalSessionsModule } from '../portalSessions/portal-sessions.module';
+import { AuditLogsModule } from '../auditLogs/audit-logs.module';
 
 @Module({
   imports: [
     OtpModule,
     PortalSessionsModule,
+    AuditLogsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({

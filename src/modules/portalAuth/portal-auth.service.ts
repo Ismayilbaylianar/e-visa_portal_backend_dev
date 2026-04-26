@@ -5,10 +5,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { OtpService } from '../otp/otp.service';
 import { PortalSessionsService } from '../portalSessions/portal-sessions.service';
 import { EmailService } from '../email/email.service';
+import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { SendOtpDto, VerifyOtpDto, PortalAuthResponseDto, SendOtpResponseDto } from './dto';
 import { UnauthorizedException, BadRequestException, TooManyRequestsException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
-import { OtpPurpose } from '@prisma/client';
+import { OtpPurpose, ActorType } from '@prisma/client';
 import * as crypto from 'crypto';
 
 interface PortalJwtPayload {
@@ -34,6 +35,7 @@ export class PortalAuthService {
     private readonly otpService: OtpService,
     private readonly portalSessionsService: PortalSessionsService,
     private readonly emailService: EmailService,
+    private readonly auditLogsService: AuditLogsService,
   ) {
     this.OTP_EXPIRY_MINUTES = this.configService.get<number>('OTP_EXPIRY_MINUTES', 10);
     this.OTP_RESEND_COOLDOWN_SECONDS = this.configService.get<number>(
@@ -72,9 +74,9 @@ export class PortalAuthService {
    * - Rate limiting protects against abuse
    * - Email failure is logged but doesn't block OTP creation
    */
-  async sendOtp(dto: SendOtpDto): Promise<SendOtpResponseDto> {
+  async sendOtp(dto: SendOtpDto, ipAddress?: string): Promise<SendOtpResponseDto> {
     const email = dto.email.toLowerCase().trim();
-    this.logger.debug(`Send OTP request for email: ${email}`);
+    this.logger.debug(`Send OTP request for email: ${email} from IP: ${ipAddress || 'unknown'}`);
 
     // Check resend cooldown
     await this.checkResendCooldown(email);
@@ -300,6 +302,17 @@ export class PortalAuthService {
     });
 
     this.logger.log(`Portal identity authenticated: ${portalIdentity.id}`);
+
+    // Audit log for successful portal authentication
+    await this.auditLogsService.create({
+      actorType: ActorType.PORTAL_IDENTITY,
+      actionKey: 'portal.auth.login',
+      entityType: 'PortalIdentity',
+      entityId: portalIdentity.id,
+      newValue: { email: portalIdentity.email },
+      ipAddress,
+      userAgent,
+    });
 
     return {
       accessToken,

@@ -289,6 +289,32 @@ This repository contains the complete backend architecture with fully functional
   - Revenue by month (last 6 months)
   - Daily application counts (last 30 days)
 
+#### Security Hardening (Production-Ready)
+- [x] **Rate Limiting**
+  - Global rate limiting via @nestjs/throttler
+  - Proxy-aware IP detection (X-Forwarded-For, X-Real-IP)
+  - Strict limits on sensitive endpoints:
+    - OTP send: 5 requests/minute per IP
+    - OTP verify: 10 requests/minute per IP
+    - Admin login: 10 requests/minute per IP
+    - Token refresh: 30 requests/minute per IP
+  - Configurable default: 100 requests/minute
+  - Clean 429 response with retry-after hint
+- [x] **Security Headers**
+  - Helmet middleware for secure HTTP headers
+  - Content Security Policy (production)
+  - X-Frame-Options, X-Content-Type-Options, etc.
+  - CORS configuration
+- [x] **IP and User-Agent Capture**
+  - Request context service for metadata
+  - Proxy-safe IP extraction
+  - Audit log integration with IP/User-Agent
+- [x] **Expanded Audit Logging**
+  - Portal authentication events
+  - Application creation, submission, status changes
+  - Document upload and review
+  - Admin actions with IP/User-Agent
+
 ### What's NOT Implemented Yet
 
 - [ ] Real payment provider integrations (Stripe, PayPal, etc.)
