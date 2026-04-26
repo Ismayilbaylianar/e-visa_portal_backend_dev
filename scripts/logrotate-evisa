@@ -1,0 +1,35 @@
+# Logrotate configuration for E-Visa Portal Backend
+# Location: /etc/logrotate.d/evisa
+#
+# This handles:
+# - PM2 application logs
+# - PM2 error logs
+# - Backup logs
+#
+# Nginx logs are already handled by /etc/logrotate.d/nginx
+
+/var/log/evisa/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0644 anar anar
+    sharedscripts
+    postrotate
+        # Signal PM2 to reopen log files after rotation
+        /usr/bin/pm2 reloadLogs > /dev/null 2>&1 || true
+    endscript
+}
+
+# Backup logs (less frequent rotation, longer retention)
+/var/log/evisa/backup.log {
+    weekly
+    missingok
+    rotate 8
+    compress
+    delaycompress
+    notifempty
+    create 0644 anar anar
+}
