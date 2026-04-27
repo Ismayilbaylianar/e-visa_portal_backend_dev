@@ -1,5 +1,15 @@
 import { PrismaClient, PermissionEffect, VisaEntryType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import * as fs from 'fs';
+import * as path from 'path';
+
+interface IsoCountry {
+  isoCode: string;
+  name: string;
+  flagEmoji: string;
+  continentCode: string;
+  region: string;
+}
 
 const prisma = new PrismaClient();
 
@@ -25,11 +35,15 @@ const PERMISSIONS = [
   { moduleKey: 'sessions', actionKey: 'read', description: 'View active sessions' },
   { moduleKey: 'sessions', actionKey: 'delete', description: 'Revoke sessions' },
   
-  // Countries module
-  { moduleKey: 'countries', actionKey: 'read', description: 'View countries and sections' },
-  { moduleKey: 'countries', actionKey: 'create', description: 'Create countries' },
-  { moduleKey: 'countries', actionKey: 'update', description: 'Update countries and sections' },
-  { moduleKey: 'countries', actionKey: 'delete', description: 'Delete countries and sections' },
+  // Countries module (reference data — read + limited admin override)
+  { moduleKey: 'countries', actionKey: 'read', description: 'View countries reference data' },
+  { moduleKey: 'countries', actionKey: 'update', description: 'Override flag/region/active flags on a country reference row' },
+
+  // Country Pages module (publishable marketing content per country)
+  { moduleKey: 'countryPages', actionKey: 'read', description: 'View country pages' },
+  { moduleKey: 'countryPages', actionKey: 'create', description: 'Create country pages' },
+  { moduleKey: 'countryPages', actionKey: 'update', description: 'Update country pages and their sections' },
+  { moduleKey: 'countryPages', actionKey: 'delete', description: 'Delete country pages and cascade their sections' },
   
   // Visa Types module
   { moduleKey: 'visaTypes', actionKey: 'read', description: 'View visa types' },
@@ -108,7 +122,8 @@ const ROLES = [
       'roles.read',
       'permissions.read',
       'sessions.read', 'sessions.delete',
-      'countries.read', 'countries.create', 'countries.update',
+      'countries.read', 'countries.update',
+      'countryPages.read', 'countryPages.create', 'countryPages.update', 'countryPages.delete',
       'visaTypes.read', 'visaTypes.create', 'visaTypes.update',
       'settings.read', 'settings.update',
       'emailTemplates.read', 'emailTemplates.create', 'emailTemplates.update',
@@ -133,6 +148,7 @@ const ROLES = [
       'roles.read',
       'sessions.read', 'sessions.delete',
       'countries.read',
+      'countryPages.read',
       'visaTypes.read',
       'settings.read',
       'emailTemplates.read',
@@ -330,48 +346,99 @@ async function main() {
   // in a separate Sprint 1 / Task A.
   console.log('🌍 Seeding minimal config data (pre-Sprint 3)...\n');
 
-  // A. Countries — upsert by isoCode (unique)
-  console.log('🏳️  Countries:');
-  const COUNTRY_DATA = [
+  // A. Countries — UN ISO 3166-1 alpha-2 reference data (250 rows).
+  // Upsert by isoCode. Re-runs are no-ops for unchanged rows.
+  console.log('🏳️  Countries (UN ISO 3166-1 reference, 250 rows):');
+  const isoDataPath = path.resolve(__dirname, 'data', 'countries-iso3166.json');
+  const isoCountries: IsoCountry[] = JSON.parse(
+    fs.readFileSync(isoDataPath, 'utf8'),
+  );
+  const countryIds: Record<string, string> = {};
+  let createdCountries = 0;
+  let updatedCountries = 0;
+  for (const c of isoCountries) {
+    const existing = await prisma.country.findUnique({
+      where: { isoCode: c.isoCode },
+    });
+    const country = await prisma.country.upsert({
+      where: { isoCode: c.isoCode },
+      update: {
+        name: c.name,
+        flagEmoji: c.flagEmoji,
+        continentCode: c.continentCode,
+        region: c.region,
+      },
+      create: {
+        isoCode: c.isoCode,
+        name: c.name,
+        flagEmoji: c.flagEmoji,
+        continentCode: c.continentCode,
+        region: c.region,
+      },
+    });
+    countryIds[c.isoCode] = country.id;
+    if (existing) updatedCountries++;
+    else createdCountries++;
+  }
+  console.log(`  ✅ ${createdCountries} new, ${updatedCountries} updated`);
+
+  // B. Country Pages — publishable marketing pages for the 3 demo countries.
+  // Optional per country; only the destinations we actively offer get a page.
+  // Idempotent: upsert by countryId (unique).
+  console.log('\n📄 Country pages (publishable marketing content):');
+  const COUNTRY_PAGE_DATA = [
     {
-      name: 'Türkiye',
-      slug: 'turkey',
       isoCode: 'TR',
+      slug: 'turkey',
       isPublished: true,
       seoTitle: 'Türkiye Visa',
       seoDescription: 'Visa to Türkiye',
     },
     {
-      name: 'Azerbaijan',
-      slug: 'azerbaijan',
       isoCode: 'AZ',
+      slug: 'azerbaijan',
       isPublished: true,
       seoTitle: 'Azerbaijan Visa',
       seoDescription: 'Visa to Azerbaijan',
     },
     {
-      name: 'United Arab Emirates',
-      slug: 'uae',
       isoCode: 'AE',
+      slug: 'uae',
       isPublished: true,
       seoTitle: 'UAE Visa',
       seoDescription: 'Visa to UAE',
     },
   ];
-  const countryIds: Record<string, string> = {};
-  for (const c of COUNTRY_DATA) {
-    const country = await prisma.country.upsert({
-      where: { isoCode: c.isoCode },
-      update: {},
-      create: c,
+  const countryPageIds: Record<string, string> = {};
+  for (const p of COUNTRY_PAGE_DATA) {
+    const countryId = countryIds[p.isoCode];
+    if (!countryId) {
+      console.log(`  ❌ Country ${p.isoCode} not found, skipping page`);
+      continue;
+    }
+    const page = await prisma.countryPage.upsert({
+      where: { countryId },
+      update: {
+        slug: p.slug,
+        isPublished: p.isPublished,
+        seoTitle: p.seoTitle,
+        seoDescription: p.seoDescription,
+      },
+      create: {
+        countryId,
+        slug: p.slug,
+        isPublished: p.isPublished,
+        isActive: true,
+        seoTitle: p.seoTitle,
+        seoDescription: p.seoDescription,
+      },
     });
-    countryIds[c.isoCode] = country.id;
-    console.log(`  ✅ ${c.name} (${c.isoCode})`);
+    countryPageIds[p.isoCode] = page.id;
+    console.log(`  ✅ ${p.slug} (${p.isoCode})`);
   }
 
-  // B. CountrySections for Türkiye — findFirst by (countryId, title) since
-  // there is no unique constraint on this pair.
-  console.log('\n📑 Country sections (Türkiye):');
+  // C. CountrySections for the Türkiye page — findFirst by (countryPageId, title).
+  console.log('\n📑 Country sections (Türkiye page):');
   const SECTION_DATA = [
     {
       title: 'Overview',
@@ -392,17 +459,22 @@ async function main() {
       sortOrder: 2,
     },
   ];
-  for (const s of SECTION_DATA) {
-    const existing = await prisma.countrySection.findFirst({
-      where: { countryId: countryIds['TR'], title: s.title, deletedAt: null },
-    });
-    if (existing) {
-      console.log(`  ⏭️  ${s.title} (exists)`);
-    } else {
-      await prisma.countrySection.create({
-        data: { ...s, countryId: countryIds['TR'], isActive: true },
+  const trPageId = countryPageIds['TR'];
+  if (!trPageId) {
+    console.log('  ❌ TR country page not found, skipping sections');
+  } else {
+    for (const s of SECTION_DATA) {
+      const existing = await prisma.countrySection.findFirst({
+        where: { countryPageId: trPageId, title: s.title, deletedAt: null },
       });
-      console.log(`  ✅ ${s.title}`);
+      if (existing) {
+        console.log(`  ⏭️  ${s.title} (exists)`);
+      } else {
+        await prisma.countrySection.create({
+          data: { ...s, countryPageId: trPageId, isActive: true },
+        });
+        console.log(`  ✅ ${s.title}`);
+      }
     }
   }
 
@@ -654,8 +726,9 @@ async function main() {
 
   console.log('\n📊 Pre-Sprint 3 config tally:');
   console.log('─'.repeat(50));
-  console.log(`  Countries:                3 (TR, AZ, AE)`);
-  console.log(`  Country sections:         3 (Türkiye)`);
+  console.log(`  Countries (UN reference): 250 (ISO 3166-1 alpha-2)`);
+  console.log(`  Country pages:            3 (TR, AZ, AE — publishable)`);
+  console.log(`  Country sections:         3 (TR page)`);
   console.log(`  Visa types:               2 (tourism, business)`);
   console.log(
     `  Email templates:          2 (otp_verification, application_status_update)`,

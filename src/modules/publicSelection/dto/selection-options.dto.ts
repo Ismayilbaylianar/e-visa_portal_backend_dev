@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CountryOptionDto {
   @ApiProperty({
@@ -9,21 +9,28 @@ export class CountryOptionDto {
 
   @ApiProperty({
     description: 'Country name',
-    example: 'Turkey',
+    example: 'Türkiye',
   })
   name: string;
 
-  @ApiProperty({
-    description: 'Country slug',
+  @ApiPropertyOptional({
+    description:
+      'CountryPage slug (only present when the country has an active published page; nationality entries do not).',
     example: 'turkey',
   })
-  slug: string;
+  slug?: string;
 
   @ApiProperty({
-    description: 'ISO country code',
+    description: 'ISO 3166-1 alpha-2 code',
     example: 'TR',
   })
   isoCode: string;
+
+  @ApiPropertyOptional({
+    description: 'Unicode flag emoji (when available from reference data)',
+    example: '🇹🇷',
+  })
+  flagEmoji?: string;
 }
 
 export class VisaTypeOptionDto {

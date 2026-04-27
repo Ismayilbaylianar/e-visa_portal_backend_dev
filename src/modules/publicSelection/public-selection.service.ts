@@ -23,16 +23,31 @@ export class PublicSelectionService {
    */
   async getOptions(): Promise<SelectionOptionsResponseDto> {
     const [destinationCountries, nationalityCountries, visaTypes] = await Promise.all([
-      // Destination countries: active AND published
+      // Destination countries: have a published, active CountryPage. The page
+      // join also gives us the URL slug (countries themselves no longer carry
+      // a slug after the Module 1.5 split).
       this.prisma.country.findMany({
         where: {
           isActive: true,
-          isPublished: true,
           deletedAt: null,
+          page: {
+            is: {
+              isActive: true,
+              isPublished: true,
+              deletedAt: null,
+            },
+          },
+        },
+        include: {
+          page: {
+            select: { slug: true },
+          },
         },
         orderBy: { name: 'asc' },
       }),
-      // Nationality countries: all active countries (assumption: same source as countries table)
+      // Nationality countries: any active reference country. Sprint 4 / UX-001
+      // will refine this to "countries that appear as a nationality in at
+      // least one active BindingNationalityFee".
       this.prisma.country.findMany({
         where: {
           isActive: true,
@@ -51,19 +66,21 @@ export class PublicSelectionService {
     ]);
 
     return {
-      destinationCountries: destinationCountries.map(country => ({
+      destinationCountries: destinationCountries.map((country: any) => ({
         id: country.id,
         name: country.name,
-        slug: country.slug,
+        slug: country.page?.slug,
         isoCode: country.isoCode,
+        flagEmoji: country.flagEmoji,
       })),
-      nationalityCountries: nationalityCountries.map(country => ({
+      nationalityCountries: nationalityCountries.map((country) => ({
         id: country.id,
         name: country.name,
-        slug: country.slug,
+        // Nationality entries don't need a slug — left undefined.
         isoCode: country.isoCode,
+        flagEmoji: country.flagEmoji,
       })),
-      visaTypes: visaTypes.map(visaType => ({
+      visaTypes: visaTypes.map((visaType) => ({
         id: visaType.id,
         purpose: visaType.purpose,
         validityDays: visaType.validityDays,

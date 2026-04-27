@@ -2,18 +2,27 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import {
-  CreateCountryDto,
   UpdateCountryDto,
   CountryResponseDto,
   CountryListResponseDto,
   GetCountriesQueryDto,
   PublicCountryResponseDto,
   PublicCountryListResponseDto,
-  CountrySectionResponseDto,
 } from './dto';
-import { NotFoundException, ConflictException } from '@/common/exceptions';
+import { NotFoundException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 
+/**
+ * After Module 1.5 split, the Country table holds the immutable UN
+ * ISO 3166-1 alpha-2 reference list (250 rows, seeded from
+ * prisma/data/countries-iso3166.json). Admin can read + override the
+ * small set of display fields (name typo, flag emoji, region label,
+ * isActive). Create / Delete are not exposed — reference data is
+ * managed exclusively via the seed.
+ *
+ * Publishable content (slug, SEO, sections) lives on CountryPage and
+ * is managed by CountryPagesService.
+ */
 @Injectable()
 export class CountriesService {
   private readonly logger = new Logger(CountriesService.name);
@@ -24,41 +33,39 @@ export class CountriesService {
   ) {}
 
   /**
-   * Get paginated list of countries (admin)
+   * Admin paginated list with continent / hasPage / search filters.
    */
   async findAll(query: GetCountriesQueryDto): Promise<CountryListResponseDto> {
-    const { page = 1, limit = 10, search, sortBy = 'name', sortOrder = 'asc' } = query;
+    const { page = 1, limit = 50, search, sortBy = 'name', sortOrder = 'asc' } = query;
     const skip = (page - 1) * limit;
 
-    const where: any = {
-      deletedAt: null,
-    };
+    const where: any = { deletedAt: null };
 
     if (query.isActive !== undefined) {
       where.isActive = query.isActive;
     }
 
-    if (query.isPublished !== undefined) {
-      where.isPublished = query.isPublished;
+    if (query.continentCode) {
+      where.continentCode = query.continentCode;
     }
 
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
         { isoCode: { contains: search, mode: 'insensitive' } },
-        { slug: { contains: search, mode: 'insensitive' } },
       ];
+    }
+
+    if (query.hasPage === true) {
+      where.page = { isNot: null };
+    } else if (query.hasPage === false) {
+      where.page = { is: null };
     }
 
     const [countries, total] = await Promise.all([
       this.prisma.country.findMany({
         where,
-        include: {
-          sections: {
-            where: { deletedAt: null },
-            orderBy: { sortOrder: 'asc' },
-          },
-        },
+        include: { page: { select: { id: true } } },
         skip,
         take: limit,
         orderBy: { [sortBy]: sortOrder },
@@ -66,7 +73,7 @@ export class CountriesService {
       this.prisma.country.count({ where }),
     ]);
 
-    const items = countries.map(country => this.mapToResponse(country));
+    const items = countries.map((c) => this.mapToResponse(c));
 
     return {
       items,
@@ -78,17 +85,12 @@ export class CountriesService {
   }
 
   /**
-   * Get country by ID (admin)
+   * Admin get one country by id.
    */
   async findById(id: string): Promise<CountryResponseDto> {
     const country = await this.prisma.country.findFirst({
       where: { id, deletedAt: null },
-      include: {
-        sections: {
-          where: { deletedAt: null },
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
+      include: { page: { select: { id: true } } },
     });
 
     if (!country) {
@@ -104,82 +106,8 @@ export class CountriesService {
   }
 
   /**
-   * Create new country
-   */
-  async create(dto: CreateCountryDto, actorUserId?: string): Promise<CountryResponseDto> {
-    // Check slug uniqueness
-    const existingBySlug = await this.prisma.country.findUnique({
-      where: { slug: dto.slug },
-    });
-
-    if (existingBySlug) {
-      throw new ConflictException('Slug already exists', [
-        {
-          field: 'slug',
-          reason: ErrorCodes.CONFLICT,
-          message: 'A country with this slug already exists',
-        },
-      ]);
-    }
-
-    // Check ISO code uniqueness
-    const existingByIso = await this.prisma.country.findUnique({
-      where: { isoCode: dto.isoCode },
-    });
-
-    if (existingByIso) {
-      throw new ConflictException('ISO code already exists', [
-        {
-          field: 'isoCode',
-          reason: ErrorCodes.CONFLICT,
-          message: 'A country with this ISO code already exists',
-        },
-      ]);
-    }
-
-    const country = await this.prisma.country.create({
-      data: {
-        name: dto.name,
-        slug: dto.slug,
-        isoCode: dto.isoCode,
-        isActive: dto.isActive ?? true,
-        isPublished: dto.isPublished ?? false,
-        seoTitle: dto.seoTitle,
-        seoDescription: dto.seoDescription,
-      },
-      include: {
-        sections: {
-          where: { deletedAt: null },
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
-    });
-
-    if (actorUserId) {
-      await this.auditLogsService.logAdminAction(
-        actorUserId,
-        'country.create',
-        'Country',
-        country.id,
-        undefined,
-        {
-          name: country.name,
-          slug: country.slug,
-          isoCode: country.isoCode,
-          isActive: country.isActive,
-          isPublished: country.isPublished,
-          seoTitle: country.seoTitle,
-          seoDescription: country.seoDescription,
-        },
-      );
-    }
-
-    this.logger.log(`Country created: ${country.id} (${country.name})`);
-    return this.mapToResponse(country);
-  }
-
-  /**
-   * Update country
+   * Admin override of reference fields (typo fix on name, flag swap,
+   * region relabel, deactivate). Audit entry on every save.
    */
   async update(
     id: string,
@@ -199,56 +127,17 @@ export class CountriesService {
       ]);
     }
 
-    // Check slug uniqueness if changing
-    if (dto.slug && dto.slug !== country.slug) {
-      const existingBySlug = await this.prisma.country.findUnique({
-        where: { slug: dto.slug },
-      });
-      if (existingBySlug) {
-        throw new ConflictException('Slug already exists', [
-          {
-            field: 'slug',
-            reason: ErrorCodes.CONFLICT,
-            message: 'A country with this slug already exists',
-          },
-        ]);
-      }
-    }
-
-    // Check ISO code uniqueness if changing
-    if (dto.isoCode && dto.isoCode !== country.isoCode) {
-      const existingByIso = await this.prisma.country.findUnique({
-        where: { isoCode: dto.isoCode },
-      });
-      if (existingByIso) {
-        throw new ConflictException('ISO code already exists', [
-          {
-            field: 'isoCode',
-            reason: ErrorCodes.CONFLICT,
-            message: 'A country with this ISO code already exists',
-          },
-        ]);
-      }
-    }
-
     const updateData: any = {};
     if (dto.name !== undefined) updateData.name = dto.name;
-    if (dto.slug !== undefined) updateData.slug = dto.slug;
-    if (dto.isoCode !== undefined) updateData.isoCode = dto.isoCode;
+    if (dto.flagEmoji !== undefined) updateData.flagEmoji = dto.flagEmoji;
+    if (dto.continentCode !== undefined) updateData.continentCode = dto.continentCode;
+    if (dto.region !== undefined) updateData.region = dto.region;
     if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
-    if (dto.isPublished !== undefined) updateData.isPublished = dto.isPublished;
-    if (dto.seoTitle !== undefined) updateData.seoTitle = dto.seoTitle;
-    if (dto.seoDescription !== undefined) updateData.seoDescription = dto.seoDescription;
 
     const updatedCountry = await this.prisma.country.update({
       where: { id },
       data: updateData,
-      include: {
-        sections: {
-          where: { deletedAt: null },
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
+      include: { page: { select: { id: true } } },
     });
 
     if (actorUserId) {
@@ -259,21 +148,17 @@ export class CountriesService {
         id,
         {
           name: country.name,
-          slug: country.slug,
-          isoCode: country.isoCode,
+          flagEmoji: country.flagEmoji,
+          continentCode: country.continentCode,
+          region: country.region,
           isActive: country.isActive,
-          isPublished: country.isPublished,
-          seoTitle: country.seoTitle,
-          seoDescription: country.seoDescription,
         },
         {
           name: updatedCountry.name,
-          slug: updatedCountry.slug,
-          isoCode: updatedCountry.isoCode,
+          flagEmoji: updatedCountry.flagEmoji,
+          continentCode: updatedCountry.continentCode,
+          region: updatedCountry.region,
           isActive: updatedCountry.isActive,
-          isPublished: updatedCountry.isPublished,
-          seoTitle: updatedCountry.seoTitle,
-          seoDescription: updatedCountry.seoDescription,
         },
       );
     }
@@ -283,197 +168,47 @@ export class CountriesService {
   }
 
   /**
-   * Soft delete country
-   */
-  async delete(id: string, actorUserId?: string): Promise<void> {
-    const country = await this.prisma.country.findFirst({
-      where: { id, deletedAt: null },
-    });
-
-    if (!country) {
-      throw new NotFoundException('Country not found', [
-        {
-          reason: ErrorCodes.COUNTRY_NOT_FOUND,
-          message: 'Country does not exist or has been deleted',
-        },
-      ]);
-    }
-
-    // Block deletion if country is referenced by any active TemplateBinding
-    // (as destinationCountryId) or BindingNationalityFee (as nationalityCountryId).
-    // Soft-deleted bindings/fees are ignored.
-    const [bindingCount, feeCount] = await Promise.all([
-      this.prisma.templateBinding.count({
-        where: {
-          destinationCountryId: id,
-          deletedAt: null,
-          isActive: true,
-        },
-      }),
-      this.prisma.bindingNationalityFee.count({
-        where: {
-          nationalityCountryId: id,
-          deletedAt: null,
-          isActive: true,
-        },
-      }),
-    ]);
-
-    if (bindingCount > 0 || feeCount > 0) {
-      const details = [];
-      if (bindingCount > 0) {
-        details.push({
-          field: 'id',
-          reason: ErrorCodes.CONFLICT,
-          message: `Country is in use as destination by ${bindingCount} active binding(s)`,
-        });
-      }
-      if (feeCount > 0) {
-        details.push({
-          field: 'id',
-          reason: ErrorCodes.CONFLICT,
-          message: `Country is in use as nationality in ${feeCount} fee record(s)`,
-        });
-      }
-      throw new ConflictException('Country is in use', details);
-    }
-
-    // Soft delete country and its sections
-    await this.prisma.$transaction([
-      this.prisma.country.update({
-        where: { id },
-        data: { deletedAt: new Date() },
-      }),
-      this.prisma.countrySection.updateMany({
-        where: { countryId: id, deletedAt: null },
-        data: { deletedAt: new Date() },
-      }),
-    ]);
-
-    if (actorUserId) {
-      await this.auditLogsService.logAdminAction(
-        actorUserId,
-        'country.delete',
-        'Country',
-        id,
-        {
-          name: country.name,
-          slug: country.slug,
-          isoCode: country.isoCode,
-          isActive: country.isActive,
-          isPublished: country.isPublished,
-        },
-        undefined,
-      );
-    }
-
-    this.logger.log(`Country soft deleted: ${id}`);
-  }
-
-  /**
-   * Get public list of countries (published + active only)
+   * Public list of all reference countries (used by selection dropdowns,
+   * paired with smart filter against TemplateBindings in Sprint 4 / UX-001).
    */
   async findAllPublic(): Promise<PublicCountryListResponseDto> {
     const countries = await this.prisma.country.findMany({
-      where: {
-        deletedAt: null,
-        isActive: true,
-        isPublished: true,
-      },
-      include: {
-        sections: {
-          where: { deletedAt: null, isActive: true },
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
+      where: { deletedAt: null, isActive: true },
       orderBy: { name: 'asc' },
     });
 
-    const items = countries.map(country => this.mapToPublicResponse(country));
-
-    return {
-      items,
-      total: items.length,
-    };
+    const items = countries.map((c) => this.mapToPublicResponse(c));
+    return { items, total: items.length };
   }
 
   /**
-   * Get public country by slug
-   */
-  async findBySlugPublic(slug: string): Promise<PublicCountryResponseDto> {
-    const country = await this.prisma.country.findFirst({
-      where: {
-        slug,
-        deletedAt: null,
-        isActive: true,
-        isPublished: true,
-      },
-      include: {
-        sections: {
-          where: { deletedAt: null, isActive: true },
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
-    });
-
-    if (!country) {
-      throw new NotFoundException('Country not found', [
-        {
-          reason: ErrorCodes.COUNTRY_NOT_FOUND,
-          message: 'Country does not exist or is not available',
-        },
-      ]);
-    }
-
-    return this.mapToPublicResponse(country);
-  }
-
-  /**
-   * Map country entity to admin response DTO
+   * Map country row → admin response.
    */
   private mapToResponse(country: any): CountryResponseDto {
     return {
       id: country.id,
-      name: country.name,
-      slug: country.slug,
       isoCode: country.isoCode,
+      name: country.name,
+      flagEmoji: country.flagEmoji,
+      continentCode: country.continentCode,
+      region: country.region,
       isActive: country.isActive,
-      isPublished: country.isPublished,
-      seoTitle: country.seoTitle || undefined,
-      seoDescription: country.seoDescription || undefined,
-      sections: country.sections?.map((s: any) => this.mapSectionToResponse(s)),
+      hasPage: !!country.page,
       createdAt: country.createdAt,
       updatedAt: country.updatedAt,
     };
   }
 
   /**
-   * Map country entity to public response DTO
+   * Map country row → public minimal response.
    */
   private mapToPublicResponse(country: any): PublicCountryResponseDto {
     return {
       id: country.id,
-      name: country.name,
-      slug: country.slug,
       isoCode: country.isoCode,
-      seoTitle: country.seoTitle || undefined,
-      seoDescription: country.seoDescription || undefined,
-      sections: country.sections?.map((s: any) => this.mapSectionToResponse(s)),
-    };
-  }
-
-  /**
-   * Map section entity to response DTO
-   */
-  private mapSectionToResponse(section: any): CountrySectionResponseDto {
-    return {
-      id: section.id,
-      title: section.title,
-      content: section.content,
-      sortOrder: section.sortOrder,
-      isActive: section.isActive,
-      createdAt: section.createdAt,
-      updatedAt: section.updatedAt,
+      name: country.name,
+      flagEmoji: country.flagEmoji,
+      continentCode: country.continentCode,
     };
   }
 }

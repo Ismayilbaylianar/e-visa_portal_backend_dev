@@ -328,47 +328,79 @@ model OtpCode {
 // CONFIGURATION ENTITIES
 // ===========================================
 
+/// ISO 3166-1 alpha-2 country reference data.
+/// Seeded from prisma/data/countries-iso3166.json (250 rows). Treated as
+/// reference / lookup table — admin UI is read-only with the optional
+/// ability to override flagEmoji/region. All FKs from applications,
+/// bindings, fees, and nationality references point here.
 model Country {
-  id             String    @id @default(uuid())
-  name           String
-  slug           String    @unique
-  isoCode        String    @unique @map("iso_code")
-  isActive       Boolean   @default(true) @map("is_active")
-  seoTitle       String?   @map("seo_title")
-  seoDescription String?   @map("seo_description")
-  isPublished    Boolean   @default(false) @map("is_published")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-  deletedAt      DateTime? @map("deleted_at")
+  id            String    @id @default(uuid())
+  isoCode       String    @unique @map("iso_code")
+  name          String
+  flagEmoji     String    @map("flag_emoji")
+  continentCode String    @map("continent_code")
+  region        String
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
 
-  sections                     CountrySection[]
+  page                         CountryPage?
   templateBindingsDestination  TemplateBinding[]        @relation("DestinationCountry")
   bindingNationalityFees       BindingNationalityFee[]  @relation("NationalityCountry")
   applicationsNationality      Application[]            @relation("NationalityCountry")
   applicationsDestination      Application[]            @relation("DestinationCountry")
 
-  @@index([slug])
   @@index([isoCode])
+  @@index([continentCode])
   @@index([isActive])
-  @@index([isPublished])
   @@index([deletedAt])
   @@map("countries")
 }
 
-model CountrySection {
-  id        String    @id @default(uuid())
-  countryId String    @map("country_id")
-  title     String
-  content   String
-  sortOrder Int       @default(0) @map("sort_order")
-  isActive  Boolean   @default(true) @map("is_active")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
+/// Publishable marketing page for a Country. Optional: a country can be
+/// referenced as destination/nationality without having a page (the smart
+/// dropdown in Sprint 4 / UX-001 derives offerable destinations from
+/// active TemplateBindings, not from page presence). When a page exists,
+/// it owns slug, SEO meta, and a list of CountrySection content blocks.
+model CountryPage {
+  id             String    @id @default(uuid())
+  countryId      String    @unique @map("country_id")
+  slug           String    @unique
+  seoTitle       String?   @map("seo_title")
+  seoDescription String?   @map("seo_description")
+  isPublished    Boolean   @default(false) @map("is_published")
+  isActive       Boolean   @default(true) @map("is_active")
+  sortOrder      Int       @default(0) @map("sort_order")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
 
-  country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  country  Country          @relation(fields: [countryId], references: [id])
+  sections CountrySection[]
 
   @@index([countryId])
+  @@index([slug])
+  @@index([isPublished])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("country_pages")
+}
+
+model CountrySection {
+  id            String    @id @default(uuid())
+  countryPageId String    @map("country_page_id")
+  title         String
+  content       String
+  sortOrder     Int       @default(0) @map("sort_order")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  countryPage CountryPage @relation(fields: [countryPageId], references: [id], onDelete: Cascade)
+
+  @@index([countryPageId])
   @@index([sortOrder])
   @@index([isActive])
   @@index([deletedAt])

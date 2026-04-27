@@ -1,25 +1,19 @@
 import {
   Controller,
   Get,
-  Post,
   Patch,
-  Delete,
   Body,
   Param,
   Query,
-  HttpCode,
-  HttpStatus,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { CountriesService } from './countries.service';
 import {
-  CreateCountryDto,
   UpdateCountryDto,
   CountryResponseDto,
   CountryListResponseDto,
   GetCountriesQueryDto,
-  PublicCountryResponseDto,
   PublicCountryListResponseDto,
 } from './dto';
 import { RequirePermissions, Public, CurrentUser } from '@/common/decorators';
@@ -34,87 +28,42 @@ export class CountriesController {
   constructor(private readonly countriesService: CountriesService) {}
 
   // ==========================================
-  // Admin Endpoints
+  // Admin Endpoints — read + override only.
+  // Country reference data is seeded from UN ISO 3166-1; no create/delete.
   // ==========================================
 
   @Get('admin/countries')
   @RequirePermissions('countries.read')
   @ApiOperation({
-    summary: 'Get all countries (admin)',
-    description: 'Get paginated list of countries with optional filters',
+    summary: 'List countries (reference)',
+    description:
+      'Paginated UN ISO 3166-1 reference list. Supports continent / hasPage / search filters.',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'List of countries',
-    type: CountryListResponseDto,
-  })
+  @ApiResponse({ status: 200, type: CountryListResponseDto })
   async findAll(@Query() query: GetCountriesQueryDto): Promise<CountryListResponseDto> {
     return this.countriesService.findAll(query);
   }
 
   @Get('admin/countries/:countryId')
   @RequirePermissions('countries.read')
-  @ApiOperation({
-    summary: 'Get country by ID (admin)',
-    description: 'Get country details by ID including sections',
-  })
-  @ApiParam({ name: 'countryId', description: 'Country ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Country details',
-    type: CountryResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Country not found',
-  })
+  @ApiOperation({ summary: 'Get country by ID' })
+  @ApiParam({ name: 'countryId', description: 'Country UUID' })
+  @ApiResponse({ status: 200, type: CountryResponseDto })
+  @ApiResponse({ status: 404, description: 'Country not found' })
   async findById(@Param('countryId') countryId: string): Promise<CountryResponseDto> {
     return this.countriesService.findById(countryId);
-  }
-
-  @Post('admin/countries')
-  @RequirePermissions('countries.create')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({
-    summary: 'Create country',
-    description: 'Create a new country',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Country created successfully',
-    type: CountryResponseDto,
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Slug or ISO code already exists',
-  })
-  async create(
-    @Body() dto: CreateCountryDto,
-    @CurrentUser() currentUser: AuthenticatedUser,
-  ): Promise<CountryResponseDto> {
-    return this.countriesService.create(dto, currentUser.id);
   }
 
   @Patch('admin/countries/:countryId')
   @RequirePermissions('countries.update')
   @ApiOperation({
-    summary: 'Update country',
-    description: 'Update country details',
+    summary: 'Override reference fields on a country',
+    description:
+      'Limited admin override: name typo, flag emoji, continent code, region label, isActive. Does not affect publishable content (see CountryPages).',
   })
-  @ApiParam({ name: 'countryId', description: 'Country ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Country updated successfully',
-    type: CountryResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Country not found',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Slug or ISO code already exists',
-  })
+  @ApiParam({ name: 'countryId', description: 'Country UUID' })
+  @ApiResponse({ status: 200, type: CountryResponseDto })
+  @ApiResponse({ status: 404, description: 'Country not found' })
   async update(
     @Param('countryId') countryId: string,
     @Body() dto: UpdateCountryDto,
@@ -123,65 +72,19 @@ export class CountriesController {
     return this.countriesService.update(countryId, dto, currentUser.id);
   }
 
-  @Delete('admin/countries/:countryId')
-  @RequirePermissions('countries.delete')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({
-    summary: 'Delete country',
-    description: 'Soft delete a country and its sections',
-  })
-  @ApiParam({ name: 'countryId', description: 'Country ID' })
-  @ApiResponse({
-    status: 204,
-    description: 'Country deleted successfully',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Country not found',
-  })
-  async delete(
-    @Param('countryId') countryId: string,
-    @CurrentUser() currentUser: AuthenticatedUser,
-  ): Promise<void> {
-    return this.countriesService.delete(countryId, currentUser.id);
-  }
-
   // ==========================================
-  // Public Endpoints
+  // Public endpoint — flat list (paired with smart filter in Sprint 4)
   // ==========================================
 
   @Get('public/countries')
   @Public()
   @ApiOperation({
-    summary: 'Get public countries',
-    description: 'Get list of published and active countries for public display',
+    summary: 'Public country list',
+    description:
+      'Returns all active reference countries. Public selection dropdowns combine this with TemplateBinding existence to derive the offerable destination/nationality lists.',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'List of public countries',
-    type: PublicCountryListResponseDto,
-  })
+  @ApiResponse({ status: 200, type: PublicCountryListResponseDto })
   async findAllPublic(): Promise<PublicCountryListResponseDto> {
     return this.countriesService.findAllPublic();
-  }
-
-  @Get('public/countries/:slug')
-  @Public()
-  @ApiOperation({
-    summary: 'Get public country by slug',
-    description: 'Get published country details by slug',
-  })
-  @ApiParam({ name: 'slug', description: 'Country slug', example: 'turkey' })
-  @ApiResponse({
-    status: 200,
-    description: 'Country details',
-    type: PublicCountryResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Country not found',
-  })
-  async findBySlugPublic(@Param('slug') slug: string): Promise<PublicCountryResponseDto> {
-    return this.countriesService.findBySlugPublic(slug);
   }
 }

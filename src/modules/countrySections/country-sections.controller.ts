@@ -24,47 +24,31 @@ import { AuthenticatedUser } from '@/common/types';
 export class CountrySectionsController {
   constructor(private readonly countrySectionsService: CountrySectionsService) {}
 
-  @Post('admin/countries/:countryId/sections')
-  @RequirePermissions('countries.update')
+  @Post('admin/countryPages/:countryPageId/sections')
+  @RequirePermissions('countryPages.update')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Create country section',
-    description: 'Create a new section for a country',
+    summary: 'Create a section under a country page',
+    description:
+      'Sections are the content blocks (Overview / Requirements / FAQ / etc.) shown on a published CountryPage.',
   })
-  @ApiParam({ name: 'countryId', description: 'Country ID' })
-  @ApiResponse({
-    status: 201,
-    description: 'Section created successfully',
-    type: CountrySectionResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Country not found',
-  })
+  @ApiParam({ name: 'countryPageId', description: 'CountryPage UUID' })
+  @ApiResponse({ status: 201, type: CountrySectionResponseDto })
+  @ApiResponse({ status: 404, description: 'CountryPage not found' })
   async create(
-    @Param('countryId') countryId: string,
+    @Param('countryPageId') countryPageId: string,
     @Body() dto: CreateCountrySectionDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<CountrySectionResponseDto> {
-    return this.countrySectionsService.create(countryId, dto, currentUser.id);
+    return this.countrySectionsService.create(countryPageId, dto, currentUser.id);
   }
 
   @Patch('admin/countrySections/:sectionId')
-  @RequirePermissions('countries.update')
-  @ApiOperation({
-    summary: 'Update country section',
-    description: 'Update a country section',
-  })
-  @ApiParam({ name: 'sectionId', description: 'Section ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Section updated successfully',
-    type: CountrySectionResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Section not found',
-  })
+  @RequirePermissions('countryPages.update')
+  @ApiOperation({ summary: 'Update country section' })
+  @ApiParam({ name: 'sectionId', description: 'Section UUID' })
+  @ApiResponse({ status: 200, type: CountrySectionResponseDto })
+  @ApiResponse({ status: 404, description: 'Section not found' })
   async update(
     @Param('sectionId') sectionId: string,
     @Body() dto: UpdateCountrySectionDto,
@@ -74,21 +58,12 @@ export class CountrySectionsController {
   }
 
   @Delete('admin/countrySections/:sectionId')
-  @RequirePermissions('countries.delete')
+  @RequirePermissions('countryPages.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({
-    summary: 'Delete country section',
-    description: 'Soft delete a country section',
-  })
-  @ApiParam({ name: 'sectionId', description: 'Section ID' })
-  @ApiResponse({
-    status: 204,
-    description: 'Section deleted successfully',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Section not found',
-  })
+  @ApiOperation({ summary: 'Soft-delete a country section' })
+  @ApiParam({ name: 'sectionId', description: 'Section UUID' })
+  @ApiResponse({ status: 204, description: 'Deleted' })
+  @ApiResponse({ status: 404, description: 'Section not found' })
   async delete(
     @Param('sectionId') sectionId: string,
     @CurrentUser() currentUser: AuthenticatedUser,

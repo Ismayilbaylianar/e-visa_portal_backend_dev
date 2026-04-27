@@ -1,72 +1,61 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsBoolean, IsOptional, MinLength, MaxLength, Matches } from 'class-validator';
 
+/**
+ * Admin override for a Country reference row. The bulk of country data is
+ * managed via the UN ISO 3166-1 seed (prisma/data/countries-iso3166.json);
+ * this DTO covers the small subset an admin may want to tweak (typo fix on
+ * a country name, swap flag emoji rendering, deactivate a region, etc.).
+ *
+ * Publishable fields (slug, SEO meta, isPublished) live on the
+ * `country_pages` table and are managed by the CountryPagesService — not
+ * here. CountriesService no longer accepts create/delete on countries.
+ */
 export class UpdateCountryDto {
   @ApiPropertyOptional({
-    description: 'Country name',
-    example: 'Turkey',
+    description: 'Country display name (English by default; ISO standard)',
+    example: 'Türkiye',
   })
   @IsOptional()
   @IsString()
   @MinLength(2, { message: 'Name must be at least 2 characters' })
-  @MaxLength(100, { message: 'Name must not exceed 100 characters' })
+  @MaxLength(200, { message: 'Name must not exceed 200 characters' })
   name?: string;
 
   @ApiPropertyOptional({
-    description: 'URL-friendly slug (lowercase, alphanumeric with hyphens)',
-    example: 'turkey',
+    description: 'Unicode flag emoji',
+    example: '🇹🇷',
   })
   @IsOptional()
   @IsString()
-  @MinLength(2, { message: 'Slug must be at least 2 characters' })
-  @MaxLength(100, { message: 'Slug must not exceed 100 characters' })
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
-    message: 'Slug must be lowercase alphanumeric with hyphens only',
-  })
-  slug?: string;
+  @MaxLength(16, { message: 'Flag emoji is too long' })
+  flagEmoji?: string;
 
   @ApiPropertyOptional({
-    description: 'ISO 3166-1 alpha-2 country code',
-    example: 'TR',
+    description: 'Continent code (AF / AS / EU / NA / SA / OC / AN)',
+    example: 'AS',
   })
   @IsOptional()
   @IsString()
-  @Matches(/^[A-Z]{2}$/, {
-    message: 'ISO code must be exactly 2 uppercase letters',
+  @Matches(/^(AF|AS|EU|NA|SA|OC|AN)$/, {
+    message: 'continentCode must be one of AF, AS, EU, NA, SA, OC, AN',
   })
-  isoCode?: string;
+  continentCode?: string;
 
   @ApiPropertyOptional({
-    description: 'Whether the country is active',
+    description: 'UN M49 sub-region (e.g. Western Asia, Western Europe)',
+    example: 'Western Asia',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  region?: string;
+
+  @ApiPropertyOptional({
+    description: 'Whether the country is active for FK references',
     example: true,
   })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
-
-  @ApiPropertyOptional({
-    description: 'Whether the country is published (visible to public)',
-    example: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  isPublished?: boolean;
-
-  @ApiPropertyOptional({
-    description: 'SEO title for the country page',
-    example: 'Turkey e-Visa',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(200, { message: 'SEO title must not exceed 200 characters' })
-  seoTitle?: string;
-
-  @ApiPropertyOptional({
-    description: 'SEO description for the country page',
-    example: 'Apply for Turkey e-Visa online',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500, { message: 'SEO description must not exceed 500 characters' })
-  seoDescription?: string;
 }

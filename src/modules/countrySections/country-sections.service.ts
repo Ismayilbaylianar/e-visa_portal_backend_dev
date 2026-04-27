@@ -6,6 +6,11 @@ import { CountrySectionResponseDto } from '../countries/dto';
 import { NotFoundException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 
+/**
+ * Module 1.5 update: CountrySection now FKs to CountryPage instead of
+ * Country. The DTO shape is unchanged; only the parent identifier and
+ * the parent existence check moved.
+ */
 @Injectable()
 export class CountrySectionsService {
   private readonly logger = new Logger(CountrySectionsService.name);
@@ -15,31 +20,27 @@ export class CountrySectionsService {
     private readonly auditLogsService: AuditLogsService,
   ) {}
 
-  /**
-   * Create a new section for a country
-   */
   async create(
-    countryId: string,
+    countryPageId: string,
     dto: CreateCountrySectionDto,
     actorUserId?: string,
   ): Promise<CountrySectionResponseDto> {
-    // Verify country exists
-    const country = await this.prisma.country.findFirst({
-      where: { id: countryId, deletedAt: null },
+    const page = await this.prisma.countryPage.findFirst({
+      where: { id: countryPageId, deletedAt: null },
     });
 
-    if (!country) {
-      throw new NotFoundException('Country not found', [
+    if (!page) {
+      throw new NotFoundException('CountryPage not found', [
         {
-          reason: ErrorCodes.COUNTRY_NOT_FOUND,
-          message: 'Country does not exist or has been deleted',
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'CountryPage does not exist or has been deleted',
         },
       ]);
     }
 
     const section = await this.prisma.countrySection.create({
       data: {
-        countryId,
+        countryPageId,
         title: dto.title,
         content: dto.content,
         sortOrder: dto.sortOrder ?? 0,
@@ -55,7 +56,7 @@ export class CountrySectionsService {
         section.id,
         undefined,
         {
-          countryId,
+          countryPageId,
           title: section.title,
           sortOrder: section.sortOrder,
           isActive: section.isActive,
@@ -63,13 +64,10 @@ export class CountrySectionsService {
       );
     }
 
-    this.logger.log(`Country section created: ${section.id} for country ${countryId}`);
+    this.logger.log(`Country section created: ${section.id} for page ${countryPageId}`);
     return this.mapToResponse(section);
   }
 
-  /**
-   * Update a country section
-   */
   async update(
     sectionId: string,
     dto: UpdateCountrySectionDto,
@@ -122,9 +120,6 @@ export class CountrySectionsService {
     return this.mapToResponse(updatedSection);
   }
 
-  /**
-   * Soft delete a country section
-   */
   async delete(sectionId: string, actorUserId?: string): Promise<void> {
     const section = await this.prisma.countrySection.findFirst({
       where: { id: sectionId, deletedAt: null },
@@ -151,7 +146,7 @@ export class CountrySectionsService {
         'CountrySection',
         sectionId,
         {
-          countryId: section.countryId,
+          countryPageId: section.countryPageId,
           title: section.title,
           sortOrder: section.sortOrder,
         },
@@ -162,9 +157,6 @@ export class CountrySectionsService {
     this.logger.log(`Country section soft deleted: ${sectionId}`);
   }
 
-  /**
-   * Map section entity to response DTO
-   */
   private mapToResponse(section: any): CountrySectionResponseDto {
     return {
       id: section.id,
