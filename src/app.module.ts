@@ -26,6 +26,7 @@ import { OtpModule } from './modules/otp/otp.module';
 
 // Configuration modules
 import { CountriesModule } from './modules/countries/countries.module';
+import { CountryPagesModule } from './modules/countryPages/country-pages.module';
 import { CountrySectionsModule } from './modules/countrySections/country-sections.module';
 import { VisaTypesModule } from './modules/visaTypes/visa-types.module';
 import { TemplatesModule } from './modules/templates/templates.module';
@@ -106,6 +107,7 @@ import { StorageModule } from './modules/storage/storage.module';
 
     // Configuration
     CountriesModule,
+    CountryPagesModule,
     CountrySectionsModule,
     VisaTypesModule,
     TemplatesModule,
