@@ -13,8 +13,9 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@ne
 import { CountrySectionsService } from './country-sections.service';
 import { CreateCountrySectionDto, UpdateCountrySectionDto } from './dto';
 import { CountrySectionResponseDto } from '../countries/dto';
-import { RequirePermissions } from '@/common/decorators';
+import { RequirePermissions, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
+import { AuthenticatedUser } from '@/common/types';
 
 @ApiTags('Country Sections')
 @ApiBearerAuth('JWT-auth')
@@ -43,8 +44,9 @@ export class CountrySectionsController {
   async create(
     @Param('countryId') countryId: string,
     @Body() dto: CreateCountrySectionDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<CountrySectionResponseDto> {
-    return this.countrySectionsService.create(countryId, dto);
+    return this.countrySectionsService.create(countryId, dto, currentUser.id);
   }
 
   @Patch('admin/countrySections/:sectionId')
@@ -66,8 +68,9 @@ export class CountrySectionsController {
   async update(
     @Param('sectionId') sectionId: string,
     @Body() dto: UpdateCountrySectionDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<CountrySectionResponseDto> {
-    return this.countrySectionsService.update(sectionId, dto);
+    return this.countrySectionsService.update(sectionId, dto, currentUser.id);
   }
 
   @Delete('admin/countrySections/:sectionId')
@@ -86,7 +89,10 @@ export class CountrySectionsController {
     status: 404,
     description: 'Section not found',
   })
-  async delete(@Param('sectionId') sectionId: string): Promise<void> {
-    return this.countrySectionsService.delete(sectionId);
+  async delete(
+    @Param('sectionId') sectionId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<void> {
+    return this.countrySectionsService.delete(sectionId, currentUser.id);
   }
 }

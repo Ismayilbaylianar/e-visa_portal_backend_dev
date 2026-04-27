@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { CreateCountrySectionDto, UpdateCountrySectionDto } from './dto';
 import { CountrySectionResponseDto } from '../countries/dto';
 import { NotFoundException } from '@/common/exceptions';
@@ -9,7 +10,10 @@ import { ErrorCodes } from '@/common/constants';
 export class CountrySectionsService {
   private readonly logger = new Logger(CountrySectionsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogsService: AuditLogsService,
+  ) {}
 
   /**
    * Create a new section for a country
@@ -17,6 +21,7 @@ export class CountrySectionsService {
   async create(
     countryId: string,
     dto: CreateCountrySectionDto,
+    actorUserId?: string,
   ): Promise<CountrySectionResponseDto> {
     // Verify country exists
     const country = await this.prisma.country.findFirst({
@@ -42,6 +47,22 @@ export class CountrySectionsService {
       },
     });
 
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'countrySection.create',
+        'CountrySection',
+        section.id,
+        undefined,
+        {
+          countryId,
+          title: section.title,
+          sortOrder: section.sortOrder,
+          isActive: section.isActive,
+        },
+      );
+    }
+
     this.logger.log(`Country section created: ${section.id} for country ${countryId}`);
     return this.mapToResponse(section);
   }
@@ -52,6 +73,7 @@ export class CountrySectionsService {
   async update(
     sectionId: string,
     dto: UpdateCountrySectionDto,
+    actorUserId?: string,
   ): Promise<CountrySectionResponseDto> {
     const section = await this.prisma.countrySection.findFirst({
       where: { id: sectionId, deletedAt: null },
@@ -77,6 +99,25 @@ export class CountrySectionsService {
       data: updateData,
     });
 
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'countrySection.update',
+        'CountrySection',
+        sectionId,
+        {
+          title: section.title,
+          sortOrder: section.sortOrder,
+          isActive: section.isActive,
+        },
+        {
+          title: updatedSection.title,
+          sortOrder: updatedSection.sortOrder,
+          isActive: updatedSection.isActive,
+        },
+      );
+    }
+
     this.logger.log(`Country section updated: ${sectionId}`);
     return this.mapToResponse(updatedSection);
   }
@@ -84,7 +125,7 @@ export class CountrySectionsService {
   /**
    * Soft delete a country section
    */
-  async delete(sectionId: string): Promise<void> {
+  async delete(sectionId: string, actorUserId?: string): Promise<void> {
     const section = await this.prisma.countrySection.findFirst({
       where: { id: sectionId, deletedAt: null },
     });
@@ -102,6 +143,21 @@ export class CountrySectionsService {
       where: { id: sectionId },
       data: { deletedAt: new Date() },
     });
+
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'countrySection.delete',
+        'CountrySection',
+        sectionId,
+        {
+          countryId: section.countryId,
+          title: section.title,
+          sortOrder: section.sortOrder,
+        },
+        undefined,
+      );
+    }
 
     this.logger.log(`Country section soft deleted: ${sectionId}`);
   }

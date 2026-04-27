@@ -22,8 +22,9 @@ import {
   PublicCountryResponseDto,
   PublicCountryListResponseDto,
 } from './dto';
-import { RequirePermissions, Public } from '@/common/decorators';
+import { RequirePermissions, Public, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
+import { AuthenticatedUser } from '@/common/types';
 
 @ApiTags('Countries')
 @Controller()
@@ -91,8 +92,11 @@ export class CountriesController {
     status: 409,
     description: 'Slug or ISO code already exists',
   })
-  async create(@Body() dto: CreateCountryDto): Promise<CountryResponseDto> {
-    return this.countriesService.create(dto);
+  async create(
+    @Body() dto: CreateCountryDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<CountryResponseDto> {
+    return this.countriesService.create(dto, currentUser.id);
   }
 
   @Patch('admin/countries/:countryId')
@@ -120,8 +124,9 @@ export class CountriesController {
   async update(
     @Param('countryId') countryId: string,
     @Body() dto: UpdateCountryDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<CountryResponseDto> {
-    return this.countriesService.update(countryId, dto);
+    return this.countriesService.update(countryId, dto, currentUser.id);
   }
 
   @Delete('admin/countries/:countryId')
@@ -142,8 +147,11 @@ export class CountriesController {
     status: 404,
     description: 'Country not found',
   })
-  async delete(@Param('countryId') countryId: string): Promise<void> {
-    return this.countriesService.delete(countryId);
+  async delete(
+    @Param('countryId') countryId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<void> {
+    return this.countriesService.delete(countryId, currentUser.id);
   }
 
   // ==========================================

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import {
   CreateCountryDto,
   UpdateCountryDto,
@@ -17,7 +18,10 @@ import { ErrorCodes } from '@/common/constants';
 export class CountriesService {
   private readonly logger = new Logger(CountriesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogsService: AuditLogsService,
+  ) {}
 
   /**
    * Get paginated list of countries (admin)
@@ -102,7 +106,7 @@ export class CountriesService {
   /**
    * Create new country
    */
-  async create(dto: CreateCountryDto): Promise<CountryResponseDto> {
+  async create(dto: CreateCountryDto, actorUserId?: string): Promise<CountryResponseDto> {
     // Check slug uniqueness
     const existingBySlug = await this.prisma.country.findUnique({
       where: { slug: dto.slug },
@@ -151,6 +155,25 @@ export class CountriesService {
       },
     });
 
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'country.create',
+        'Country',
+        country.id,
+        undefined,
+        {
+          name: country.name,
+          slug: country.slug,
+          isoCode: country.isoCode,
+          isActive: country.isActive,
+          isPublished: country.isPublished,
+          seoTitle: country.seoTitle,
+          seoDescription: country.seoDescription,
+        },
+      );
+    }
+
     this.logger.log(`Country created: ${country.id} (${country.name})`);
     return this.mapToResponse(country);
   }
@@ -158,7 +181,11 @@ export class CountriesService {
   /**
    * Update country
    */
-  async update(id: string, dto: UpdateCountryDto): Promise<CountryResponseDto> {
+  async update(
+    id: string,
+    dto: UpdateCountryDto,
+    actorUserId?: string,
+  ): Promise<CountryResponseDto> {
     const country = await this.prisma.country.findFirst({
       where: { id, deletedAt: null },
     });
@@ -224,6 +251,33 @@ export class CountriesService {
       },
     });
 
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'country.update',
+        'Country',
+        id,
+        {
+          name: country.name,
+          slug: country.slug,
+          isoCode: country.isoCode,
+          isActive: country.isActive,
+          isPublished: country.isPublished,
+          seoTitle: country.seoTitle,
+          seoDescription: country.seoDescription,
+        },
+        {
+          name: updatedCountry.name,
+          slug: updatedCountry.slug,
+          isoCode: updatedCountry.isoCode,
+          isActive: updatedCountry.isActive,
+          isPublished: updatedCountry.isPublished,
+          seoTitle: updatedCountry.seoTitle,
+          seoDescription: updatedCountry.seoDescription,
+        },
+      );
+    }
+
     this.logger.log(`Country updated: ${id}`);
     return this.mapToResponse(updatedCountry);
   }
@@ -231,7 +285,7 @@ export class CountriesService {
   /**
    * Soft delete country
    */
-  async delete(id: string): Promise<void> {
+  async delete(id: string, actorUserId?: string): Promise<void> {
     const country = await this.prisma.country.findFirst({
       where: { id, deletedAt: null },
     });
@@ -245,6 +299,45 @@ export class CountriesService {
       ]);
     }
 
+    // Block deletion if country is referenced by any active TemplateBinding
+    // (as destinationCountryId) or BindingNationalityFee (as nationalityCountryId).
+    // Soft-deleted bindings/fees are ignored.
+    const [bindingCount, feeCount] = await Promise.all([
+      this.prisma.templateBinding.count({
+        where: {
+          destinationCountryId: id,
+          deletedAt: null,
+          isActive: true,
+        },
+      }),
+      this.prisma.bindingNationalityFee.count({
+        where: {
+          nationalityCountryId: id,
+          deletedAt: null,
+          isActive: true,
+        },
+      }),
+    ]);
+
+    if (bindingCount > 0 || feeCount > 0) {
+      const details = [];
+      if (bindingCount > 0) {
+        details.push({
+          field: 'id',
+          reason: ErrorCodes.CONFLICT,
+          message: `Country is in use as destination by ${bindingCount} active binding(s)`,
+        });
+      }
+      if (feeCount > 0) {
+        details.push({
+          field: 'id',
+          reason: ErrorCodes.CONFLICT,
+          message: `Country is in use as nationality in ${feeCount} fee record(s)`,
+        });
+      }
+      throw new ConflictException('Country is in use', details);
+    }
+
     // Soft delete country and its sections
     await this.prisma.$transaction([
       this.prisma.country.update({
@@ -256,6 +349,23 @@ export class CountriesService {
         data: { deletedAt: new Date() },
       }),
     ]);
+
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'country.delete',
+        'Country',
+        id,
+        {
+          name: country.name,
+          slug: country.slug,
+          isoCode: country.isoCode,
+          isActive: country.isActive,
+          isPublished: country.isPublished,
+        },
+        undefined,
+      );
+    }
 
     this.logger.log(`Country soft deleted: ${id}`);
   }
