@@ -1,9 +1,28 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsString, Matches } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsOptional, IsBoolean, IsInt, IsString, Matches, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { PaginationQueryDto } from '@/common/dto';
 
 export class GetCountriesQueryDto extends PaginationQueryDto {
+  /**
+   * Override the parent MAX_LIMIT (=100) — the countries reference table
+   * holds 250 ISO 3166-1 rows and the admin "All countries" screen wants
+   * to render the full set on a single page (with client-side filtering).
+   */
+  @ApiPropertyOptional({
+    description: 'Items per page. Up to 500 for the reference list.',
+    minimum: 1,
+    maximum: 500,
+    default: 50,
+    example: 300,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number = 50;
+
   @ApiPropertyOptional({
     description: 'Filter by active status',
     example: true,

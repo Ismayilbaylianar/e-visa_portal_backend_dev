@@ -1,9 +1,28 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { PaginationQueryDto } from '@/common/dto';
 
 export class GetCountryPagesQueryDto extends PaginationQueryDto {
+  /**
+   * Override the parent MAX_LIMIT (=100) — country page list is small
+   * (one page per country max) and the admin screen wants to render
+   * everything in a single grid for now.
+   */
+  @ApiPropertyOptional({
+    description: 'Items per page. Up to 500 for this list.',
+    minimum: 1,
+    maximum: 500,
+    default: 50,
+    example: 200,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number = 50;
+
   @ApiPropertyOptional({ description: 'Filter by isActive' })
   @IsOptional()
   @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
