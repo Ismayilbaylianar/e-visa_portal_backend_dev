@@ -124,6 +124,8 @@ export class AuthService {
 
     this.logger.log(`User ${user.id} logged in successfully`);
 
+    const permissions = await this.getUserPermissions(user.id);
+
     return {
       accessToken,
       refreshToken,
@@ -135,6 +137,7 @@ export class AuthService {
         roleId: user.roleId || undefined,
         roleKey: user.role?.key,
         isActive: user.isActive,
+        permissions,
       },
     };
   }
@@ -234,11 +237,64 @@ export class AuthService {
 
     this.logger.log(`Token refreshed for user ${session.userId}`);
 
+    const permissions = await this.getUserPermissions(session.userId);
+
     return {
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,
       expiresInSeconds: this.accessExpirationSeconds,
+      user: {
+        id: session.user.id,
+        fullName: session.user.fullName,
+        email: session.user.email,
+        roleId: session.user.roleId || undefined,
+        roleKey: session.user.role?.key,
+        isActive: session.user.isActive,
+        permissions,
+      },
     };
+  }
+
+  /**
+   * Compute the effective permission keys for a user.
+   *
+   * Mirrors the logic in JwtStrategy.validate() so that the login + refresh
+   * responses can ship a fresh `permissions` array to the frontend without
+   * waiting for the JWT to populate `request.user`. JwtStrategy is the source
+   * of truth at request time; this helper keeps the auth response in sync.
+   *
+   * Final permissions = (role permissions ∪ user grants) − user denies.
+   */
+  private async getUserPermissions(userId: string): Promise<string[]> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        role: {
+          include: {
+            rolePermissions: {
+              include: { permission: true },
+            },
+          },
+        },
+        userPermissions: {
+          include: { permission: true },
+        },
+      },
+    });
+    if (!user) return [];
+
+    const rolePermissions =
+      user.role?.rolePermissions.map((rp) => rp.permission.permissionKey) || [];
+    const userGrants = user.userPermissions
+      .filter((up) => up.effect === 'ALLOW')
+      .map((up) => up.permission.permissionKey);
+    const userDenies = user.userPermissions
+      .filter((up) => up.effect === 'DENY')
+      .map((up) => up.permission.permissionKey);
+
+    return [...new Set([...rolePermissions, ...userGrants])].filter(
+      (p) => !userDenies.includes(p),
+    );
   }
 
   /**

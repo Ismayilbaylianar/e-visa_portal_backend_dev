@@ -37,6 +37,14 @@ export class UserInfoDto {
 
   @ApiProperty({ description: 'Whether user is active', example: true })
   isActive: boolean;
+
+  @ApiProperty({
+    description:
+      'Effective permission keys for this user (role permissions + user grants - user denies)',
+    type: [String],
+    example: ['countries.read', 'countries.create', 'countries.update'],
+  })
+  permissions: string[];
 }
 
 export class LoginResponseDto {

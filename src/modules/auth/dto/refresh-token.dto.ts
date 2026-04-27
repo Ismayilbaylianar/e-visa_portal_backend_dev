@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsNotEmpty } from 'class-validator';
+import { UserInfoDto } from './login.dto';
 
 export class RefreshTokenDto {
   @ApiProperty({
@@ -20,4 +21,11 @@ export class RefreshTokenResponseDto {
 
   @ApiProperty({ description: 'Access token expiration time in seconds', example: 3600 })
   expiresInSeconds: number;
+
+  @ApiProperty({
+    description:
+      'Authenticated user info refreshed with current permissions. Frontend stores rely on this to keep permission-gated UI in sync after token refresh.',
+    type: UserInfoDto,
+  })
+  user: UserInfoDto;
 }
