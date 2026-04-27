@@ -27,6 +27,8 @@ import { JwtAuthGuard } from '@/common/guards';
 import { AuthenticatedUser } from '@/common/types';
 
 @ApiTags('Countries')
+@ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller()
 export class CountriesController {
   constructor(private readonly countriesService: CountriesService) {}
@@ -36,8 +38,6 @@ export class CountriesController {
   // ==========================================
 
   @Get('admin/countries')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
   @RequirePermissions('countries.read')
   @ApiOperation({
     summary: 'Get all countries (admin)',
@@ -53,8 +53,6 @@ export class CountriesController {
   }
 
   @Get('admin/countries/:countryId')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
   @RequirePermissions('countries.read')
   @ApiOperation({
     summary: 'Get country by ID (admin)',
@@ -75,8 +73,6 @@ export class CountriesController {
   }
 
   @Post('admin/countries')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
   @RequirePermissions('countries.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -100,8 +96,6 @@ export class CountriesController {
   }
 
   @Patch('admin/countries/:countryId')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
   @RequirePermissions('countries.update')
   @ApiOperation({
     summary: 'Update country',
@@ -130,8 +124,6 @@ export class CountriesController {
   }
 
   @Delete('admin/countries/:countryId')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
   @RequirePermissions('countries.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
