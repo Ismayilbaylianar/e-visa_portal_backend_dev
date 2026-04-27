@@ -1,0 +1,1752 @@
+[
+  {
+    "isoCode": "AD",
+    "name": "Andorra",
+    "flagEmoji": "🇦🇩",
+    "continentCode": "EU",
+    "region": "Southern Europe"
+  },
+  {
+    "isoCode": "AE",
+    "name": "United Arab Emirates",
+    "flagEmoji": "🇦🇪",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "AF",
+    "name": "Afghanistan",
+    "flagEmoji": "🇦🇫",
+    "continentCode": "AS",
+    "region": "Southern Asia"
+  },
+  {
+    "isoCode": "AG",
+    "name": "Antigua and Barbuda",
+    "flagEmoji": "🇦🇬",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "AI",
+    "name": "Anguilla",
+    "flagEmoji": "🇦🇮",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "AL",
+    "name": "Albania",
+    "flagEmoji": "🇦🇱",
+    "continentCode": "EU",
+    "region": "Southeast Europe"
+  },
+  {
+    "isoCode": "AM",
+    "name": "Armenia",
+    "flagEmoji": "🇦🇲",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "AO",
+    "name": "Angola",
+    "flagEmoji": "🇦🇴",
+    "continentCode": "AF",
+    "region": "Middle Africa"
+  },
+  {
+    "isoCode": "AQ",
+    "name": "Antarctica",
+    "flagEmoji": "🇦🇶",
+    "continentCode": "AN",
+    "region": "Antarctic"
+  },
+  {
+    "isoCode": "AR",
+    "name": "Argentina",
+    "flagEmoji": "🇦🇷",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "AS",
+    "name": "American Samoa",
+    "flagEmoji": "🇦🇸",
+    "continentCode": "OC",
+    "region": "Polynesia"
+  },
+  {
+    "isoCode": "AT",
+    "name": "Austria",
+    "flagEmoji": "🇦🇹",
+    "continentCode": "EU",
+    "region": "Central Europe"
+  },
+  {
+    "isoCode": "AU",
+    "name": "Australia",
+    "flagEmoji": "🇦🇺",
+    "continentCode": "OC",
+    "region": "Australia and New Zealand"
+  },
+  {
+    "isoCode": "AW",
+    "name": "Aruba",
+    "flagEmoji": "🇦🇼",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "AX",
+    "name": "Åland Islands",
+    "flagEmoji": "🇦🇽",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "AZ",
+    "name": "Azerbaijan",
+    "flagEmoji": "🇦🇿",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "BA",
+    "name": "Bosnia and Herzegovina",
+    "flagEmoji": "🇧🇦",
+    "continentCode": "EU",
+    "region": "Southeast Europe"
+  },
+  {
+    "isoCode": "BB",
+    "name": "Barbados",
+    "flagEmoji": "🇧🇧",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "BD",
+    "name": "Bangladesh",
+    "flagEmoji": "🇧🇩",
+    "continentCode": "AS",
+    "region": "Southern Asia"
+  },
+  {
+    "isoCode": "BE",
+    "name": "Belgium",
+    "flagEmoji": "🇧🇪",
+    "continentCode": "EU",
+    "region": "Western Europe"
+  },
+  {
+    "isoCode": "BF",
+    "name": "Burkina Faso",
+    "flagEmoji": "🇧🇫",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "BG",
+    "name": "Bulgaria",
+    "flagEmoji": "🇧🇬",
+    "continentCode": "EU",
+    "region": "Southeast Europe"
+  },
+  {
+    "isoCode": "BH",
+    "name": "Bahrain",
+    "flagEmoji": "🇧🇭",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "BI",
+    "name": "Burundi",
+    "flagEmoji": "🇧🇮",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "BJ",
+    "name": "Benin",
+    "flagEmoji": "🇧🇯",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "BL",
+    "name": "Saint Barthélemy",
+    "flagEmoji": "🇧🇱",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "BM",
+    "name": "Bermuda",
+    "flagEmoji": "🇧🇲",
+    "continentCode": "NA",
+    "region": "North America"
+  },
+  {
+    "isoCode": "BN",
+    "name": "Brunei",
+    "flagEmoji": "🇧🇳",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "BO",
+    "name": "Bolivia",
+    "flagEmoji": "🇧🇴",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "BQ",
+    "name": "Caribbean Netherlands",
+    "flagEmoji": "",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "BR",
+    "name": "Brazil",
+    "flagEmoji": "🇧🇷",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "BS",
+    "name": "Bahamas",
+    "flagEmoji": "🇧🇸",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "BT",
+    "name": "Bhutan",
+    "flagEmoji": "🇧🇹",
+    "continentCode": "AS",
+    "region": "Southern Asia"
+  },
+  {
+    "isoCode": "BV",
+    "name": "Bouvet Island",
+    "flagEmoji": "🇧🇻",
+    "continentCode": "AN",
+    "region": "Antarctic"
+  },
+  {
+    "isoCode": "BW",
+    "name": "Botswana",
+    "flagEmoji": "🇧🇼",
+    "continentCode": "AF",
+    "region": "Southern Africa"
+  },
+  {
+    "isoCode": "BY",
+    "name": "Belarus",
+    "flagEmoji": "🇧🇾",
+    "continentCode": "EU",
+    "region": "Eastern Europe"
+  },
+  {
+    "isoCode": "BZ",
+    "name": "Belize",
+    "flagEmoji": "🇧🇿",
+    "continentCode": "SA",
+    "region": "Central America"
+  },
+  {
+    "isoCode": "CA",
+    "name": "Canada",
+    "flagEmoji": "🇨🇦",
+    "continentCode": "NA",
+    "region": "North America"
+  },
+  {
+    "isoCode": "CC",
+    "name": "Cocos (Keeling) Islands",
+    "flagEmoji": "🇨🇨",
+    "continentCode": "OC",
+    "region": "Australia and New Zealand"
+  },
+  {
+    "isoCode": "CD",
+    "name": "DR Congo",
+    "flagEmoji": "🇨🇩",
+    "continentCode": "AF",
+    "region": "Middle Africa"
+  },
+  {
+    "isoCode": "CF",
+    "name": "Central African Republic",
+    "flagEmoji": "🇨🇫",
+    "continentCode": "AF",
+    "region": "Middle Africa"
+  },
+  {
+    "isoCode": "CG",
+    "name": "Republic of the Congo",
+    "flagEmoji": "🇨🇬",
+    "continentCode": "AF",
+    "region": "Middle Africa"
+  },
+  {
+    "isoCode": "CH",
+    "name": "Switzerland",
+    "flagEmoji": "🇨🇭",
+    "continentCode": "EU",
+    "region": "Western Europe"
+  },
+  {
+    "isoCode": "CI",
+    "name": "Ivory Coast",
+    "flagEmoji": "🇨🇮",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "CK",
+    "name": "Cook Islands",
+    "flagEmoji": "🇨🇰",
+    "continentCode": "OC",
+    "region": "Polynesia"
+  },
+  {
+    "isoCode": "CL",
+    "name": "Chile",
+    "flagEmoji": "🇨🇱",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "CM",
+    "name": "Cameroon",
+    "flagEmoji": "🇨🇲",
+    "continentCode": "AF",
+    "region": "Middle Africa"
+  },
+  {
+    "isoCode": "CN",
+    "name": "China",
+    "flagEmoji": "🇨🇳",
+    "continentCode": "AS",
+    "region": "Eastern Asia"
+  },
+  {
+    "isoCode": "CO",
+    "name": "Colombia",
+    "flagEmoji": "🇨🇴",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "CR",
+    "name": "Costa Rica",
+    "flagEmoji": "🇨🇷",
+    "continentCode": "SA",
+    "region": "Central America"
+  },
+  {
+    "isoCode": "CU",
+    "name": "Cuba",
+    "flagEmoji": "🇨🇺",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "CV",
+    "name": "Cape Verde",
+    "flagEmoji": "🇨🇻",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "CW",
+    "name": "Curaçao",
+    "flagEmoji": "🇨🇼",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "CX",
+    "name": "Christmas Island",
+    "flagEmoji": "🇨🇽",
+    "continentCode": "OC",
+    "region": "Australia and New Zealand"
+  },
+  {
+    "isoCode": "CY",
+    "name": "Cyprus",
+    "flagEmoji": "🇨🇾",
+    "continentCode": "EU",
+    "region": "Southern Europe"
+  },
+  {
+    "isoCode": "CZ",
+    "name": "Czechia",
+    "flagEmoji": "🇨🇿",
+    "continentCode": "EU",
+    "region": "Central Europe"
+  },
+  {
+    "isoCode": "DE",
+    "name": "Germany",
+    "flagEmoji": "🇩🇪",
+    "continentCode": "EU",
+    "region": "Western Europe"
+  },
+  {
+    "isoCode": "DJ",
+    "name": "Djibouti",
+    "flagEmoji": "🇩🇯",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "DK",
+    "name": "Denmark",
+    "flagEmoji": "🇩🇰",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "DM",
+    "name": "Dominica",
+    "flagEmoji": "🇩🇲",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "DO",
+    "name": "Dominican Republic",
+    "flagEmoji": "🇩🇴",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "DZ",
+    "name": "Algeria",
+    "flagEmoji": "🇩🇿",
+    "continentCode": "AF",
+    "region": "Northern Africa"
+  },
+  {
+    "isoCode": "EC",
+    "name": "Ecuador",
+    "flagEmoji": "🇪🇨",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "EE",
+    "name": "Estonia",
+    "flagEmoji": "🇪🇪",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "EG",
+    "name": "Egypt",
+    "flagEmoji": "🇪🇬",
+    "continentCode": "AF",
+    "region": "Northern Africa"
+  },
+  {
+    "isoCode": "EH",
+    "name": "Western Sahara",
+    "flagEmoji": "🇪🇭",
+    "continentCode": "AF",
+    "region": "Northern Africa"
+  },
+  {
+    "isoCode": "ER",
+    "name": "Eritrea",
+    "flagEmoji": "🇪🇷",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "ES",
+    "name": "Spain",
+    "flagEmoji": "🇪🇸",
+    "continentCode": "EU",
+    "region": "Southern Europe"
+  },
+  {
+    "isoCode": "ET",
+    "name": "Ethiopia",
+    "flagEmoji": "🇪🇹",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "FI",
+    "name": "Finland",
+    "flagEmoji": "🇫🇮",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "FJ",
+    "name": "Fiji",
+    "flagEmoji": "🇫🇯",
+    "continentCode": "OC",
+    "region": "Melanesia"
+  },
+  {
+    "isoCode": "FK",
+    "name": "Falkland Islands",
+    "flagEmoji": "🇫🇰",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "FM",
+    "name": "Micronesia",
+    "flagEmoji": "🇫🇲",
+    "continentCode": "OC",
+    "region": "Micronesia"
+  },
+  {
+    "isoCode": "FO",
+    "name": "Faroe Islands",
+    "flagEmoji": "🇫🇴",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "FR",
+    "name": "France",
+    "flagEmoji": "🇫🇷",
+    "continentCode": "EU",
+    "region": "Western Europe"
+  },
+  {
+    "isoCode": "GA",
+    "name": "Gabon",
+    "flagEmoji": "🇬🇦",
+    "continentCode": "AF",
+    "region": "Middle Africa"
+  },
+  {
+    "isoCode": "GB",
+    "name": "United Kingdom",
+    "flagEmoji": "🇬🇧",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "GD",
+    "name": "Grenada",
+    "flagEmoji": "🇬🇩",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "GE",
+    "name": "Georgia",
+    "flagEmoji": "🇬🇪",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "GF",
+    "name": "French Guiana",
+    "flagEmoji": "🇬🇫",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "GG",
+    "name": "Guernsey",
+    "flagEmoji": "🇬🇬",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "GH",
+    "name": "Ghana",
+    "flagEmoji": "🇬🇭",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "GI",
+    "name": "Gibraltar",
+    "flagEmoji": "🇬🇮",
+    "continentCode": "EU",
+    "region": "Southern Europe"
+  },
+  {
+    "isoCode": "GL",
+    "name": "Greenland",
+    "flagEmoji": "🇬🇱",
+    "continentCode": "NA",
+    "region": "North America"
+  },
+  {
+    "isoCode": "GM",
+    "name": "Gambia",
+    "flagEmoji": "🇬🇲",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "GN",
+    "name": "Guinea",
+    "flagEmoji": "🇬🇳",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "GP",
+    "name": "Guadeloupe",
+    "flagEmoji": "🇬🇵",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "GQ",
+    "name": "Equatorial Guinea",
+    "flagEmoji": "🇬🇶",
+    "continentCode": "AF",
+    "region": "Middle Africa"
+  },
+  {
+    "isoCode": "GR",
+    "name": "Greece",
+    "flagEmoji": "🇬🇷",
+    "continentCode": "EU",
+    "region": "Southern Europe"
+  },
+  {
+    "isoCode": "GS",
+    "name": "South Georgia",
+    "flagEmoji": "🇬🇸",
+    "continentCode": "AN",
+    "region": "Antarctic"
+  },
+  {
+    "isoCode": "GT",
+    "name": "Guatemala",
+    "flagEmoji": "🇬🇹",
+    "continentCode": "SA",
+    "region": "Central America"
+  },
+  {
+    "isoCode": "GU",
+    "name": "Guam",
+    "flagEmoji": "🇬🇺",
+    "continentCode": "OC",
+    "region": "Micronesia"
+  },
+  {
+    "isoCode": "GW",
+    "name": "Guinea-Bissau",
+    "flagEmoji": "🇬🇼",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "GY",
+    "name": "Guyana",
+    "flagEmoji": "🇬🇾",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "HK",
+    "name": "Hong Kong",
+    "flagEmoji": "🇭🇰",
+    "continentCode": "AS",
+    "region": "Eastern Asia"
+  },
+  {
+    "isoCode": "HM",
+    "name": "Heard Island and McDonald Islands",
+    "flagEmoji": "🇭🇲",
+    "continentCode": "AN",
+    "region": "Antarctic"
+  },
+  {
+    "isoCode": "HN",
+    "name": "Honduras",
+    "flagEmoji": "🇭🇳",
+    "continentCode": "SA",
+    "region": "Central America"
+  },
+  {
+    "isoCode": "HR",
+    "name": "Croatia",
+    "flagEmoji": "🇭🇷",
+    "continentCode": "EU",
+    "region": "Southeast Europe"
+  },
+  {
+    "isoCode": "HT",
+    "name": "Haiti",
+    "flagEmoji": "🇭🇹",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "HU",
+    "name": "Hungary",
+    "flagEmoji": "🇭🇺",
+    "continentCode": "EU",
+    "region": "Central Europe"
+  },
+  {
+    "isoCode": "ID",
+    "name": "Indonesia",
+    "flagEmoji": "🇮🇩",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "IE",
+    "name": "Ireland",
+    "flagEmoji": "🇮🇪",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "IL",
+    "name": "Israel",
+    "flagEmoji": "🇮🇱",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "IM",
+    "name": "Isle of Man",
+    "flagEmoji": "🇮🇲",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "IN",
+    "name": "India",
+    "flagEmoji": "🇮🇳",
+    "continentCode": "AS",
+    "region": "Southern Asia"
+  },
+  {
+    "isoCode": "IO",
+    "name": "British Indian Ocean Territory",
+    "flagEmoji": "🇮🇴",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "IQ",
+    "name": "Iraq",
+    "flagEmoji": "🇮🇶",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "IR",
+    "name": "Iran",
+    "flagEmoji": "🇮🇷",
+    "continentCode": "AS",
+    "region": "Southern Asia"
+  },
+  {
+    "isoCode": "IS",
+    "name": "Iceland",
+    "flagEmoji": "🇮🇸",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "IT",
+    "name": "Italy",
+    "flagEmoji": "🇮🇹",
+    "continentCode": "EU",
+    "region": "Southern Europe"
+  },
+  {
+    "isoCode": "JE",
+    "name": "Jersey",
+    "flagEmoji": "🇯🇪",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "JM",
+    "name": "Jamaica",
+    "flagEmoji": "🇯🇲",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "JO",
+    "name": "Jordan",
+    "flagEmoji": "🇯🇴",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "JP",
+    "name": "Japan",
+    "flagEmoji": "🇯🇵",
+    "continentCode": "AS",
+    "region": "Eastern Asia"
+  },
+  {
+    "isoCode": "KE",
+    "name": "Kenya",
+    "flagEmoji": "🇰🇪",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "KG",
+    "name": "Kyrgyzstan",
+    "flagEmoji": "🇰🇬",
+    "continentCode": "AS",
+    "region": "Central Asia"
+  },
+  {
+    "isoCode": "KH",
+    "name": "Cambodia",
+    "flagEmoji": "🇰🇭",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "KI",
+    "name": "Kiribati",
+    "flagEmoji": "🇰🇮",
+    "continentCode": "OC",
+    "region": "Micronesia"
+  },
+  {
+    "isoCode": "KM",
+    "name": "Comoros",
+    "flagEmoji": "🇰🇲",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "KN",
+    "name": "Saint Kitts and Nevis",
+    "flagEmoji": "🇰🇳",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "KP",
+    "name": "North Korea",
+    "flagEmoji": "🇰🇵",
+    "continentCode": "AS",
+    "region": "Eastern Asia"
+  },
+  {
+    "isoCode": "KR",
+    "name": "South Korea",
+    "flagEmoji": "🇰🇷",
+    "continentCode": "AS",
+    "region": "Eastern Asia"
+  },
+  {
+    "isoCode": "KW",
+    "name": "Kuwait",
+    "flagEmoji": "🇰🇼",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "KY",
+    "name": "Cayman Islands",
+    "flagEmoji": "🇰🇾",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "KZ",
+    "name": "Kazakhstan",
+    "flagEmoji": "🇰🇿",
+    "continentCode": "AS",
+    "region": "Central Asia"
+  },
+  {
+    "isoCode": "LA",
+    "name": "Laos",
+    "flagEmoji": "🇱🇦",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "LB",
+    "name": "Lebanon",
+    "flagEmoji": "🇱🇧",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "LC",
+    "name": "Saint Lucia",
+    "flagEmoji": "🇱🇨",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "LI",
+    "name": "Liechtenstein",
+    "flagEmoji": "🇱🇮",
+    "continentCode": "EU",
+    "region": "Western Europe"
+  },
+  {
+    "isoCode": "LK",
+    "name": "Sri Lanka",
+    "flagEmoji": "🇱🇰",
+    "continentCode": "AS",
+    "region": "Southern Asia"
+  },
+  {
+    "isoCode": "LR",
+    "name": "Liberia",
+    "flagEmoji": "🇱🇷",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "LS",
+    "name": "Lesotho",
+    "flagEmoji": "🇱🇸",
+    "continentCode": "AF",
+    "region": "Southern Africa"
+  },
+  {
+    "isoCode": "LT",
+    "name": "Lithuania",
+    "flagEmoji": "🇱🇹",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "LU",
+    "name": "Luxembourg",
+    "flagEmoji": "🇱🇺",
+    "continentCode": "EU",
+    "region": "Western Europe"
+  },
+  {
+    "isoCode": "LV",
+    "name": "Latvia",
+    "flagEmoji": "🇱🇻",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "LY",
+    "name": "Libya",
+    "flagEmoji": "🇱🇾",
+    "continentCode": "AF",
+    "region": "Northern Africa"
+  },
+  {
+    "isoCode": "MA",
+    "name": "Morocco",
+    "flagEmoji": "🇲🇦",
+    "continentCode": "AF",
+    "region": "Northern Africa"
+  },
+  {
+    "isoCode": "MC",
+    "name": "Monaco",
+    "flagEmoji": "🇲🇨",
+    "continentCode": "EU",
+    "region": "Western Europe"
+  },
+  {
+    "isoCode": "MD",
+    "name": "Moldova",
+    "flagEmoji": "🇲🇩",
+    "continentCode": "EU",
+    "region": "Eastern Europe"
+  },
+  {
+    "isoCode": "ME",
+    "name": "Montenegro",
+    "flagEmoji": "🇲🇪",
+    "continentCode": "EU",
+    "region": "Southeast Europe"
+  },
+  {
+    "isoCode": "MF",
+    "name": "Saint Martin",
+    "flagEmoji": "🇲🇫",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "MG",
+    "name": "Madagascar",
+    "flagEmoji": "🇲🇬",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "MH",
+    "name": "Marshall Islands",
+    "flagEmoji": "🇲🇭",
+    "continentCode": "OC",
+    "region": "Micronesia"
+  },
+  {
+    "isoCode": "MK",
+    "name": "North Macedonia",
+    "flagEmoji": "🇲🇰",
+    "continentCode": "EU",
+    "region": "Southeast Europe"
+  },
+  {
+    "isoCode": "ML",
+    "name": "Mali",
+    "flagEmoji": "🇲🇱",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "MM",
+    "name": "Myanmar",
+    "flagEmoji": "🇲🇲",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "MN",
+    "name": "Mongolia",
+    "flagEmoji": "🇲🇳",
+    "continentCode": "AS",
+    "region": "Eastern Asia"
+  },
+  {
+    "isoCode": "MO",
+    "name": "Macau",
+    "flagEmoji": "🇲🇴",
+    "continentCode": "AS",
+    "region": "Eastern Asia"
+  },
+  {
+    "isoCode": "MP",
+    "name": "Northern Mariana Islands",
+    "flagEmoji": "🇲🇵",
+    "continentCode": "OC",
+    "region": "Micronesia"
+  },
+  {
+    "isoCode": "MQ",
+    "name": "Martinique",
+    "flagEmoji": "🇲🇶",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "MR",
+    "name": "Mauritania",
+    "flagEmoji": "🇲🇷",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "MS",
+    "name": "Montserrat",
+    "flagEmoji": "🇲🇸",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "MT",
+    "name": "Malta",
+    "flagEmoji": "🇲🇹",
+    "continentCode": "EU",
+    "region": "Southern Europe"
+  },
+  {
+    "isoCode": "MU",
+    "name": "Mauritius",
+    "flagEmoji": "🇲🇺",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "MV",
+    "name": "Maldives",
+    "flagEmoji": "🇲🇻",
+    "continentCode": "AS",
+    "region": "Southern Asia"
+  },
+  {
+    "isoCode": "MW",
+    "name": "Malawi",
+    "flagEmoji": "🇲🇼",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "MX",
+    "name": "Mexico",
+    "flagEmoji": "🇲🇽",
+    "continentCode": "NA",
+    "region": "North America"
+  },
+  {
+    "isoCode": "MY",
+    "name": "Malaysia",
+    "flagEmoji": "🇲🇾",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "MZ",
+    "name": "Mozambique",
+    "flagEmoji": "🇲🇿",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "NA",
+    "name": "Namibia",
+    "flagEmoji": "🇳🇦",
+    "continentCode": "AF",
+    "region": "Southern Africa"
+  },
+  {
+    "isoCode": "NC",
+    "name": "New Caledonia",
+    "flagEmoji": "🇳🇨",
+    "continentCode": "OC",
+    "region": "Melanesia"
+  },
+  {
+    "isoCode": "NE",
+    "name": "Niger",
+    "flagEmoji": "🇳🇪",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "NF",
+    "name": "Norfolk Island",
+    "flagEmoji": "🇳🇫",
+    "continentCode": "OC",
+    "region": "Australia and New Zealand"
+  },
+  {
+    "isoCode": "NG",
+    "name": "Nigeria",
+    "flagEmoji": "🇳🇬",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "NI",
+    "name": "Nicaragua",
+    "flagEmoji": "🇳🇮",
+    "continentCode": "SA",
+    "region": "Central America"
+  },
+  {
+    "isoCode": "NL",
+    "name": "Netherlands",
+    "flagEmoji": "🇳🇱",
+    "continentCode": "EU",
+    "region": "Western Europe"
+  },
+  {
+    "isoCode": "NO",
+    "name": "Norway",
+    "flagEmoji": "🇳🇴",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "NP",
+    "name": "Nepal",
+    "flagEmoji": "🇳🇵",
+    "continentCode": "AS",
+    "region": "Southern Asia"
+  },
+  {
+    "isoCode": "NR",
+    "name": "Nauru",
+    "flagEmoji": "🇳🇷",
+    "continentCode": "OC",
+    "region": "Micronesia"
+  },
+  {
+    "isoCode": "NU",
+    "name": "Niue",
+    "flagEmoji": "🇳🇺",
+    "continentCode": "OC",
+    "region": "Polynesia"
+  },
+  {
+    "isoCode": "NZ",
+    "name": "New Zealand",
+    "flagEmoji": "🇳🇿",
+    "continentCode": "OC",
+    "region": "Australia and New Zealand"
+  },
+  {
+    "isoCode": "OM",
+    "name": "Oman",
+    "flagEmoji": "🇴🇲",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "PA",
+    "name": "Panama",
+    "flagEmoji": "🇵🇦",
+    "continentCode": "SA",
+    "region": "Central America"
+  },
+  {
+    "isoCode": "PE",
+    "name": "Peru",
+    "flagEmoji": "🇵🇪",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "PF",
+    "name": "French Polynesia",
+    "flagEmoji": "🇵🇫",
+    "continentCode": "OC",
+    "region": "Polynesia"
+  },
+  {
+    "isoCode": "PG",
+    "name": "Papua New Guinea",
+    "flagEmoji": "🇵🇬",
+    "continentCode": "OC",
+    "region": "Melanesia"
+  },
+  {
+    "isoCode": "PH",
+    "name": "Philippines",
+    "flagEmoji": "🇵🇭",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "PK",
+    "name": "Pakistan",
+    "flagEmoji": "🇵🇰",
+    "continentCode": "AS",
+    "region": "Southern Asia"
+  },
+  {
+    "isoCode": "PL",
+    "name": "Poland",
+    "flagEmoji": "🇵🇱",
+    "continentCode": "EU",
+    "region": "Central Europe"
+  },
+  {
+    "isoCode": "PM",
+    "name": "Saint Pierre and Miquelon",
+    "flagEmoji": "🇵🇲",
+    "continentCode": "NA",
+    "region": "North America"
+  },
+  {
+    "isoCode": "PN",
+    "name": "Pitcairn Islands",
+    "flagEmoji": "🇵🇳",
+    "continentCode": "OC",
+    "region": "Polynesia"
+  },
+  {
+    "isoCode": "PR",
+    "name": "Puerto Rico",
+    "flagEmoji": "🇵🇷",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "PS",
+    "name": "Palestine",
+    "flagEmoji": "🇵🇸",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "PT",
+    "name": "Portugal",
+    "flagEmoji": "🇵🇹",
+    "continentCode": "EU",
+    "region": "Southern Europe"
+  },
+  {
+    "isoCode": "PW",
+    "name": "Palau",
+    "flagEmoji": "🇵🇼",
+    "continentCode": "OC",
+    "region": "Micronesia"
+  },
+  {
+    "isoCode": "PY",
+    "name": "Paraguay",
+    "flagEmoji": "🇵🇾",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "QA",
+    "name": "Qatar",
+    "flagEmoji": "🇶🇦",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "RE",
+    "name": "Réunion",
+    "flagEmoji": "🇷🇪",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "RO",
+    "name": "Romania",
+    "flagEmoji": "🇷🇴",
+    "continentCode": "EU",
+    "region": "Southeast Europe"
+  },
+  {
+    "isoCode": "RS",
+    "name": "Serbia",
+    "flagEmoji": "🇷🇸",
+    "continentCode": "EU",
+    "region": "Southeast Europe"
+  },
+  {
+    "isoCode": "RU",
+    "name": "Russia",
+    "flagEmoji": "🇷🇺",
+    "continentCode": "EU",
+    "region": "Eastern Europe"
+  },
+  {
+    "isoCode": "RW",
+    "name": "Rwanda",
+    "flagEmoji": "🇷🇼",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "SA",
+    "name": "Saudi Arabia",
+    "flagEmoji": "🇸🇦",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "SB",
+    "name": "Solomon Islands",
+    "flagEmoji": "🇸🇧",
+    "continentCode": "OC",
+    "region": "Melanesia"
+  },
+  {
+    "isoCode": "SC",
+    "name": "Seychelles",
+    "flagEmoji": "🇸🇨",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "SD",
+    "name": "Sudan",
+    "flagEmoji": "🇸🇩",
+    "continentCode": "AF",
+    "region": "Northern Africa"
+  },
+  {
+    "isoCode": "SE",
+    "name": "Sweden",
+    "flagEmoji": "🇸🇪",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "SG",
+    "name": "Singapore",
+    "flagEmoji": "🇸🇬",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "SH",
+    "name": "Saint Helena, Ascension and Tristan da Cunha",
+    "flagEmoji": "🇸🇭",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "SI",
+    "name": "Slovenia",
+    "flagEmoji": "🇸🇮",
+    "continentCode": "EU",
+    "region": "Central Europe"
+  },
+  {
+    "isoCode": "SJ",
+    "name": "Svalbard and Jan Mayen",
+    "flagEmoji": "🇸🇯",
+    "continentCode": "EU",
+    "region": "Northern Europe"
+  },
+  {
+    "isoCode": "SK",
+    "name": "Slovakia",
+    "flagEmoji": "🇸🇰",
+    "continentCode": "EU",
+    "region": "Central Europe"
+  },
+  {
+    "isoCode": "SL",
+    "name": "Sierra Leone",
+    "flagEmoji": "🇸🇱",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "SM",
+    "name": "San Marino",
+    "flagEmoji": "🇸🇲",
+    "continentCode": "EU",
+    "region": "Southern Europe"
+  },
+  {
+    "isoCode": "SN",
+    "name": "Senegal",
+    "flagEmoji": "🇸🇳",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "SO",
+    "name": "Somalia",
+    "flagEmoji": "🇸🇴",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "SR",
+    "name": "Suriname",
+    "flagEmoji": "🇸🇷",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "SS",
+    "name": "South Sudan",
+    "flagEmoji": "🇸🇸",
+    "continentCode": "AF",
+    "region": "Middle Africa"
+  },
+  {
+    "isoCode": "ST",
+    "name": "São Tomé and Príncipe",
+    "flagEmoji": "🇸🇹",
+    "continentCode": "AF",
+    "region": "Middle Africa"
+  },
+  {
+    "isoCode": "SV",
+    "name": "El Salvador",
+    "flagEmoji": "🇸🇻",
+    "continentCode": "SA",
+    "region": "Central America"
+  },
+  {
+    "isoCode": "SX",
+    "name": "Sint Maarten",
+    "flagEmoji": "🇸🇽",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "SY",
+    "name": "Syria",
+    "flagEmoji": "🇸🇾",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "SZ",
+    "name": "Eswatini",
+    "flagEmoji": "🇸🇿",
+    "continentCode": "AF",
+    "region": "Southern Africa"
+  },
+  {
+    "isoCode": "TC",
+    "name": "Turks and Caicos Islands",
+    "flagEmoji": "🇹🇨",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "TD",
+    "name": "Chad",
+    "flagEmoji": "🇹🇩",
+    "continentCode": "AF",
+    "region": "Middle Africa"
+  },
+  {
+    "isoCode": "TF",
+    "name": "French Southern and Antarctic Lands",
+    "flagEmoji": "🇹🇫",
+    "continentCode": "AN",
+    "region": "Antarctic"
+  },
+  {
+    "isoCode": "TG",
+    "name": "Togo",
+    "flagEmoji": "🇹🇬",
+    "continentCode": "AF",
+    "region": "Western Africa"
+  },
+  {
+    "isoCode": "TH",
+    "name": "Thailand",
+    "flagEmoji": "🇹🇭",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "TJ",
+    "name": "Tajikistan",
+    "flagEmoji": "🇹🇯",
+    "continentCode": "AS",
+    "region": "Central Asia"
+  },
+  {
+    "isoCode": "TK",
+    "name": "Tokelau",
+    "flagEmoji": "🇹🇰",
+    "continentCode": "OC",
+    "region": "Polynesia"
+  },
+  {
+    "isoCode": "TL",
+    "name": "Timor-Leste",
+    "flagEmoji": "🇹🇱",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "TM",
+    "name": "Turkmenistan",
+    "flagEmoji": "🇹🇲",
+    "continentCode": "AS",
+    "region": "Central Asia"
+  },
+  {
+    "isoCode": "TN",
+    "name": "Tunisia",
+    "flagEmoji": "🇹🇳",
+    "continentCode": "AF",
+    "region": "Northern Africa"
+  },
+  {
+    "isoCode": "TO",
+    "name": "Tonga",
+    "flagEmoji": "🇹🇴",
+    "continentCode": "OC",
+    "region": "Polynesia"
+  },
+  {
+    "isoCode": "TR",
+    "name": "Türkiye",
+    "flagEmoji": "🇹🇷",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "TT",
+    "name": "Trinidad and Tobago",
+    "flagEmoji": "🇹🇹",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "TV",
+    "name": "Tuvalu",
+    "flagEmoji": "🇹🇻",
+    "continentCode": "OC",
+    "region": "Polynesia"
+  },
+  {
+    "isoCode": "TW",
+    "name": "Taiwan",
+    "flagEmoji": "🇹🇼",
+    "continentCode": "AS",
+    "region": "Eastern Asia"
+  },
+  {
+    "isoCode": "TZ",
+    "name": "Tanzania",
+    "flagEmoji": "🇹🇿",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "UA",
+    "name": "Ukraine",
+    "flagEmoji": "🇺🇦",
+    "continentCode": "EU",
+    "region": "Eastern Europe"
+  },
+  {
+    "isoCode": "UG",
+    "name": "Uganda",
+    "flagEmoji": "🇺🇬",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "UM",
+    "name": "United States Minor Outlying Islands",
+    "flagEmoji": "🇺🇲",
+    "continentCode": "NA",
+    "region": "North America"
+  },
+  {
+    "isoCode": "US",
+    "name": "United States",
+    "flagEmoji": "🇺🇸",
+    "continentCode": "NA",
+    "region": "North America"
+  },
+  {
+    "isoCode": "UY",
+    "name": "Uruguay",
+    "flagEmoji": "🇺🇾",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "UZ",
+    "name": "Uzbekistan",
+    "flagEmoji": "🇺🇿",
+    "continentCode": "AS",
+    "region": "Central Asia"
+  },
+  {
+    "isoCode": "VA",
+    "name": "Vatican City",
+    "flagEmoji": "🇻🇦",
+    "continentCode": "EU",
+    "region": "Southern Europe"
+  },
+  {
+    "isoCode": "VC",
+    "name": "Saint Vincent and the Grenadines",
+    "flagEmoji": "🇻🇨",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "VE",
+    "name": "Venezuela",
+    "flagEmoji": "🇻🇪",
+    "continentCode": "SA",
+    "region": "South America"
+  },
+  {
+    "isoCode": "VG",
+    "name": "British Virgin Islands",
+    "flagEmoji": "🇻🇬",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "VI",
+    "name": "United States Virgin Islands",
+    "flagEmoji": "🇻🇮",
+    "continentCode": "SA",
+    "region": "Caribbean"
+  },
+  {
+    "isoCode": "VN",
+    "name": "Vietnam",
+    "flagEmoji": "🇻🇳",
+    "continentCode": "AS",
+    "region": "South-Eastern Asia"
+  },
+  {
+    "isoCode": "VU",
+    "name": "Vanuatu",
+    "flagEmoji": "🇻🇺",
+    "continentCode": "OC",
+    "region": "Melanesia"
+  },
+  {
+    "isoCode": "WF",
+    "name": "Wallis and Futuna",
+    "flagEmoji": "🇼🇫",
+    "continentCode": "OC",
+    "region": "Polynesia"
+  },
+  {
+    "isoCode": "WS",
+    "name": "Samoa",
+    "flagEmoji": "🇼🇸",
+    "continentCode": "OC",
+    "region": "Polynesia"
+  },
+  {
+    "isoCode": "XK",
+    "name": "Kosovo",
+    "flagEmoji": "🇽🇰",
+    "continentCode": "EU",
+    "region": "Southeast Europe"
+  },
+  {
+    "isoCode": "YE",
+    "name": "Yemen",
+    "flagEmoji": "🇾🇪",
+    "continentCode": "AS",
+    "region": "Western Asia"
+  },
+  {
+    "isoCode": "YT",
+    "name": "Mayotte",
+    "flagEmoji": "🇾🇹",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "ZA",
+    "name": "South Africa",
+    "flagEmoji": "🇿🇦",
+    "continentCode": "AF",
+    "region": "Southern Africa"
+  },
+  {
+    "isoCode": "ZM",
+    "name": "Zambia",
+    "flagEmoji": "🇿🇲",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  },
+  {
+    "isoCode": "ZW",
+    "name": "Zimbabwe",
+    "flagEmoji": "🇿🇼",
+    "continentCode": "AF",
+    "region": "Eastern Africa"
+  }
+]
