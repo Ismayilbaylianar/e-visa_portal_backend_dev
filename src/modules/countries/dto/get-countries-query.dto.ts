@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsInt, IsString, Matches, Max, Min } from 'class-validator';
+import { IsOptional, IsBoolean, IsIn, IsInt, IsString, Matches, Max, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { PaginationQueryDto } from '@/common/dto';
 
@@ -22,6 +22,21 @@ export class GetCountriesQueryDto extends PaginationQueryDto {
   @Min(1)
   @Max(500)
   limit?: number = 50;
+
+  /**
+   * Override the parent default (sortBy=createdAt, sortOrder=desc) —
+   * a reference dictionary should default to alphabetical (A→Z) on
+   * the human-readable name, not most-recently-inserted-first.
+   */
+  @ApiPropertyOptional({ description: 'Field to sort by', default: 'name', example: 'name' })
+  @IsOptional()
+  @IsString()
+  sortBy?: string = 'name';
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], default: 'asc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc' = 'asc';
 
   @ApiPropertyOptional({
     description: 'Filter by active status',

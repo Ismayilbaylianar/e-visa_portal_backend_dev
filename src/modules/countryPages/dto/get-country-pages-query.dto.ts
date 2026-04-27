@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { PaginationQueryDto } from '@/common/dto';
 
@@ -22,6 +22,20 @@ export class GetCountryPagesQueryDto extends PaginationQueryDto {
   @Min(1)
   @Max(500)
   limit?: number = 50;
+
+  /**
+   * Override parent default (createdAt desc) — for the publishable list
+   * default to alphabetical by slug so the admin sees a stable order.
+   */
+  @ApiPropertyOptional({ description: 'Field to sort by', default: 'slug', example: 'slug' })
+  @IsOptional()
+  @IsString()
+  sortBy?: string = 'slug';
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], default: 'asc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc' = 'asc';
 
   @ApiPropertyOptional({ description: 'Filter by isActive' })
   @IsOptional()
