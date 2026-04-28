@@ -576,6 +576,10 @@ model EmailTemplate {
   subject     String
   bodyHtml    String    @map("body_html")
   bodyText    String?   @map("body_text")
+  /// Module 3 — admin-facing annotation explaining when this template
+  /// fires (e.g. "Sent when user requests OTP during portal login").
+  /// Optional, free-form text, capped at 500 chars at the DTO layer.
+  description String?
   isActive    Boolean   @default(true) @map("is_active")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")

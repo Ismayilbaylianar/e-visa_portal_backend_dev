@@ -4,7 +4,7 @@ export class EmailTemplateResponseDto {
   @ApiProperty({ description: 'Template ID', example: 'uuid' })
   id: string;
 
-  @ApiProperty({ description: 'Template key', example: 'applicationSubmitted' })
+  @ApiProperty({ description: 'Template key', example: 'application_submitted' })
   templateKey: string;
 
   @ApiProperty({ description: 'Email subject', example: 'Your application has been submitted' })
@@ -16,8 +16,21 @@ export class EmailTemplateResponseDto {
   @ApiPropertyOptional({ description: 'Plain text body', example: 'Hello {{fullName}}' })
   bodyText?: string;
 
+  @ApiPropertyOptional({
+    description: 'Admin-facing annotation explaining when this template fires',
+    example: 'Sent when an application is submitted by a portal user',
+  })
+  description?: string;
+
   @ApiProperty({ description: 'Whether template is active', example: true })
   isActive: boolean;
+
+  @ApiProperty({
+    description:
+      'True when the templateKey is referenced in code (email.service.ts) and therefore protected — Delete is blocked, templateKey rename is blocked. Other fields stay editable.',
+    example: false,
+  })
+  isSystem: boolean;
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
@@ -36,7 +49,7 @@ export class EmailTemplateListResponseDto {
   @ApiProperty({ description: 'Current page', example: 1 })
   page: number;
 
-  @ApiProperty({ description: 'Items per page', example: 10 })
+  @ApiProperty({ description: 'Items per page', example: 50 })
   limit: number;
 
   @ApiProperty({ description: 'Total pages', example: 1 })
