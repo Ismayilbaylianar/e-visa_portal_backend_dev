@@ -9,17 +9,33 @@ import {
   MinLength,
   MaxLength,
   IsEnum,
+  Matches,
 } from 'class-validator';
 import { VisaEntryType } from '@prisma/client';
+import { MaxStayLessThanOrEqualValidityDays } from '../validators/max-stay-le-validity-days.validator';
+
+/**
+ * `purpose` is a machine key used for joining/filtering across modules
+ * (TemplateBindings group by purpose, public selection groups duplicate
+ * purpose+entries pairs visually). Restricting to lowercase snake_case
+ * keeps the key URL-safe and prevents accidental "Tourism" vs "tourism"
+ * fragmentation. Display strings live in `label` / `description`.
+ */
+const PURPOSE_SNAKE_CASE = /^[a-z]+(?:_[a-z]+)*$/;
 
 export class CreateVisaTypeDto {
   @ApiProperty({
-    description: 'Visa purpose (e.g., tourism, business)',
+    description:
+      'Visa purpose key. Lowercase snake_case only (e.g. tourism, business, work_permit). Display text goes in `label`.',
     example: 'tourism',
   })
   @IsString()
   @MinLength(2, { message: 'Purpose must be at least 2 characters' })
   @MaxLength(100, { message: 'Purpose must not exceed 100 characters' })
+  @Matches(PURPOSE_SNAKE_CASE, {
+    message:
+      'Purpose must be lowercase snake_case (letters and single underscores only, e.g. tourism, work_permit)',
+  })
   purpose: string;
 
   @ApiProperty({
@@ -32,12 +48,13 @@ export class CreateVisaTypeDto {
   validityDays: number;
 
   @ApiProperty({
-    description: 'Maximum stay in days',
+    description: 'Maximum stay in days. Must be <= validityDays.',
     example: 30,
   })
   @IsInt()
   @Min(1, { message: 'Max stay must be at least 1' })
   @Max(365, { message: 'Max stay must not exceed 365' })
+  @MaxStayLessThanOrEqualValidityDays()
   maxStay: number;
 
   @ApiProperty({

@@ -21,10 +21,22 @@ import {
   GetVisaTypesQueryDto,
   PublicVisaTypeListResponseDto,
 } from './dto';
-import { RequirePermissions, Public } from '@/common/decorators';
+import { RequirePermissions, Public, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
+import { AuthenticatedUser } from '@/common/types';
 
+/**
+ * Module 2 — manages visa types (purpose × entries combinations).
+ *
+ * Class-level @UseGuards(JwtAuthGuard) keeps the guard before
+ * PermissionsGuard in the resolved chain (decorators apply bottom-up,
+ * NestJS appends method-level guards after class-level ones — inverting
+ * them at method scope causes PermissionsGuard to run first against an
+ * undefined request.user → 403). Public endpoints opt out via @Public().
+ */
 @ApiTags('Visa Types')
+@ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller()
 export class VisaTypesController {
   constructor(private readonly visaTypesService: VisaTypesService) {}
@@ -34,8 +46,6 @@ export class VisaTypesController {
   // ==========================================
 
   @Get('admin/visaTypes')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
   @RequirePermissions('visaTypes.read')
   @ApiOperation({
     summary: 'Get all visa types (admin)',
@@ -51,8 +61,6 @@ export class VisaTypesController {
   }
 
   @Get('admin/visaTypes/:visaTypeId')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
   @RequirePermissions('visaTypes.read')
   @ApiOperation({
     summary: 'Get visa type by ID (admin)',
@@ -73,13 +81,11 @@ export class VisaTypesController {
   }
 
   @Post('admin/visaTypes')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
   @RequirePermissions('visaTypes.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create visa type',
-    description: 'Create a new visa type',
+    description: 'Create a new visa type. Conflict check is on (purpose, entries) compound.',
   })
   @ApiResponse({
     status: 201,
@@ -90,13 +96,14 @@ export class VisaTypesController {
     status: 409,
     description: 'Visa type with same purpose and entry type already exists',
   })
-  async create(@Body() dto: CreateVisaTypeDto): Promise<VisaTypeResponseDto> {
-    return this.visaTypesService.create(dto);
+  async create(
+    @Body() dto: CreateVisaTypeDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<VisaTypeResponseDto> {
+    return this.visaTypesService.create(dto, currentUser.id);
   }
 
   @Patch('admin/visaTypes/:visaTypeId')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
   @RequirePermissions('visaTypes.update')
   @ApiOperation({
     summary: 'Update visa type',
@@ -119,18 +126,18 @@ export class VisaTypesController {
   async update(
     @Param('visaTypeId') visaTypeId: string,
     @Body() dto: UpdateVisaTypeDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<VisaTypeResponseDto> {
-    return this.visaTypesService.update(visaTypeId, dto);
+    return this.visaTypesService.update(visaTypeId, dto, currentUser.id);
   }
 
   @Delete('admin/visaTypes/:visaTypeId')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
   @RequirePermissions('visaTypes.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete visa type',
-    description: 'Soft delete a visa type',
+    description:
+      'Soft delete a visa type. Blocked (409) if any active TemplateBinding still references it.',
   })
   @ApiParam({ name: 'visaTypeId', description: 'Visa type ID' })
   @ApiResponse({
@@ -141,8 +148,15 @@ export class VisaTypesController {
     status: 404,
     description: 'Visa type not found',
   })
-  async delete(@Param('visaTypeId') visaTypeId: string): Promise<void> {
-    return this.visaTypesService.delete(visaTypeId);
+  @ApiResponse({
+    status: 409,
+    description: 'Visa type is in use by one or more active template bindings',
+  })
+  async delete(
+    @Param('visaTypeId') visaTypeId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<void> {
+    return this.visaTypesService.delete(visaTypeId, currentUser.id);
   }
 
   // ==========================================
