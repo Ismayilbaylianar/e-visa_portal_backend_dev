@@ -591,15 +591,44 @@ model EmailTemplate {
   @@map("email_templates")
 }
 
+/// Module 4 — Settings singleton.
+///
+/// One row per environment (auto-created on first read). The 13 columns
+/// added in migration 4 round out the admin-facing surface area
+/// (general / payment / email / application / maintenance / branding /
+/// legal). SMTP-from fields and applicationCodeFormat are admin-editable
+/// today but the runtime still reads .env / hardcoded format until the
+/// Sprint 5 cutover ticket wires them up.
 model Setting {
-  id                  String   @id @default(uuid())
-  siteName            String   @map("site_name")
-  supportEmail        String   @map("support_email")
-  defaultCurrency     String   @default("USD") @map("default_currency")
-  paymentTimeoutHours Int      @default(3) @map("payment_timeout_hours")
-  maintenanceMode     Boolean  @default(false) @map("maintenance_mode")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  id                          String   @id @default(uuid())
+  // General
+  siteName                    String   @map("site_name")
+  siteUrl                     String   @default("") @map("site_url")
+  supportEmail                String   @map("support_email")
+  // Payment
+  defaultCurrency             String   @default("USD") @map("default_currency")
+  paymentTimeoutHours         Int      @default(3) @map("payment_timeout_hours")
+  // Email (informational until Sprint 5 cutover)
+  smtpFromAddress             String   @default("") @map("smtp_from_address")
+  smtpFromName                String   @default("") @map("smtp_from_name")
+  notificationEmailEnabled    Boolean  @default(true) @map("notification_email_enabled")
+  // Application (informational until Sprint 5 cutover)
+  applicationCodeFormat       String   @default("EV-{YYYY}-{NNNN}") @map("application_code_format")
+  maxApplicantsPerApplication Int      @default(10) @map("max_applicants_per_application")
+  allowMultipleVisaTypes      Boolean  @default(false) @map("allow_multiple_visa_types")
+  // Maintenance
+  maintenanceMode             Boolean  @default(false) @map("maintenance_mode")
+  maintenanceMessage          String?  @map("maintenance_message")
+  // Branding (logoUrl is consumed by the Sprint 4 frontend header)
+  logoUrl                     String?  @map("logo_url")
+  faviconUrl                  String?  @map("favicon_url")
+  googleAnalyticsId           String?  @map("google_analytics_id")
+  // Legal
+  termsUrl                    String?  @map("terms_url")
+  privacyUrl                  String?  @map("privacy_url")
+
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
 }
