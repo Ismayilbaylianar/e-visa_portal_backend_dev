@@ -1,10 +1,31 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsIn, IsString, IsEnum } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsOptional, IsBoolean, IsIn, IsInt, IsString, IsEnum, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { VisaEntryType } from '@prisma/client';
 import { PaginationQueryDto } from '@/common/dto';
 
 export class GetVisaTypesQueryDto extends PaginationQueryDto {
+  /**
+   * Override the parent MAX_LIMIT (=100) — admin frontend uses limit=200
+   * across all module list screens (countries / countryPages / visaTypes
+   * follow the same pattern). The visa types catalogue is small (~10–30
+   * rows) and the admin grid wants to render everything on one page with
+   * client-side filtering.
+   */
+  @ApiPropertyOptional({
+    description: 'Items per page. Up to 500 for this list.',
+    minimum: 1,
+    maximum: 500,
+    default: 50,
+    example: 200,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number = 50;
+
   /**
    * Override parent default (sortBy=createdAt, sortOrder=desc) — visa
    * types render in admin/public dropdowns ordered by editorial sortOrder
