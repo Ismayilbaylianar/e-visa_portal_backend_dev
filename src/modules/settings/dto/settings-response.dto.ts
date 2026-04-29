@@ -7,7 +7,7 @@ export class SettingsResponseDto {
   // ============================================================
   // General
   // ============================================================
-  @ApiProperty({ description: 'Site name', example: 'E-Visa Portal' })
+  @ApiProperty({ description: 'Site name', example: 'Visa Portal' })
   siteName: string;
 
   @ApiProperty({
@@ -34,7 +34,7 @@ export class SettingsResponseDto {
   @ApiProperty({ description: 'SMTP From address', example: 'no-reply@example.com' })
   smtpFromAddress: string;
 
-  @ApiProperty({ description: 'SMTP From display name', example: 'E-Visa Portal' })
+  @ApiProperty({ description: 'SMTP From display name', example: 'Visa Portal' })
   smtpFromName: string;
 
   @ApiProperty({

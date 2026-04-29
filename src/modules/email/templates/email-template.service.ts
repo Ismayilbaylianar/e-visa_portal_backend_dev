@@ -193,7 +193,7 @@ export class EmailTemplateService {
 </head>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">E-Visa Portal</h1>
+    <h1 style="color: white; margin: 0; font-size: 24px;">E-Visa Global</h1>
   </div>
   <div style="background: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 8px 8px;">
     <h2 style="color: #333; margin-top: 0;">Your Verification Code</h2>
@@ -205,12 +205,12 @@ export class EmailTemplateService {
     <p>This code will expire in <strong>{{expiryMinutes}} minutes</strong>.</p>
     <p style="color: #666; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-    <p style="color: #999; font-size: 12px; margin-bottom: 0;">This is an automated message from E-Visa Portal. Please do not reply to this email.</p>
+    <p style="color: #999; font-size: 12px; margin-bottom: 0;">This is an automated message from E-Visa Global. Please do not reply to this email.</p>
   </div>
 </body>
 </html>
 `,
-        text: `Your E-Visa Portal verification code is: {{otpCode}}\n\nThis code will expire in {{expiryMinutes}} minutes.\n\nIf you didn't request this code, please ignore this email.`,
+        text: `Your E-Visa Global verification code is: {{otpCode}}\n\nThis code will expire in {{expiryMinutes}} minutes.\n\nIf you didn't request this code, please ignore this email.`,
       },
 
       // Generic Notification Email
@@ -225,17 +225,17 @@ export class EmailTemplateService {
 </head>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">E-Visa Portal</h1>
+    <h1 style="color: white; margin: 0; font-size: 24px;">E-Visa Global</h1>
   </div>
   <div style="background: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 8px 8px;">
     <p>{{message}}</p>
     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-    <p style="color: #999; font-size: 12px; margin-bottom: 0;">This is an automated message from E-Visa Portal.</p>
+    <p style="color: #999; font-size: 12px; margin-bottom: 0;">This is an automated message from E-Visa Global.</p>
   </div>
 </body>
 </html>
 `,
-        text: `{{message}}\n\n---\nThis is an automated message from E-Visa Portal.`,
+        text: `{{message}}\n\n---\nThis is an automated message from E-Visa Global.`,
       },
 
       // Application Status Update Email
@@ -250,7 +250,7 @@ export class EmailTemplateService {
 </head>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">E-Visa Portal</h1>
+    <h1 style="color: white; margin: 0; font-size: 24px;">E-Visa Global</h1>
   </div>
   <div style="background: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 8px 8px;">
     <h2 style="color: #333; margin-top: 0;">Application Status Update</h2>
@@ -264,17 +264,17 @@ export class EmailTemplateService {
     {{/if}}
     <p>You can track your application status at any time using your tracking number.</p>
     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-    <p style="color: #999; font-size: 12px; margin-bottom: 0;">This is an automated message from E-Visa Portal.</p>
+    <p style="color: #999; font-size: 12px; margin-bottom: 0;">This is an automated message from E-Visa Global.</p>
   </div>
 </body>
 </html>
 `,
-        text: `Application Status Update\n\nYour visa application {{applicationRef}} status has been updated.\n\nNew Status: {{status}}\n\n{{#if notes}}Notes: {{notes}}{{/if}}\n\n---\nThis is an automated message from E-Visa Portal.`,
+        text: `Application Status Update\n\nYour visa application {{applicationRef}} status has been updated.\n\nNew Status: {{status}}\n\n{{#if notes}}Notes: {{notes}}{{/if}}\n\n---\nThis is an automated message from E-Visa Global.`,
       },
 
       // Invite Email (for future use)
       invite_email: {
-        subject: 'You are invited to E-Visa Portal',
+        subject: 'You are invited to E-Visa Global',
         html: `
 <!DOCTYPE html>
 <html>
@@ -284,23 +284,23 @@ export class EmailTemplateService {
 </head>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">E-Visa Portal</h1>
+    <h1 style="color: white; margin: 0; font-size: 24px;">E-Visa Global</h1>
   </div>
   <div style="background: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 8px 8px;">
     <h2 style="color: #333; margin-top: 0;">You're Invited!</h2>
     <p>Hello {{recipientName}},</p>
-    <p>{{inviterName}} has invited you to join E-Visa Portal.</p>
+    <p>{{inviterName}} has invited you to join E-Visa Global.</p>
     <div style="text-align: center; margin: 30px 0;">
       <a href="{{inviteLink}}" style="background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Accept Invitation</a>
     </div>
     <p style="color: #666; font-size: 14px;">This invitation will expire in {{expiryDays}} days.</p>
     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-    <p style="color: #999; font-size: 12px; margin-bottom: 0;">This is an automated message from E-Visa Portal.</p>
+    <p style="color: #999; font-size: 12px; margin-bottom: 0;">This is an automated message from E-Visa Global.</p>
   </div>
 </body>
 </html>
 `,
-        text: `You're Invited!\n\nHello {{recipientName}},\n\n{{inviterName}} has invited you to join E-Visa Portal.\n\nAccept your invitation: {{inviteLink}}\n\nThis invitation will expire in {{expiryDays}} days.\n\n---\nThis is an automated message from E-Visa Portal.`,
+        text: `You're Invited!\n\nHello {{recipientName}},\n\n{{inviterName}} has invited you to join E-Visa Global.\n\nAccept your invitation: {{inviteLink}}\n\nThis invitation will expire in {{expiryDays}} days.\n\n---\nThis is an automated message from E-Visa Global.`,
       },
 
       // Payment Confirmation Email
@@ -328,12 +328,12 @@ export class EmailTemplateService {
     </div>
     <p>Your application is now being processed.</p>
     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-    <p style="color: #999; font-size: 12px; margin-bottom: 0;">This is an automated message from E-Visa Portal.</p>
+    <p style="color: #999; font-size: 12px; margin-bottom: 0;">This is an automated message from E-Visa Global.</p>
   </div>
 </body>
 </html>
 `,
-        text: `Payment Confirmed!\n\nYour payment has been successfully processed.\n\nReference: {{paymentRef}}\nAmount: {{amount}} {{currency}}\nApplication: {{applicationRef}}\n\nYour application is now being processed.\n\n---\nThis is an automated message from E-Visa Portal.`,
+        text: `Payment Confirmed!\n\nYour payment has been successfully processed.\n\nReference: {{paymentRef}}\nAmount: {{amount}} {{currency}}\nApplication: {{applicationRef}}\n\nYour application is now being processed.\n\n---\nThis is an automated message from E-Visa Global.`,
       },
     };
 

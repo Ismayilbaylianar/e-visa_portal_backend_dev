@@ -697,11 +697,26 @@ async function main() {
   } else {
     await prisma.setting.create({
       data: {
-        siteName: 'E-Visa Portal',
+        // Real brand for the production environment. Service-level
+        // first-create fallbacks (when seed never ran) use generic
+        // placeholders — DO NOT mirror evisaglobal.com into business
+        // logic; this seed is the single source of truth for the
+        // production brand identity.
+        siteName: 'E-Visa Global',
+        siteUrl: 'https://evisaglobal.com',
         supportEmail: 'support@evisaglobal.com',
         defaultCurrency: 'USD',
         paymentTimeoutHours: 3,
+        smtpFromAddress: 'noreply@evisaglobal.com',
+        smtpFromName: 'E-Visa Global',
+        notificationEmailEnabled: true,
+        applicationCodeFormat: 'EV-{YYYY}-{NNNN}',
+        maxApplicantsPerApplication: 10,
+        allowMultipleVisaTypes: false,
         maintenanceMode: false,
+        // termsUrl / privacyUrl / logoUrl / faviconUrl /
+        // googleAnalyticsId / maintenanceMessage stay null until the
+        // admin sets them via the Module 4 UI.
       },
     });
     console.log(`  ✅ Settings created`);

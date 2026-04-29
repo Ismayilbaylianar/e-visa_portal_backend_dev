@@ -60,7 +60,7 @@ async function bootstrap() {
   const swaggerTitle = configService.get<string>('SWAGGER_TITLE', 'Visa Portal Backend API');
   const swaggerDescription = configService.get<string>(
     'SWAGGER_DESCRIPTION',
-    'E-Visa Portal Backend API Documentation',
+    'Visa Portal Backend API Documentation',
   );
   const swaggerVersion = configService.get<string>('SWAGGER_VERSION', '1.0.0');
 

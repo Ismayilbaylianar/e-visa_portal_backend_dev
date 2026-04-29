@@ -35,9 +35,14 @@ export class SettingsService {
 
     if (!settings) {
       this.logger.log('No settings found, creating default settings');
+      // Generic placeholder defaults — real branding lives in
+      // prisma/seed.ts (DB seed for the production environment) and
+      // is set per-deployment by the admin UI. Do not bake the real
+      // brand into business logic here — keeps fallbacks reusable
+      // across environments and rebrands.
       settings = await this.prisma.setting.create({
         data: {
-          siteName: 'E-Visa Portal',
+          siteName: 'Visa Portal',
           supportEmail: 'support@example.com',
           // The rest fall back to schema defaults (siteUrl='', etc.).
         },
@@ -65,7 +70,7 @@ export class SettingsService {
       this.logger.log('No settings found, creating with provided values');
       settings = await this.prisma.setting.create({
         data: {
-          siteName: dto.siteName ?? 'E-Visa Portal',
+          siteName: dto.siteName ?? 'Visa Portal',
           supportEmail: dto.supportEmail ?? 'support@example.com',
           siteUrl: dto.siteUrl ?? '',
           defaultCurrency: dto.defaultCurrency ?? 'USD',

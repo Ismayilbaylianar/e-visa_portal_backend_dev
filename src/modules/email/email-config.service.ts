@@ -94,7 +94,7 @@ export class EmailConfigService implements OnModuleInit {
         user: this.configService.get<string>('SMTP_USER', ''),
         pass: this.configService.get<string>('SMTP_PASS', ''),
         fromEmail: this.configService.get<string>('SMTP_FROM_EMAIL', ''),
-        fromName: this.configService.get<string>('SMTP_FROM_NAME', 'E-Visa Portal'),
+        fromName: this.configService.get<string>('SMTP_FROM_NAME', 'Visa Portal'),
       },
       otp: {
         resendCooldownSeconds: parseInt(

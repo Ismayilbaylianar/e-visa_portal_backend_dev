@@ -368,8 +368,8 @@ export class EmailService {
       to,
       templateKey: 'generic_notification',
       variables: {
-        subject: 'E-Visa Portal - Email Configuration Test',
-        message: `This is a test email from E-Visa Portal to verify email configuration.\n\nSent at: ${timestamp}\nProvider: ${this.emailProvider.providerName}`,
+        subject: 'Email Configuration Test',
+        message: `This is a test email to verify email configuration.\n\nSent at: ${timestamp}\nProvider: ${this.emailProvider.providerName}`,
       },
       relatedEntity: 'AdminTest',
       relatedEntityId: timestamp,

@@ -57,7 +57,7 @@ export const appConfig = registerAs('app', () => ({
       user: process.env.SMTP_USER || '',
       pass: process.env.SMTP_PASS || '',
       fromEmail: process.env.SMTP_FROM_EMAIL || '',
-      fromName: process.env.SMTP_FROM_NAME || 'E-Visa Portal',
+      fromName: process.env.SMTP_FROM_NAME || 'Visa Portal',
     },
   },
 }));

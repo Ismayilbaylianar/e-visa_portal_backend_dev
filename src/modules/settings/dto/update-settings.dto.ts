@@ -27,7 +27,7 @@ export class UpdateSettingsDto {
   // General
   // ============================================================
 
-  @ApiPropertyOptional({ description: 'Site name', example: 'E-Visa Portal' })
+  @ApiPropertyOptional({ description: 'Site name', example: 'Visa Portal' })
   @IsOptional()
   @IsString()
   @MinLength(2, { message: 'Site name must be at least 2 characters' })
@@ -91,7 +91,7 @@ export class UpdateSettingsDto {
 
   @ApiPropertyOptional({
     description: 'SMTP From display name',
-    example: 'E-Visa Portal',
+    example: 'Visa Portal',
   })
   @IsOptional()
   @IsString()
