@@ -557,14 +557,40 @@ model BindingNationalityFee {
   @@map("binding_nationality_fees")
 }
 
+/// Module 5 — PaymentPageConfig singleton.
+///
+/// One row per environment (auto-created on first read). Migration 5
+/// added 8 admin-facing columns matching the 3 admin UI tabs:
+///   • Content: title, description, supportText, footerNote
+///   • Layout: showCardLogos, showSecurityBadges
+///   • Behavior: primaryButtonText, timeoutWarningMinutes,
+///     termsCheckboxRequired, termsCheckboxText
+///
+/// `sectionsJson` stays in the schema as a forward-compatible slot for
+/// the advanced section builder UI (Sprint 4 ticket); the Module 5
+/// admin UI does not surface it yet.
 model PaymentPageConfig {
-  id           String   @id @default(uuid())
-  title        String
-  description  String?
-  sectionsJson Json     @map("sections_json")
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id                    String   @id @default(uuid())
+  // Content
+  title                 String
+  description           String?
+  supportText           String?  @map("support_text")
+  footerNote            String?  @map("footer_note")
+  // Layout
+  showCardLogos         Boolean  @default(true)  @map("show_card_logos")
+  showSecurityBadges    Boolean  @default(true)  @map("show_security_badges")
+  // Behavior
+  primaryButtonText     String   @default("Pay Now") @map("primary_button_text")
+  /// Minutes before the unpaid-session warning fires on the public
+  /// payment page. DTO clamps to 1-30.
+  timeoutWarningMinutes Int      @default(5)    @map("timeout_warning_minutes")
+  termsCheckboxRequired Boolean  @default(false) @map("terms_checkbox_required")
+  termsCheckboxText     String?  @map("terms_checkbox_text")
+  // Forward-compat slot (advanced section builder, Sprint 4)
+  sectionsJson          Json     @map("sections_json")
+  isActive              Boolean  @default(true)  @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
 
   @@index([isActive])
   @@map("payment_page_configs")
