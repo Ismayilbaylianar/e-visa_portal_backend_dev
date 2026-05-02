@@ -684,10 +684,11 @@ export class PaymentsService {
       `Payment status updated: ${id} from ${oldStatus} to ${dto.status} by admin ${userId}`,
     );
 
-    // Audit log for manual status update
+    // Audit log for manual status update — lowercase.dot key per Modul 6a
+    // convention (was UPPERCASE_SNAKE before Permission Hardening Pack).
     await this.auditLogsService.logAdminAction(
       userId,
-      'PAYMENT_STATUS_UPDATED',
+      'payment.status.change',
       'Payment',
       id,
       { paymentStatus: oldStatus },

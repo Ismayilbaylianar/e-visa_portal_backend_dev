@@ -33,7 +33,7 @@ import {
   DocumentUrlResponseDto,
 } from './dto';
 import { ApplicantIdParamDto, DocumentIdParamDto } from '@/common/dto';
-import { CurrentPortalIdentity, CurrentUser } from '@/common/decorators';
+import { CurrentPortalIdentity, CurrentUser, RequirePermissions } from '@/common/decorators';
 import { PortalAuthGuard, JwtAuthGuard } from '@/common/guards';
 import { PortalIdentityUser, AuthenticatedUser } from '@/common/types';
 
@@ -191,6 +191,7 @@ export class DocumentsAdminController {
   constructor(private readonly documentsService: DocumentsService) {}
 
   @Get(':documentId')
+  @RequirePermissions('documents.read')
   @ApiOperation({
     summary: 'Get document by ID (admin)',
     description: 'Get document details by ID without ownership check',
@@ -206,6 +207,7 @@ export class DocumentsAdminController {
   }
 
   @Get(':documentId/download')
+  @RequirePermissions('documents.download')
   @ApiOperation({
     summary: 'Download document file (admin)',
     description: 'Download the actual file for a document without ownership check',
@@ -231,6 +233,7 @@ export class DocumentsAdminController {
   }
 
   @Patch(':documentId/review')
+  @RequirePermissions('documents.review')
   @ApiOperation({
     summary: 'Review document',
     description: 'Review a document and set its status (admin only)',
@@ -250,6 +253,7 @@ export class DocumentsAdminController {
   }
 
   @Get(':documentId/verify')
+  @RequirePermissions('documents.verify')
   @ApiOperation({
     summary: 'Verify document integrity',
     description: 'Verify that the document file has not been tampered with',
@@ -274,14 +278,19 @@ export class DocumentsAdminController {
   }
 
   @Delete(':documentId/hard')
+  @RequirePermissions('documents.hard_delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Hard delete document',
-    description: 'Permanently delete document and file from storage (admin only)',
+    description:
+      'Permanently delete document and file from storage. Irreversible — restricted to superAdmin. Audit trail emits document.hard_delete with originalFileName + storageKey so the destruction is traceable even after the row is gone.',
   })
   @ApiResponse({ status: 204, description: 'Document permanently deleted' })
   @ApiResponse({ status: 404, description: 'Document not found' })
-  async hardDelete(@Param() params: DocumentIdParamDto): Promise<void> {
-    return this.documentsService.hardDelete(params.documentId);
+  async hardDelete(
+    @Param() params: DocumentIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.documentsService.hardDelete(params.documentId, user.id);
   }
 }

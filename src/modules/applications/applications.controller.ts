@@ -22,7 +22,12 @@ import {
   RequestDocumentsDto,
 } from './dto';
 import { ApplicationIdParamDto } from '@/common/dto';
-import { ApiPaginatedResponse, CurrentPortalIdentity, CurrentUser } from '@/common/decorators';
+import {
+  ApiPaginatedResponse,
+  CurrentPortalIdentity,
+  CurrentUser,
+  RequirePermissions,
+} from '@/common/decorators';
 import { PortalAuthGuard, JwtAuthGuard } from '@/common/guards';
 import { PortalIdentityUser, AuthenticatedUser } from '@/common/types';
 
@@ -34,6 +39,7 @@ export class ApplicationsAdminController {
   constructor(private readonly applicationsService: ApplicationsService) {}
 
   @Get()
+  @RequirePermissions('applications.read')
   @ApiOperation({
     summary: 'Get all applications',
     description: 'Get paginated list of applications with optional filters (Admin)',
@@ -44,6 +50,7 @@ export class ApplicationsAdminController {
   }
 
   @Get(':applicationId')
+  @RequirePermissions('applications.read')
   @ApiOperation({
     summary: 'Get application by ID',
     description: 'Get application details by ID including relations (Admin)',
@@ -62,6 +69,7 @@ export class ApplicationsAdminController {
   }
 
   @Post(':applicationId/approve')
+  @RequirePermissions('applications.approve')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Approve application',
@@ -89,6 +97,7 @@ export class ApplicationsAdminController {
   }
 
   @Post(':applicationId/reject')
+  @RequirePermissions('applications.reject')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Reject application',
@@ -116,6 +125,7 @@ export class ApplicationsAdminController {
   }
 
   @Post(':applicationId/request-documents')
+  @RequirePermissions('applications.request_documents')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Request additional documents',
@@ -143,6 +153,7 @@ export class ApplicationsAdminController {
   }
 
   @Post(':applicationId/start-review')
+  @RequirePermissions('applications.start_review')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Start application review',

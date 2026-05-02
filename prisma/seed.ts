@@ -70,6 +70,7 @@ const PERMISSIONS = [
   { moduleKey: 'templates', actionKey: 'create', description: 'Create templates' },
   { moduleKey: 'templates', actionKey: 'update', description: 'Update templates' },
   { moduleKey: 'templates', actionKey: 'delete', description: 'Delete templates' },
+  { moduleKey: 'templates', actionKey: 'duplicate', description: 'Clone an existing template — for future endpoint' },
   
   // Template Bindings module
   { moduleKey: 'templateBindings', actionKey: 'read', description: 'View template bindings and nationality fees' },
@@ -77,16 +78,30 @@ const PERMISSIONS = [
   { moduleKey: 'templateBindings', actionKey: 'update', description: 'Update template bindings and nationality fees' },
   { moduleKey: 'templateBindings', actionKey: 'delete', description: 'Delete template bindings and nationality fees' },
   
-  // Applications module (for future use)
+  // Applications module
   { moduleKey: 'applications', actionKey: 'read', description: 'View applications' },
   { moduleKey: 'applications', actionKey: 'update', description: 'Update application status' },
   { moduleKey: 'applications', actionKey: 'review', description: 'Review and process applications' },
-  
+  { moduleKey: 'applications', actionKey: 'approve', description: 'Approve a submitted application' },
+  { moduleKey: 'applications', actionKey: 'reject', description: 'Reject a submitted application with a reason' },
+  { moduleKey: 'applications', actionKey: 'request_documents', description: 'Request additional or corrected documents from applicant' },
+  { moduleKey: 'applications', actionKey: 'start_review', description: 'Move application from SUBMITTED to IN_REVIEW (claim ownership)' },
+
+  // Documents module (Modul 6b prep — admin endpoints exist but were unguarded
+  // before the Permission Hardening Pack. PII-sensitive surface.)
+  { moduleKey: 'documents', actionKey: 'read', description: 'View document metadata in admin' },
+  { moduleKey: 'documents', actionKey: 'download', description: 'Download original document file (PII-sensitive)' },
+  { moduleKey: 'documents', actionKey: 'review', description: 'Set document review status (approved/rejected/needs_reupload)' },
+  { moduleKey: 'documents', actionKey: 'verify', description: 'Run integrity check on stored file' },
+  { moduleKey: 'documents', actionKey: 'hard_delete', description: 'Permanently remove document + file from storage (irreversible)' },
+
   // Payments module
   { moduleKey: 'payments', actionKey: 'read', description: 'View payments and transactions' },
   { moduleKey: 'payments', actionKey: 'update', description: 'Update payment status manually' },
   { moduleKey: 'payments', actionKey: 'refund', description: 'Process refunds' },
   { moduleKey: 'payments', actionKey: 'manage', description: 'Full payment management access' },
+  { moduleKey: 'payments', actionKey: 'transactions.read', description: 'View provider transaction + callback history' },
+  { moduleKey: 'payments', actionKey: 'export', description: 'Export payments/transactions (CSV) — for future endpoint' },
   
   // Notifications module
   { moduleKey: 'notifications', actionKey: 'read', description: 'View notifications' },
@@ -128,10 +143,16 @@ const ROLES = [
       'settings.read', 'settings.update',
       'emailTemplates.read', 'emailTemplates.create', 'emailTemplates.update',
       'paymentPageConfigs.read', 'paymentPageConfigs.update',
-      'templates.read', 'templates.create', 'templates.update',
+      'templates.read', 'templates.create', 'templates.update', 'templates.duplicate',
       'templateBindings.read', 'templateBindings.create', 'templateBindings.update',
       'applications.read', 'applications.update', 'applications.review',
+      // Modul 6b prep — review-action permissions (admin can approve/reject/request docs/start review)
+      'applications.approve', 'applications.reject',
+      'applications.request_documents', 'applications.start_review',
+      // Modul 6b prep — documents (admin can read/download/review/verify; hard_delete is super-only)
+      'documents.read', 'documents.download', 'documents.review', 'documents.verify',
       'payments.read', 'payments.update', 'payments.manage',
+      'payments.transactions.read', 'payments.export',
       'notifications.read', 'notifications.update',
       'jobs.read', 'jobs.update',
       'auditLogs.read',
@@ -156,7 +177,14 @@ const ROLES = [
       'templates.read',
       'templateBindings.read',
       'applications.read', 'applications.update', 'applications.review',
+      // Modul 6b prep — operator can run day-to-day review actions
+      // (request docs, claim a queue item) but NOT approve / reject final.
+      'applications.request_documents', 'applications.start_review',
+      // Modul 6b prep — operator works documents during review
+      // (read/download/review). hard_delete + verify stay above operator.
+      'documents.read', 'documents.download', 'documents.review',
       'payments.read', 'payments.update',
+      'payments.transactions.read',
       'notifications.read',
       'jobs.read',
       'dashboard.read',

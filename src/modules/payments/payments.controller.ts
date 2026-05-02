@@ -24,7 +24,12 @@ import {
   PaymentCallbackDto,
 } from './dto';
 import { PaymentIdParamDto } from '@/common/dto';
-import { ApiPaginatedResponse, CurrentPortalIdentity, CurrentUser } from '@/common/decorators';
+import {
+  ApiPaginatedResponse,
+  CurrentPortalIdentity,
+  CurrentUser,
+  RequirePermissions,
+} from '@/common/decorators';
 import { PortalAuthGuard, JwtAuthGuard } from '@/common/guards';
 import { PortalIdentityUser, AuthenticatedUser } from '@/common/types';
 
@@ -36,6 +41,7 @@ export class PaymentsAdminController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Get()
+  @RequirePermissions('payments.read')
   @ApiOperation({
     summary: 'Get all payments',
     description:
@@ -47,6 +53,7 @@ export class PaymentsAdminController {
   }
 
   @Get(':paymentId')
+  @RequirePermissions('payments.read')
   @ApiOperation({
     summary: 'Get payment by ID',
     description: 'Get payment details by ID including relations (Admin)',
@@ -65,6 +72,7 @@ export class PaymentsAdminController {
   }
 
   @Get(':paymentId/transactions')
+  @RequirePermissions('payments.transactions.read')
   @ApiOperation({
     summary: 'Get payment transactions',
     description: 'Get all transactions for a payment (Admin)',
@@ -83,6 +91,7 @@ export class PaymentsAdminController {
   }
 
   @Get(':paymentId/callbacks')
+  @RequirePermissions('payments.transactions.read')
   @ApiOperation({
     summary: 'Get payment callbacks',
     description: 'Get all callbacks for a payment (Admin)',
@@ -101,6 +110,7 @@ export class PaymentsAdminController {
   }
 
   @Patch(':paymentId/status')
+  @RequirePermissions('payments.update')
   @ApiOperation({
     summary: 'Update payment status',
     description: 'Update the status of a payment (Admin)',

@@ -334,9 +334,15 @@ export class DocumentsService {
   }
 
   /**
-   * Hard delete a document and its file from storage (admin only)
+   * Hard delete a document and its file from storage (admin only).
+   *
+   * Audit-emit BEFORE the delete so the trail captures the document's
+   * original metadata (name, type, storage key, applicant) — once the
+   * row is gone, the audit log is the only record that the file ever
+   * existed. `actorUserId` is forwarded from the controller's
+   * @CurrentUser so we know who pulled the trigger.
    */
-  async hardDelete(documentId: string): Promise<void> {
+  async hardDelete(documentId: string, actorUserId?: string): Promise<void> {
     const document = await this.prisma.document.findFirst({
       where: { id: documentId },
     });
@@ -348,6 +354,26 @@ export class DocumentsService {
     }
 
     const storageKey = this.getStorageKey(document);
+
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'document.hard_delete',
+        'Document',
+        documentId,
+        {
+          documentId: document.id,
+          originalFileName: document.originalFileName,
+          documentTypeKey: document.documentTypeKey,
+          mimeType: document.mimeType,
+          fileSize: document.fileSize,
+          applicationApplicantId: document.applicationApplicantId,
+          storageKey,
+          reviewStatus: document.reviewStatus,
+        },
+        undefined,
+      );
+    }
 
     try {
       await this.storageService.delete(storageKey);

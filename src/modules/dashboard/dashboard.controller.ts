@@ -2,6 +2,7 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { DashboardSummaryDto, DashboardChartsDto } from './dto';
+import { RequirePermissions } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
 
 @ApiTags('Dashboard')
@@ -12,6 +13,7 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('summary')
+  @RequirePermissions('dashboard.read')
   @ApiOperation({
     summary: 'Get dashboard summary',
     description: 'Get summary statistics for the admin dashboard',
@@ -26,6 +28,7 @@ export class DashboardController {
   }
 
   @Get('charts')
+  @RequirePermissions('dashboard.read')
   @ApiOperation({
     summary: 'Get dashboard charts data',
     description: 'Get data for dashboard charts',
