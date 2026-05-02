@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import {
   CreateRoleDto,
   UpdateRoleDto,
@@ -9,28 +10,35 @@ import {
 } from './dto';
 import { NotFoundException, ConflictException, ForbiddenException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
+import { isSystemRole } from '../accessControl/system-protection.constants';
 
+/**
+ * Module 6 — Roles service.
+ *
+ * System protection (Modul 6 D2 — all sharp):
+ *   • System roles (superAdmin / admin / operator) cannot be deleted —
+ *     existing rule, kept.
+ *   • System role `key` cannot be renamed — runtime references to
+ *     `superAdmin` etc. would silently break (PermissionsGuard,
+ *     `isSuperAdminRole`, audit filters all key on the literal string).
+ *   • POST endpoint forces `isSystem=false` — admins cannot mint new
+ *     "system" roles via the API; system flag is only set by the seed.
+ */
 @Injectable()
 export class RolesService {
   private readonly logger = new Logger(RolesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogsService: AuditLogsService,
+  ) {}
 
-  /**
-   * Get paginated list of roles
-   */
   async findAll(query: GetRolesQueryDto): Promise<RoleListResponseDto> {
-    const { page = 1, limit = 10, search, sortBy = 'createdAt', sortOrder = 'desc' } = query;
+    const { page = 1, limit = 50, search, sortBy = 'name', sortOrder = 'asc' } = query;
     const skip = (page - 1) * limit;
 
-    const where: any = {
-      deletedAt: null,
-    };
-
-    if (query.isSystem !== undefined) {
-      where.isSystem = query.isSystem;
-    }
-
+    const where: any = { deletedAt: null };
+    if (query.isSystem !== undefined) where.isSystem = query.isSystem;
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -42,9 +50,7 @@ export class RolesService {
       this.prisma.role.findMany({
         where,
         include: {
-          _count: {
-            select: { users: { where: { deletedAt: null } } },
-          },
+          _count: { select: { users: { where: { deletedAt: null } } } },
         },
         skip,
         take: limit,
@@ -53,28 +59,15 @@ export class RolesService {
       this.prisma.role.count({ where }),
     ]);
 
-    const items = roles.map(role => this.mapToResponse(role));
+    const items = roles.map((role) => this.mapToResponse(role));
 
-    return {
-      items,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  /**
-   * Get role by ID
-   */
   async findById(id: string): Promise<RoleResponseDto> {
     const role = await this.prisma.role.findFirst({
       where: { id, deletedAt: null },
-      include: {
-        _count: {
-          select: { users: { where: { deletedAt: null } } },
-        },
-      },
+      include: { _count: { select: { users: { where: { deletedAt: null } } } } },
     });
 
     if (!role) {
@@ -87,36 +80,21 @@ export class RolesService {
   }
 
   /**
-   * Create new role
+   * Create new role. `isSystem` from the DTO is ignored — admin cannot
+   * mint system roles via the API; that flag is reserved for the seed.
    */
-  async create(dto: CreateRoleDto): Promise<RoleResponseDto> {
-    // Check if key already exists
-    const existingByKey = await this.prisma.role.findFirst({
-      where: { key: dto.key },
-    });
-
+  async create(dto: CreateRoleDto, actorUserId?: string): Promise<RoleResponseDto> {
+    const existingByKey = await this.prisma.role.findFirst({ where: { key: dto.key } });
     if (existingByKey) {
       throw new ConflictException('Role key already exists', [
-        {
-          field: 'key',
-          reason: ErrorCodes.CONFLICT,
-          message: 'A role with this key already exists',
-        },
+        { field: 'key', reason: ErrorCodes.CONFLICT, message: 'A role with this key already exists' },
       ]);
     }
 
-    // Check if name already exists
-    const existingByName = await this.prisma.role.findFirst({
-      where: { name: dto.name },
-    });
-
+    const existingByName = await this.prisma.role.findFirst({ where: { name: dto.name } });
     if (existingByName) {
       throw new ConflictException('Role name already exists', [
-        {
-          field: 'name',
-          reason: ErrorCodes.CONFLICT,
-          message: 'A role with this name already exists',
-        },
+        { field: 'name', reason: ErrorCodes.CONFLICT, message: 'A role with this name already exists' },
       ]);
     }
 
@@ -125,26 +103,34 @@ export class RolesService {
         name: dto.name,
         key: dto.key,
         description: dto.description,
-        isSystem: dto.isSystem ?? false,
+        // Admin cannot mint system roles via the API — only the seed sets it.
+        isSystem: false,
       },
-      include: {
-        _count: {
-          select: { users: { where: { deletedAt: null } } },
-        },
-      },
+      include: { _count: { select: { users: { where: { deletedAt: null } } } } },
     });
+
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'role.create',
+        'Role',
+        role.id,
+        undefined,
+        { key: role.key, name: role.name, description: role.description, isSystem: role.isSystem },
+      );
+    }
 
     this.logger.log(`Role created: ${role.id} (${role.key})`);
     return this.mapToResponse(role);
   }
 
   /**
-   * Update role
+   * Update role. System role `key` rename is blocked (would silently
+   * break runtime references to `superAdmin` etc.). `name` and
+   * `description` stay editable on system roles.
    */
-  async update(id: string, dto: UpdateRoleDto): Promise<RoleResponseDto> {
-    const role = await this.prisma.role.findFirst({
-      where: { id, deletedAt: null },
-    });
+  async update(id: string, dto: UpdateRoleDto, actorUserId?: string): Promise<RoleResponseDto> {
+    const role = await this.prisma.role.findFirst({ where: { id, deletedAt: null } });
 
     if (!role) {
       throw new NotFoundException('Role not found', [
@@ -152,34 +138,31 @@ export class RolesService {
       ]);
     }
 
-    // Check key uniqueness if changing
+    // System role `key` rename guard.
+    if (dto.key !== undefined && dto.key !== role.key && isSystemRole(role.key)) {
+      throw new ConflictException('System role key is locked', [
+        {
+          field: 'key',
+          reason: ErrorCodes.CONFLICT,
+          message: `Role key "${role.key}" is referenced in code and cannot be renamed. You can still update the name and description.`,
+        },
+      ]);
+    }
+
     if (dto.key && dto.key !== role.key) {
-      const existingByKey = await this.prisma.role.findFirst({
-        where: { key: dto.key },
-      });
+      const existingByKey = await this.prisma.role.findFirst({ where: { key: dto.key } });
       if (existingByKey) {
         throw new ConflictException('Role key already exists', [
-          {
-            field: 'key',
-            reason: ErrorCodes.CONFLICT,
-            message: 'A role with this key already exists',
-          },
+          { field: 'key', reason: ErrorCodes.CONFLICT, message: 'A role with this key already exists' },
         ]);
       }
     }
 
-    // Check name uniqueness if changing
     if (dto.name && dto.name !== role.name) {
-      const existingByName = await this.prisma.role.findFirst({
-        where: { name: dto.name },
-      });
+      const existingByName = await this.prisma.role.findFirst({ where: { name: dto.name } });
       if (existingByName) {
         throw new ConflictException('Role name already exists', [
-          {
-            field: 'name',
-            reason: ErrorCodes.CONFLICT,
-            message: 'A role with this name already exists',
-          },
+          { field: 'name', reason: ErrorCodes.CONFLICT, message: 'A role with this name already exists' },
         ]);
       }
     }
@@ -192,28 +175,32 @@ export class RolesService {
     const updatedRole = await this.prisma.role.update({
       where: { id },
       data: updateData,
-      include: {
-        _count: {
-          select: { users: { where: { deletedAt: null } } },
-        },
-      },
+      include: { _count: { select: { users: { where: { deletedAt: null } } } } },
     });
+
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'role.update',
+        'Role',
+        id,
+        { key: role.key, name: role.name, description: role.description },
+        { key: updatedRole.key, name: updatedRole.name, description: updatedRole.description },
+      );
+    }
 
     this.logger.log(`Role updated: ${id}`);
     return this.mapToResponse(updatedRole);
   }
 
   /**
-   * Soft delete role
+   * Soft delete role. System roles + roles with active users are
+   * blocked (existing logic, now with audit logging).
    */
-  async delete(id: string): Promise<void> {
+  async delete(id: string, actorUserId?: string): Promise<void> {
     const role = await this.prisma.role.findFirst({
       where: { id, deletedAt: null },
-      include: {
-        _count: {
-          select: { users: { where: { deletedAt: null } } },
-        },
-      },
+      include: { _count: { select: { users: { where: { deletedAt: null } } } } },
     });
 
     if (!role) {
@@ -222,14 +209,12 @@ export class RolesService {
       ]);
     }
 
-    // Prevent deletion of system roles
     if (role.isSystem) {
       throw new ForbiddenException('Cannot delete system role', [
         { reason: ErrorCodes.FORBIDDEN, message: 'System roles cannot be deleted' },
       ]);
     }
 
-    // Prevent deletion if role has active users
     if (role._count.users > 0) {
       throw new ConflictException('Role has active users', [
         {
@@ -244,12 +229,20 @@ export class RolesService {
       data: { deletedAt: new Date() },
     });
 
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'role.delete',
+        'Role',
+        id,
+        { key: role.key, name: role.name, description: role.description, isSystem: role.isSystem },
+        undefined,
+      );
+    }
+
     this.logger.log(`Role soft deleted: ${id}`);
   }
 
-  /**
-   * Map role entity to response DTO
-   */
   private mapToResponse(role: any): RoleResponseDto {
     return {
       id: role.id,

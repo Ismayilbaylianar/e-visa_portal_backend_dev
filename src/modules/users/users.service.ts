@@ -13,7 +13,22 @@ import {
 } from './dto';
 import { NotFoundException, ConflictException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
+import { isSuperAdminRole } from '../accessControl/system-protection.constants';
 
+/**
+ * Module 6 — Admin Users service.
+ *
+ * Audit action keys are lowercase.dot to match the convention adopted
+ * across Modules 1–5 (`country.update`, `visaType.create`, etc.). The
+ * earlier UPPERCASE_SNAKE keys (`USER_CREATED`) were inconsistent and
+ * broke audit log filters that group by `user.*`.
+ *
+ * System protection (Modul 6 D2 — all sharp):
+ *   • Super admin user cannot be deleted, deactivated, or have its
+ *     role changed (would break god-mode).
+ *   • Self-modify is blocked for delete + status changes (lock-out
+ *     prevention; admin can still PATCH their own profile fields).
+ */
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -28,24 +43,15 @@ export class UsersService {
   }
 
   /**
-   * Get paginated list of users
+   * Get paginated list of users.
    */
   async findAll(query: GetUsersQueryDto): Promise<UserListResponseDto> {
-    const { page = 1, limit = 10, search, sortBy = 'createdAt', sortOrder = 'desc' } = query;
+    const { page = 1, limit = 50, search, sortBy = 'createdAt', sortOrder = 'desc' } = query;
     const skip = (page - 1) * limit;
 
-    const where: any = {
-      deletedAt: null,
-    };
-
-    if (query.roleId) {
-      where.roleId = query.roleId;
-    }
-
-    if (query.isActive !== undefined) {
-      where.isActive = query.isActive;
-    }
-
+    const where: any = { deletedAt: null };
+    if (query.roleId) where.roleId = query.roleId;
+    if (query.isActive !== undefined) where.isActive = query.isActive;
     if (search) {
       where.OR = [
         { fullName: { contains: search, mode: 'insensitive' } },
@@ -64,19 +70,13 @@ export class UsersService {
       this.prisma.user.count({ where }),
     ]);
 
-    const items = users.map(user => this.mapToResponse(user));
+    const items = users.map((user) => this.mapToResponse(user));
 
-    return {
-      items,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   /**
-   * Get user by ID
+   * Get user by ID.
    */
   async findById(id: string): Promise<UserResponseDto> {
     const user = await this.prisma.user.findFirst({
@@ -94,10 +94,9 @@ export class UsersService {
   }
 
   /**
-   * Create new user
+   * Create new user.
    */
-  async create(dto: CreateUserDto): Promise<UserResponseDto> {
-    // Check if email already exists
+  async create(dto: CreateUserDto, actorUserId?: string): Promise<UserResponseDto> {
     const existingUser = await this.prisma.user.findFirst({
       where: { email: dto.email.toLowerCase() },
     });
@@ -112,7 +111,6 @@ export class UsersService {
       ]);
     }
 
-    // Verify role exists if provided
     if (dto.roleId) {
       const role = await this.prisma.role.findFirst({
         where: { id: dto.roleId, deletedAt: null },
@@ -128,7 +126,6 @@ export class UsersService {
       }
     }
 
-    // Hash password
     const passwordHash = await bcrypt.hash(dto.password, this.bcryptSaltRounds);
 
     const user = await this.prisma.user.create({
@@ -142,25 +139,38 @@ export class UsersService {
       include: { role: true },
     });
 
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'user.create',
+        'User',
+        user.id,
+        undefined,
+        {
+          email: user.email,
+          fullName: user.fullName,
+          roleId: user.roleId,
+          roleKey: user.role?.key,
+          isActive: user.isActive,
+        },
+      );
+    }
+
     this.logger.log(`User created: ${user.id} (${user.email})`);
-
-    // Audit log
-    await this.auditLogsService.logSystemAction('USER_CREATED', 'User', user.id, undefined, {
-      id: user.id,
-      email: user.email,
-      fullName: user.fullName,
-      roleId: user.roleId,
-    });
-
     return this.mapToResponse(user);
   }
 
   /**
-   * Update user
+   * Update user.
+   *
+   * Super admin protection: blocks role change on a super admin account
+   * — would silently demote god-mode and could lock the org out of the
+   * UAM screens entirely.
    */
   async update(id: string, dto: UpdateUserDto, actorUserId?: string): Promise<UserResponseDto> {
     const user = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
+      include: { role: true },
     });
 
     if (!user) {
@@ -169,7 +179,23 @@ export class UsersService {
       ]);
     }
 
-    // Check email uniqueness if changing
+    // Super admin role change guard — admin cannot demote a super admin
+    // to operator and lock the org out of UAM controls.
+    if (
+      dto.roleId !== undefined &&
+      dto.roleId !== user.roleId &&
+      isSuperAdminRole(user.role?.key)
+    ) {
+      throw new ConflictException('Super admin role cannot be changed', [
+        {
+          field: 'roleId',
+          reason: ErrorCodes.CONFLICT,
+          message:
+            'The super admin user role is locked. Demoting it would lock the org out of access management.',
+        },
+      ]);
+    }
+
     if (dto.email && dto.email.toLowerCase() !== user.email) {
       const existingUser = await this.prisma.user.findFirst({
         where: { email: dto.email.toLowerCase() },
@@ -185,7 +211,6 @@ export class UsersService {
       }
     }
 
-    // Verify role exists if provided
     if (dto.roleId) {
       const role = await this.prisma.role.findFirst({
         where: { id: dto.roleId, deletedAt: null },
@@ -212,25 +237,32 @@ export class UsersService {
       include: { role: true },
     });
 
-    this.logger.log(`User updated: ${id}`);
-
-    // Audit log
     if (actorUserId) {
       await this.auditLogsService.logAdminAction(
         actorUserId,
-        'USER_UPDATED',
+        'user.update',
         'User',
         id,
-        { email: user.email, fullName: user.fullName, roleId: user.roleId },
-        { email: updatedUser.email, fullName: updatedUser.fullName, roleId: updatedUser.roleId },
+        { email: user.email, fullName: user.fullName, roleId: user.roleId, roleKey: user.role?.key },
+        {
+          email: updatedUser.email,
+          fullName: updatedUser.fullName,
+          roleId: updatedUser.roleId,
+          roleKey: updatedUser.role?.key,
+        },
       );
     }
 
+    this.logger.log(`User updated: ${id}`);
     return this.mapToResponse(updatedUser);
   }
 
   /**
-   * Update user status
+   * Update user status (active / inactive).
+   *
+   * Blocks:
+   *   • Deactivating the super admin (god-mode loss).
+   *   • Self-deactivation (admin can't lock themselves out).
    */
   async updateStatus(
     id: string,
@@ -239,11 +271,38 @@ export class UsersService {
   ): Promise<UserResponseDto> {
     const user = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
+      include: { role: true },
     });
 
     if (!user) {
       throw new NotFoundException('User not found', [
         { reason: ErrorCodes.USER_NOT_FOUND, message: 'User does not exist or has been deleted' },
+      ]);
+    }
+
+    // Self-deactivation guard — but allow self-activation (no harm in
+    // re-enabling yourself, and the admin would already be locked out
+    // if they were inactive in the first place).
+    if (dto.isActive === false && actorUserId === id) {
+      throw new ConflictException('Cannot deactivate your own account', [
+        {
+          field: 'id',
+          reason: ErrorCodes.CONFLICT,
+          message:
+            'You cannot deactivate your own account. Ask another administrator to perform this action.',
+        },
+      ]);
+    }
+
+    // Super admin deactivation guard.
+    if (dto.isActive === false && isSuperAdminRole(user.role?.key)) {
+      throw new ConflictException('Cannot deactivate super admin', [
+        {
+          field: 'id',
+          reason: ErrorCodes.CONFLICT,
+          message:
+            'The super admin user is protected from deactivation. Deactivating it would lock the org out of access management.',
+        },
       ]);
     }
 
@@ -253,7 +312,6 @@ export class UsersService {
       include: { role: true },
     });
 
-    // If deactivating, revoke all sessions
     if (!dto.isActive) {
       await this.prisma.session.updateMany({
         where: { userId: id, revokedAt: null },
@@ -262,13 +320,10 @@ export class UsersService {
       this.logger.log(`All sessions revoked for deactivated user: ${id}`);
     }
 
-    this.logger.log(`User status updated: ${id} -> isActive: ${dto.isActive}`);
-
-    // Audit log
     if (actorUserId) {
       await this.auditLogsService.logAdminAction(
         actorUserId,
-        'USER_STATUS_CHANGED',
+        'user.status.change',
         'User',
         id,
         { isActive: user.isActive },
@@ -276,15 +331,21 @@ export class UsersService {
       );
     }
 
+    this.logger.log(`User status updated: ${id} -> isActive: ${dto.isActive}`);
     return this.mapToResponse(updatedUser);
   }
 
   /**
-   * Soft delete user
+   * Soft delete user.
+   *
+   * Blocks:
+   *   • Deleting the super admin user.
+   *   • Self-deletion (lock-out prevention).
    */
   async delete(id: string, actorUserId?: string): Promise<void> {
     const user = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
+      include: { role: true },
     });
 
     if (!user) {
@@ -293,7 +354,28 @@ export class UsersService {
       ]);
     }
 
-    // Soft delete user and revoke all sessions
+    if (actorUserId === id) {
+      throw new ConflictException('Cannot delete your own account', [
+        {
+          field: 'id',
+          reason: ErrorCodes.CONFLICT,
+          message:
+            'You cannot delete your own account. Ask another administrator to perform this action.',
+        },
+      ]);
+    }
+
+    if (isSuperAdminRole(user.role?.key)) {
+      throw new ConflictException('Cannot delete super admin', [
+        {
+          field: 'id',
+          reason: ErrorCodes.CONFLICT,
+          message:
+            'The super admin user is protected from deletion. Deleting it would lock the org out of access management.',
+        },
+      ]);
+    }
+
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id },
@@ -305,23 +387,29 @@ export class UsersService {
       }),
     ]);
 
-    this.logger.log(`User soft deleted: ${id}`);
-
-    // Audit log
     if (actorUserId) {
       await this.auditLogsService.logAdminAction(
         actorUserId,
-        'USER_DELETED',
+        'user.delete',
         'User',
         id,
-        { id: user.id, email: user.email, fullName: user.fullName },
+        {
+          email: user.email,
+          fullName: user.fullName,
+          roleId: user.roleId,
+          roleKey: user.role?.key,
+        },
         undefined,
       );
     }
+
+    this.logger.log(`User soft deleted: ${id}`);
   }
 
   /**
-   * Map user entity to response DTO (excludes passwordHash)
+   * Map user entity to response DTO (excludes passwordHash). Surfaces
+   * `roleName` so the admin UI doesn't need a second fetch to render
+   * the role badge label.
    */
   private mapToResponse(user: any): UserResponseDto {
     return {
@@ -330,6 +418,8 @@ export class UsersService {
       email: user.email,
       roleId: user.roleId || undefined,
       roleKey: user.role?.key,
+      roleName: user.role?.name,
+      isSuperAdmin: isSuperAdminRole(user.role?.key),
       isActive: user.isActive,
       lastLoginAt: user.lastLoginAt || undefined,
       createdAt: user.createdAt,

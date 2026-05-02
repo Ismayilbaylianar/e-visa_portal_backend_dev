@@ -25,6 +25,17 @@ import { RequirePermissions, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
 import { AuthenticatedUser } from '@/common/types';
 
+/**
+ * Module 6 — Admin Users.
+ *
+ * System protection:
+ *   • Super admin user (role.key = 'superAdmin') cannot be deleted,
+ *     deactivated, or have its role changed.
+ *   • Self-modify is blocked for delete + status (lock-out prevention).
+ *
+ * Class-level @UseGuards(JwtAuthGuard) keeps JwtAuthGuard before
+ * PermissionsGuard in the resolved chain (Modul 1+ lesson).
+ */
 @ApiTags('Users')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
@@ -38,31 +49,17 @@ export class UsersController {
     summary: 'Get all users',
     description: 'Get paginated list of users with optional filters',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'List of users',
-    type: UserListResponseDto,
-  })
+  @ApiResponse({ status: 200, description: 'List of users', type: UserListResponseDto })
   async findAll(@Query() query: GetUsersQueryDto): Promise<UserListResponseDto> {
     return this.usersService.findAll(query);
   }
 
   @Get(':userId')
   @RequirePermissions('users.read')
-  @ApiOperation({
-    summary: 'Get user by ID',
-    description: 'Get user details by ID',
-  })
+  @ApiOperation({ summary: 'Get user by ID' })
   @ApiParam({ name: 'userId', description: 'User ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'User details',
-    type: UserResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'User not found',
-  })
+  @ApiResponse({ status: 200, type: UserResponseDto })
+  @ApiResponse({ status: 404, description: 'User not found' })
   async findById(@Param('userId') userId: string): Promise<UserResponseDto> {
     return this.usersService.findById(userId);
   }
@@ -70,43 +67,23 @@ export class UsersController {
   @Post()
   @RequirePermissions('users.create')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({
-    summary: 'Create user',
-    description: 'Create a new admin user',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'User created successfully',
-    type: UserResponseDto,
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Email already in use',
-  })
-  async create(@Body() dto: CreateUserDto): Promise<UserResponseDto> {
-    return this.usersService.create(dto);
+  @ApiOperation({ summary: 'Create user', description: 'Create a new admin user' })
+  @ApiResponse({ status: 201, type: UserResponseDto })
+  @ApiResponse({ status: 409, description: 'Email already in use' })
+  async create(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<UserResponseDto> {
+    return this.usersService.create(dto, currentUser.id);
   }
 
   @Patch(':userId')
   @RequirePermissions('users.update')
-  @ApiOperation({
-    summary: 'Update user',
-    description: 'Update user details',
-  })
+  @ApiOperation({ summary: 'Update user' })
   @ApiParam({ name: 'userId', description: 'User ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'User updated successfully',
-    type: UserResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'User not found',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Email already in use',
-  })
+  @ApiResponse({ status: 200, type: UserResponseDto })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 409, description: 'Email already in use, or super-admin role change attempt' })
   async update(
     @Param('userId') userId: string,
     @Body() dto: UpdateUserDto,
@@ -119,18 +96,13 @@ export class UsersController {
   @RequirePermissions('users.update')
   @ApiOperation({
     summary: 'Update user status',
-    description: 'Activate or deactivate a user. Deactivating revokes all sessions.',
+    description:
+      'Activate or deactivate a user. Deactivating revokes all sessions. Super admin cannot be deactivated; self-deactivation is blocked.',
   })
   @ApiParam({ name: 'userId', description: 'User ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'User status updated successfully',
-    type: UserResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'User not found',
-  })
+  @ApiResponse({ status: 200, type: UserResponseDto })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 409, description: 'Super admin / self deactivation blocked' })
   async updateStatus(
     @Param('userId') userId: string,
     @Body() dto: UpdateUserStatusDto,
@@ -144,17 +116,13 @@ export class UsersController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete user',
-    description: 'Soft delete a user. Also revokes all sessions.',
+    description:
+      'Soft delete a user. Also revokes all sessions. Super admin cannot be deleted; self-delete is blocked.',
   })
   @ApiParam({ name: 'userId', description: 'User ID' })
-  @ApiResponse({
-    status: 204,
-    description: 'User deleted successfully',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'User not found',
-  })
+  @ApiResponse({ status: 204, description: 'User deleted successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 409, description: 'Super admin / self delete blocked' })
   async delete(
     @Param('userId') userId: string,
     @CurrentUser() currentUser: AuthenticatedUser,

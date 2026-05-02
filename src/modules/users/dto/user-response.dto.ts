@@ -13,19 +13,29 @@ export class UserResponseDto {
   @ApiPropertyOptional({ description: 'Role ID', example: 'role_3' })
   roleId?: string;
 
-  @ApiPropertyOptional({ description: 'Role key', example: 'operator' })
+  @ApiPropertyOptional({ description: 'Role key (machine identifier)', example: 'operator' })
   roleKey?: string;
+
+  @ApiPropertyOptional({ description: 'Role display name', example: 'Operator' })
+  roleName?: string;
+
+  @ApiProperty({
+    description:
+      'True when the user role is the super-admin role. Frontend uses this to disable Delete and Status toggle controls in the admin UI without re-deriving the rule.',
+    example: false,
+  })
+  isSuperAdmin: boolean;
 
   @ApiProperty({ description: 'Whether user is active', example: true })
   isActive: boolean;
 
-  @ApiPropertyOptional({ description: 'Last login timestamp', example: '2026-03-31T10:00:00Z' })
+  @ApiPropertyOptional({ description: 'Last login timestamp' })
   lastLoginAt?: Date;
 
-  @ApiProperty({ description: 'Creation timestamp', example: '2026-03-31T10:00:00Z' })
+  @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
 
-  @ApiProperty({ description: 'Last update timestamp', example: '2026-03-31T10:00:00Z' })
+  @ApiProperty({ description: 'Last update timestamp' })
   updatedAt: Date;
 }
 
@@ -39,7 +49,7 @@ export class UserListResponseDto {
   @ApiProperty({ description: 'Current page', example: 1 })
   page: number;
 
-  @ApiProperty({ description: 'Items per page', example: 10 })
+  @ApiProperty({ description: 'Items per page', example: 50 })
   limit: number;
 
   @ApiProperty({ description: 'Total pages', example: 1 })

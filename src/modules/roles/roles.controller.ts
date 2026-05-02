@@ -20,8 +20,9 @@ import {
   RoleListResponseDto,
   GetRolesQueryDto,
 } from './dto';
-import { RequirePermissions } from '@/common/decorators';
+import { RequirePermissions, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
+import { AuthenticatedUser } from '@/common/types';
 
 @ApiTags('Roles')
 @ApiBearerAuth('JWT-auth')
@@ -32,35 +33,18 @@ export class RolesController {
 
   @Get()
   @RequirePermissions('roles.read')
-  @ApiOperation({
-    summary: 'Get all roles',
-    description: 'Get paginated list of roles with optional filters',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of roles',
-    type: RoleListResponseDto,
-  })
+  @ApiOperation({ summary: 'Get all roles' })
+  @ApiResponse({ status: 200, type: RoleListResponseDto })
   async findAll(@Query() query: GetRolesQueryDto): Promise<RoleListResponseDto> {
     return this.rolesService.findAll(query);
   }
 
   @Get(':roleId')
   @RequirePermissions('roles.read')
-  @ApiOperation({
-    summary: 'Get role by ID',
-    description: 'Get role details by ID',
-  })
+  @ApiOperation({ summary: 'Get role by ID' })
   @ApiParam({ name: 'roleId', description: 'Role ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Role details',
-    type: RoleResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Role not found',
-  })
+  @ApiResponse({ status: 200, type: RoleResponseDto })
+  @ApiResponse({ status: 404, description: 'Role not found' })
   async findById(@Param('roleId') roleId: string): Promise<RoleResponseDto> {
     return this.rolesService.findById(roleId);
   }
@@ -70,46 +54,35 @@ export class RolesController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create role',
-    description: 'Create a new role',
+    description:
+      'Create a new role. `isSystem` is forced to false on this endpoint — system roles can only be seeded via prisma/seed.ts.',
   })
-  @ApiResponse({
-    status: 201,
-    description: 'Role created successfully',
-    type: RoleResponseDto,
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Role key or name already exists',
-  })
-  async create(@Body() dto: CreateRoleDto): Promise<RoleResponseDto> {
-    return this.rolesService.create(dto);
+  @ApiResponse({ status: 201, type: RoleResponseDto })
+  @ApiResponse({ status: 409, description: 'Role key or name already exists' })
+  async create(
+    @Body() dto: CreateRoleDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<RoleResponseDto> {
+    return this.rolesService.create(dto, currentUser.id);
   }
 
   @Patch(':roleId')
   @RequirePermissions('roles.update')
   @ApiOperation({
     summary: 'Update role',
-    description: 'Update role details',
+    description:
+      'Update role details. System roles (superAdmin / admin / operator) cannot be renamed — their `key` is referenced in code at runtime, but `name` and `description` stay editable.',
   })
   @ApiParam({ name: 'roleId', description: 'Role ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Role updated successfully',
-    type: RoleResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Role not found',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Role key or name already exists',
-  })
+  @ApiResponse({ status: 200, type: RoleResponseDto })
+  @ApiResponse({ status: 404, description: 'Role not found' })
+  @ApiResponse({ status: 409, description: 'Key conflict, or system role rename attempt' })
   async update(
     @Param('roleId') roleId: string,
     @Body() dto: UpdateRoleDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<RoleResponseDto> {
-    return this.rolesService.update(roleId, dto);
+    return this.rolesService.update(roleId, dto, currentUser.id);
   }
 
   @Delete(':roleId')
@@ -120,23 +93,14 @@ export class RolesController {
     description: 'Soft delete a role. Cannot delete system roles or roles with active users.',
   })
   @ApiParam({ name: 'roleId', description: 'Role ID' })
-  @ApiResponse({
-    status: 204,
-    description: 'Role deleted successfully',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Cannot delete system role',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Role not found',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Role has active users',
-  })
-  async delete(@Param('roleId') roleId: string): Promise<void> {
-    return this.rolesService.delete(roleId);
+  @ApiResponse({ status: 204, description: 'Role deleted successfully' })
+  @ApiResponse({ status: 403, description: 'Cannot delete system role' })
+  @ApiResponse({ status: 404, description: 'Role not found' })
+  @ApiResponse({ status: 409, description: 'Role has active users' })
+  async delete(
+    @Param('roleId') roleId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<void> {
+    return this.rolesService.delete(roleId, currentUser.id);
   }
 }
