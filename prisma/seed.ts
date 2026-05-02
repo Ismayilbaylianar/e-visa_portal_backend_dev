@@ -410,32 +410,46 @@ async function main() {
   }
   console.log(`  ✅ ${createdCountries} new, ${updatedCountries} updated`);
 
-  // B. Country Pages — publishable marketing pages for the 3 demo countries.
-  // Optional per country; only the destinations we actively offer get a page.
-  // Idempotent: upsert by countryId (unique).
+  // B. Country Pages — publishable marketing pages.
+  //
+  // Sprint 1 / Task A demo set: 12 destinations actively offered through
+  // the public flow (TR / AE / EG / TH / GE / VN / LK / ID / IN / KH /
+  // MY / SG) + the legacy AZ page kept from the pre-Sprint 3 minimal
+  // seed (admin can unpublish if needed via the Module 1.5 admin UI;
+  // seed leaves admin-edited rows alone).
+  //
+  // `isDestination` / `isNationality` flags do NOT exist on the Country
+  // schema — destinations are derived at runtime from `country.page`
+  // existence (publishable + active), nationalities from the countries
+  // table directly. The 8 nationality-only countries listed in the
+  // Sprint 1 brief (RU / UA / KZ / UZ / IR / BY / TJ + AZ) get no page;
+  // they're already in the 250-row UN ISO reference seed and will show
+  // up automatically in the public nationality dropdown via
+  // /public/selection/options.
+  //
+  // Idempotent: upsert by countryId (unique). Re-runs are no-ops for
+  // unchanged rows; admin slug / SEO edits made via the admin UI WILL
+  // be overwritten on re-run because update payload is non-empty —
+  // acceptable for now since slug is derived from isoCode and SEO is
+  // boilerplate. If admin customization becomes important later, switch
+  // to `update: {}` like the email templates use.
   console.log('\n📄 Country pages (publishable marketing content):');
   const COUNTRY_PAGE_DATA = [
-    {
-      isoCode: 'TR',
-      slug: 'turkey',
-      isPublished: true,
-      seoTitle: 'Türkiye Visa',
-      seoDescription: 'Visa to Türkiye',
-    },
-    {
-      isoCode: 'AZ',
-      slug: 'azerbaijan',
-      isPublished: true,
-      seoTitle: 'Azerbaijan Visa',
-      seoDescription: 'Visa to Azerbaijan',
-    },
-    {
-      isoCode: 'AE',
-      slug: 'uae',
-      isPublished: true,
-      seoTitle: 'UAE Visa',
-      seoDescription: 'Visa to UAE',
-    },
+    // Existing pre-Sprint 3 minimal trio (kept for back-compat)
+    { isoCode: 'TR', slug: 'turkey',     isPublished: true, seoTitle: 'Türkiye Visa',     seoDescription: 'Apply for a Türkiye e-Visa online — fast processing, secure payment.' },
+    { isoCode: 'AZ', slug: 'azerbaijan', isPublished: true, seoTitle: 'Azerbaijan Visa',  seoDescription: 'Apply for an Azerbaijan e-Visa online.' },
+    { isoCode: 'AE', slug: 'uae',        isPublished: true, seoTitle: 'UAE Visa',         seoDescription: 'Apply for a United Arab Emirates e-Visa online.' },
+    // Sprint 1 / Task A — 9 new destination pages
+    { isoCode: 'EG', slug: 'egypt',      isPublished: true, seoTitle: 'Egypt e-Visa',     seoDescription: 'Apply for an Egypt e-Visa online — visit the pyramids, Nile, and Red Sea.' },
+    { isoCode: 'TH', slug: 'thailand',   isPublished: true, seoTitle: 'Thailand e-Visa',  seoDescription: 'Apply for a Thailand e-Visa online — beaches, temples, and Bangkok await.' },
+    { isoCode: 'GE', slug: 'georgia',    isPublished: true, seoTitle: 'Georgia e-Visa',   seoDescription: 'Apply for a Georgia e-Visa online — Caucasus mountains and ancient culture.' },
+    { isoCode: 'VN', slug: 'vietnam',    isPublished: true, seoTitle: 'Vietnam e-Visa',   seoDescription: 'Apply for a Vietnam e-Visa online — discover Halong Bay, Hanoi, and Ho Chi Minh City.' },
+    { isoCode: 'LK', slug: 'sri-lanka',  isPublished: true, seoTitle: 'Sri Lanka e-Visa', seoDescription: 'Apply for a Sri Lanka ETA online — beaches, tea country, and ancient temples.' },
+    { isoCode: 'ID', slug: 'indonesia',  isPublished: true, seoTitle: 'Indonesia e-Visa', seoDescription: 'Apply for an Indonesia e-Visa online — Bali, Java, and the archipelago.' },
+    { isoCode: 'IN', slug: 'india',      isPublished: true, seoTitle: 'India e-Visa',     seoDescription: 'Apply for an India e-Visa online — Taj Mahal, Goa beaches, and bustling cities.' },
+    { isoCode: 'KH', slug: 'cambodia',   isPublished: true, seoTitle: 'Cambodia e-Visa',  seoDescription: 'Apply for a Cambodia e-Visa online — Angkor Wat and the Khmer heritage.' },
+    { isoCode: 'MY', slug: 'malaysia',   isPublished: true, seoTitle: 'Malaysia e-Visa',  seoDescription: 'Apply for a Malaysia e-Visa online — Kuala Lumpur, Penang, and rainforests.' },
+    { isoCode: 'SG', slug: 'singapore',  isPublished: true, seoTitle: 'Singapore e-Visa', seoDescription: 'Apply for a Singapore e-Visa online — modern city-state with rich heritage.' },
   ];
   const countryPageIds: Record<string, string> = {};
   for (const p of COUNTRY_PAGE_DATA) {
@@ -465,48 +479,232 @@ async function main() {
     console.log(`  ✅ ${p.slug} (${p.isoCode})`);
   }
 
-  // C. CountrySections for the Türkiye page — findFirst by (countryPageId, title).
-  console.log('\n📑 Country sections (Türkiye page):');
-  const SECTION_DATA = [
-    {
-      title: 'Overview',
-      content:
-        'Türkiye is a transcontinental country bridging Europe and Asia, offering rich history, diverse landscapes, and vibrant culture.',
-      sortOrder: 0,
-    },
-    {
-      title: 'Requirements',
-      content:
-        'Valid passport with 6+ months validity, 2 recent passport photos, completed application form, proof of accommodation, and return ticket.',
-      sortOrder: 1,
-    },
-    {
-      title: 'FAQ',
-      content:
-        'Q: How long does processing take?\nA: Typically 3-5 business days.\n\nQ: Can I extend my visa?\nA: Extensions are possible at local immigration offices.',
-      sortOrder: 2,
-    },
-  ];
-  const trPageId = countryPageIds['TR'];
-  if (!trPageId) {
-    console.log('  ❌ TR country page not found, skipping sections');
-  } else {
-    for (const s of SECTION_DATA) {
+  // C. Country sections — 4 sections × 5 destinations (TR / AE / EG / TH / GE).
+  //
+  // Real bilingual (Az + En) content. Insert-if-missing only — admins
+  // typically tweak section copy after launch (typos, regulatory
+  // updates, FAQ additions) and we must not blow that work away on
+  // re-seed. Lookup key is (countryPageId, title) since the schema
+  // doesn't carry a slug/key on sections.
+  console.log('\n📑 Country sections (4 per destination × 5 destinations):');
+
+  // Section content per destination. Each entry yields 4 sections in
+  // sortOrder 0..3: Overview, Requirements, Processing Time, FAQ.
+  // Content is pre-written production copy (not Lorem) — Az headline +
+  // English body. Real-world facts: passport validity rules, processing
+  // SLAs, fees-not-refundable disclosures, common FAQ.
+  const COUNTRY_SECTIONS_BY_ISO: Record<string, Array<{ title: string; content: string; sortOrder: number }>> = {
+    TR: [
+      {
+        sortOrder: 0,
+        title: 'Türkiye e-Visa — Overview',
+        content:
+          'Türkiyə Respublikasına səfər üçün rəsmi e-Visa proqramı 100+ ölkənin vətəndaşları üçün açıqdır. Müraciət tamamilə onlayndır, embassy ziyarəti tələb olunmur.\n\n' +
+          'Türkiye operates one of the most accessible e-Visa programs in the world. Eligible nationals can apply 100% online, with no embassy visit required. The visa is electronically linked to the passport — print the confirmation and present it with your passport at the port of entry.\n\n' +
+          'Validity: typically 180 days from the issue date with stays up to 30 or 90 days depending on nationality. Single-entry tourism visas are most common; business and multi-entry options also available.',
+      },
+      {
+        sortOrder: 1,
+        title: 'Requirements / Tələblər',
+        content:
+          'Tələb olunan sənədlər:\n• Pasport: müraciət tarixindən ən az 6 ay etibarlı olmalıdır\n• Rəqəmsal pasport şəkli (JPG/PNG, açıq fonda)\n• E-mail ünvanı (təsdiq və e-Visa qəbz üçün)\n• Ödəniş kartı (Visa / Mastercard)\n\n' +
+          'Required documents:\n• Passport valid for at least 6 months from the date of application\n• Digital passport-style photo (JPG/PNG, light background)\n• Active email address (for confirmation + e-Visa receipt)\n• Payment card (Visa / Mastercard)\n\n' +
+          'Optional but recommended: hotel reservation, return ticket, proof of sufficient funds.',
+      },
+      {
+        sortOrder: 2,
+        title: 'Processing Time / Emal müddəti',
+        content:
+          'Standart emal müddəti 1-3 iş günüdür. Əksər müraciətlər 24 saat ərzində təsdiqlənir. Səfər tarixindən ən az 5 iş günü əvvəl müraciət etməyiniz tövsiyə olunur.\n\n' +
+          'Standard processing: 1–3 business days. Most applications are approved within 24 hours. We recommend applying at least 5 business days before your travel date to allow for unexpected document verification.\n\n' +
+          'Expedited processing (where supported by the destination) accelerates review to within 4 hours during business hours, with an additional fee.',
+      },
+      {
+        sortOrder: 3,
+        title: 'FAQ / Tez-tez verilən suallar',
+        content:
+          'S: e-Visa neçə dəfə daxil olmaq icazəsi verir?\nC: Tək giriş (single-entry) və çoxsaylı giriş (multiple-entry) variantları vardır. Standard tourism visa adətən tək girişdir.\n\n' +
+          'S: Pasport müddəti yenilənibsə nə etməliyəm?\nC: e-Visa müraciət zamanı qeydiyyatdan keçirilmiş pasporta bağlanır. Yeni pasport çıxarılarsa, yenidən müraciət lazımdır.\n\n' +
+          'Q: Can I extend my e-Visa once in the country?\nA: Extensions are possible through the local immigration office before the validity expires. The e-Visa itself cannot be re-issued online.\n\n' +
+          'Q: What if my application is rejected?\nA: Application fees are non-refundable, but you may re-apply with corrected documentation. Common rejection reasons: insufficient passport validity, mismatched photo, incomplete travel details.',
+      },
+    ],
+    AE: [
+      {
+        sortOrder: 0,
+        title: 'United Arab Emirates e-Visa — Overview',
+        content:
+          'Birləşmiş Ərəb Əmirliklərinə səfər üçün e-Visa Dubay, Abu Dabi və digər emiratlara giriş icazəsi verir. Müraciət onlayn aparılır.\n\n' +
+          'The UAE e-Visa grants entry to all seven emirates including Dubai, Abu Dhabi, and Sharjah. The application is fully online and the visa is electronically linked to your passport.\n\n' +
+          'Most tourist visas are valid for 60 days from issue and allow stays of 30 days. Multi-entry options exist for business travelers and frequent visitors.',
+      },
+      {
+        sortOrder: 1,
+        title: 'Requirements / Tələblər',
+        content:
+          'Tələb olunan sənədlər:\n• Pasport: ən az 6 ay etibarlı\n• Rəqəmsal pasport şəkli (45×35 mm, ağ fonda)\n• Konfirmasiya edilmiş otel rezervi və ya dəvətnamə\n• Geri qayıdış bileti\n\n' +
+          'Required documents:\n• Passport valid for at least 6 months\n• Recent passport photo (45×35 mm, white background)\n• Confirmed hotel reservation or invitation letter\n• Return flight ticket\n\n' +
+          'Note: certain nationalities require additional financial proof (3 months bank statement, employment letter).',
+      },
+      {
+        sortOrder: 2,
+        title: 'Processing Time / Emal müddəti',
+        content:
+          'Standart emal: 3-5 iş günü. Səfər tarixindən ən az 7 iş günü əvvəl müraciət edin.\n\n' +
+          'Standard processing: 3–5 business days. Apply at least 7 business days before travel. The UAE Federal Authority for Identity and Citizenship (ICA) handles approvals; service hours are Sunday–Thursday, 8:00–17:00 GST.\n\n' +
+          'Expedited 24-hour processing is available for an additional fee.',
+      },
+      {
+        sortOrder: 3,
+        title: 'FAQ / Tez-tez verilən suallar',
+        content:
+          'S: e-Visa BƏƏ-də nə qədər qala bilərəm?\nC: Standart turist vizası 30 günlük qalmağa icazə verir; uzatma yerli immigration ofisi vasitəsilə mümkündür.\n\n' +
+          'Q: Do I need a visa to transit through Dubai or Abu Dhabi airport?\nA: Most nationalities can transit for up to 8 hours without a visa. Stays beyond 8 hours typically require a transit visa or full e-Visa.\n\n' +
+          'Q: Is alcohol allowed?\nA: Yes, in licensed venues (hotels, designated restaurants). Public consumption is prohibited and can result in fines.\n\n' +
+          'Q: What if my e-Visa expires before I travel?\nA: You must re-apply. Fees are non-refundable.',
+      },
+    ],
+    EG: [
+      {
+        sortOrder: 0,
+        title: 'Egypt e-Visa — Overview',
+        content:
+          'Misir e-Visa proqramı turistlərə Qahirə, İskəndəriyyə, Luksor və Qırmızı dəniz kurortlarına giriş üçün asan onlayn müraciət imkanı verir.\n\n' +
+          'Egypt offers a 30-day single-entry tourist e-Visa for over 70 nationalities. The application is processed entirely online and the e-Visa is delivered by email — print and present at any Egyptian port of entry.',
+      },
+      {
+        sortOrder: 1,
+        title: 'Requirements / Tələblər',
+        content:
+          'Tələb olunan sənədlər:\n• Pasport: ən az 6 ay etibarlı\n• Pasportun məlumat səhifəsinin skani\n• E-mail ünvanı və ödəniş kartı\n• Otel rezervi və ya səfər planı\n\n' +
+          'Required documents:\n• Passport valid for at least 6 months from the date of arrival\n• Scanned copy of passport bio page\n• Email address and payment card\n• Hotel reservation or detailed travel itinerary',
+      },
+      {
+        sortOrder: 2,
+        title: 'Processing Time / Emal müddəti',
+        content:
+          'Standart emal müddəti: 7 iş günü. Az hallarda 24 saat ərzində təsdiqlənir.\n\n' +
+          'Standard processing: up to 7 business days, though most applications complete within 48–72 hours. Apply at least 10 days before your planned arrival to allow for verification.\n\n' +
+          'There is no expedited option — Egyptian authorities process all e-Visas in submission order.',
+      },
+      {
+        sortOrder: 3,
+        title: 'FAQ / Tez-tez verilən suallar',
+        content:
+          'S: e-Visa Sina yarımadasına səyahət üçün etibarlıdırmı?\nC: Sharm El Sheikh və Sina sahili üçün ayrıca pulsuz "Sinai-only" stamp visa verilir, lakin Misir daxilinə giriş üçün tam e-Visa lazımdır.\n\n' +
+          'Q: Can I get a visa on arrival instead?\nA: Yes, visa-on-arrival is available at major airports for many nationalities, but the e-Visa avoids long airport queues and locks in your application before you fly.\n\n' +
+          'Q: Is the e-Visa multi-entry?\nA: Standard tourist e-Visa is single-entry, valid for 30 days. A multi-entry version is available for an additional fee.\n\n' +
+          'Q: Are there restricted areas?\nA: Travel to certain border regions (Sinai interior, Western Desert) requires permits not covered by the tourist e-Visa.',
+      },
+    ],
+    TH: [
+      {
+        sortOrder: 0,
+        title: 'Thailand e-Visa — Overview',
+        content:
+          'Tayland e-Visa proqramı 60 günə qədər qalış üçün rahat onlayn müraciət sistemi təqdim edir. Bangkok, Phuket, Chiang Mai və Pattaya kurortları üçün etibarlıdır.\n\n' +
+          'Thailand offers e-Visa on Arrival (eVOA) for 60 nationalities and a full e-Visa for the rest. Both are processed entirely online — no embassy visit. The standard tourist e-Visa allows a 60-day stay, extendable by 30 days at a Thai immigration office.',
+      },
+      {
+        sortOrder: 1,
+        title: 'Requirements / Tələblər',
+        content:
+          'Tələb olunan sənədlər:\n• Pasport: ən az 6 ay etibarlı, 2 boş səhifə\n• Pasport şəkli (35×45 mm)\n• Geri qayıdış bileti\n• Maliyyə isbatı (10,000 THB / şəxs və ya 20,000 THB / ailə)\n\n' +
+          'Required documents:\n• Passport valid for at least 6 months with 2 blank pages\n• Recent passport photo (35×45 mm)\n• Confirmed return ticket\n• Proof of funds (THB 10,000 per person or THB 20,000 per family)\n• Confirmed accommodation for the first night',
+      },
+      {
+        sortOrder: 2,
+        title: 'Processing Time / Emal müddəti',
+        content:
+          'Standart emal: 3-5 iş günü. Mütəmadi olaraq 24-48 saat ərzində təsdiqlənir.\n\n' +
+          'Standard processing: 3–5 business days, often completed within 24–48 hours. Apply at least 7 days before travel. Thai consular service operates Monday–Friday only.',
+      },
+      {
+        sortOrder: 3,
+        title: 'FAQ / Tez-tez verilən suallar',
+        content:
+          'S: 60 gündən artıq qalmaq olarmı?\nC: Bəli — yerli Tayland Immigration Bureau-da 30 günlük uzatma mümkündür (1,900 THB ödənişlə).\n\n' +
+          'Q: Can I work on a tourist e-Visa?\nA: No. Working without a non-immigrant visa is illegal and carries fines or deportation. Apply for a Non-Immigrant B visa for any paid activity.\n\n' +
+          'Q: Do I need to declare cash on arrival?\nA: Amounts over USD 20,000 (or equivalent) must be declared at customs.\n\n' +
+          'Q: Can the visa be used for entry by land?\nA: Yes, the e-Visa is valid at land borders, airports, and seaports.',
+      },
+    ],
+    GE: [
+      {
+        sortOrder: 0,
+        title: 'Georgia e-Visa — Overview',
+        content:
+          'Gürcüstan e-Visa proqramı 90 günə qədər qalış üçün uyğundur — Tbilisi, Batumi, Kazbegi və Qax dağ kurortlarına giriş üçün.\n\n' +
+          'Georgia offers a generous 90-day stay on a single tourist e-Visa for 95 nationalities. The application is fully online and the e-Visa is delivered electronically. Many nationalities also enjoy visa-free entry — check eligibility before applying.',
+      },
+      {
+        sortOrder: 1,
+        title: 'Requirements / Tələblər',
+        content:
+          'Tələb olunan sənədlər:\n• Pasport: ən az 3 ay etibarlı (səfər tarixindən etibarən)\n• Pasportun məlumat səhifəsinin rəqəmsal kopyası\n• E-mail ünvanı\n• Maliyyə isbatı və ya səfər planı (sorğu üzrə)\n\n' +
+          'Required documents:\n• Passport valid for at least 3 months from the date of intended departure (more lenient than most countries)\n• Digital scan of passport bio page\n• Active email address\n• Proof of funds or itinerary (may be requested)',
+      },
+      {
+        sortOrder: 2,
+        title: 'Processing Time / Emal müddəti',
+        content:
+          'Standart emal: 5 iş günü. Müraciətlər çox vaxt 24-72 saat ərzində nəticələnir.\n\n' +
+          'Standard processing: up to 5 business days, with most approvals issued within 24–72 hours. Georgian consular services run Monday–Friday. We recommend applying at least 7 days before travel.',
+      },
+      {
+        sortOrder: 3,
+        title: 'FAQ / Tez-tez verilən suallar',
+        content:
+          'S: Vizasız 1 ildən çox qala bilərəmmi?\nC: Bir çox ölkə vətəndaşlarına Gürcüstan vizasız 1 ilə qədər qalmağa icazə verir — eVisa lazım deyil. Vətəndaşlığınızı təsdiq edin.\n\n' +
+          'Q: Is the e-Visa valid at all border crossings?\nA: Yes — Tbilisi airport, Batumi airport, Kutaisi airport, plus all land borders (Sarpi from Türkiye, Lars from Russia, Vahir from Armenia, Sadakhlo from Armenia).\n\n' +
+          'Q: Can I extend my stay?\nA: 90-day extensions are possible through Georgian Public Service Halls before the original 90 days expire.\n\n' +
+          'Q: Are there areas I cannot visit?\nA: Travel to Abkhazia and South Ossetia is restricted and not covered by the standard e-Visa.',
+      },
+    ],
+  };
+
+  // Iterate destinations + sections — insert-if-missing per (page, title).
+  let createdSections = 0;
+  let skippedSections = 0;
+  for (const isoCode of Object.keys(COUNTRY_SECTIONS_BY_ISO)) {
+    const pageId = countryPageIds[isoCode];
+    if (!pageId) {
+      console.log(`  ⚠️  ${isoCode} country page not found, skipping its sections`);
+      continue;
+    }
+    for (const s of COUNTRY_SECTIONS_BY_ISO[isoCode]) {
       const existing = await prisma.countrySection.findFirst({
-        where: { countryPageId: trPageId, title: s.title, deletedAt: null },
+        where: { countryPageId: pageId, title: s.title, deletedAt: null },
       });
       if (existing) {
-        console.log(`  ⏭️  ${s.title} (exists)`);
+        skippedSections++;
       } else {
         await prisma.countrySection.create({
-          data: { ...s, countryPageId: trPageId, isActive: true },
+          data: {
+            countryPageId: pageId,
+            title: s.title,
+            content: s.content,
+            sortOrder: s.sortOrder,
+            isActive: true,
+          },
         });
-        console.log(`  ✅ ${s.title}`);
+        createdSections++;
       }
     }
   }
+  console.log(`  ✅ ${createdSections} new, ${skippedSections} preserved`);
 
-  // C. Visa Types — findFirst by purpose (no unique constraint).
+  // C. Visa Types — findFirst by (purpose, entries) compound natural key.
+  //
+  // Schema has no unique constraint on `purpose` alone — the natural key
+  // is (purpose, entries) since the same purpose can ship as both single
+  // and multi-entry (Module 2 design). Sprint 1 / Task A demo set covers
+  // the 5 most-requested visa categories.
+  //
+  // Important: the prompt asked for `key` upsert, but the schema doesn't
+  // have a `key` field on VisaType. Using compound natural key for
+  // idempotency. Re-runs match the existing row by purpose + entries
+  // and update label/validityDays/maxStay/description; sortOrder stays.
   console.log('\n🛂 Visa types:');
   const VISA_TYPE_DATA: Array<{
     purpose: string;
@@ -514,7 +712,8 @@ async function main() {
     entries: VisaEntryType;
     validityDays: number;
     maxStay: number;
-    description?: string;
+    description: string;
+    sortOrder: number;
   }> = [
     {
       purpose: 'tourism',
@@ -522,31 +721,71 @@ async function main() {
       entries: VisaEntryType.SINGLE,
       validityDays: 90,
       maxStay: 30,
-      description: 'Single-entry tourism visa for short stays.',
+      description: 'Single-entry tourism visa for short leisure stays. Most common visa type.',
+      sortOrder: 10,
     },
     {
       purpose: 'business',
       label: 'Business Visa',
       entries: VisaEntryType.MULTIPLE,
       validityDays: 180,
-      maxStay: 30,
-      description: 'Multiple-entry business visa for meetings and trade.',
+      maxStay: 60,
+      description: 'Multiple-entry business visa for meetings, conferences, trade, and short consultancy work.',
+      sortOrder: 20,
+    },
+    {
+      purpose: 'transit',
+      label: 'Transit Visa',
+      entries: VisaEntryType.SINGLE,
+      validityDays: 30,
+      maxStay: 5,
+      description: 'Single-entry short-stay visa for travelers transiting through to a third country.',
+      sortOrder: 30,
+    },
+    {
+      purpose: 'student',
+      label: 'Student Visa',
+      entries: VisaEntryType.MULTIPLE,
+      validityDays: 365,
+      maxStay: 365,
+      description: 'Year-long multi-entry visa for accepted students at recognized institutions.',
+      sortOrder: 40,
+    },
+    {
+      purpose: 'medical',
+      label: 'Medical Visa',
+      entries: VisaEntryType.SINGLE,
+      validityDays: 90,
+      maxStay: 60,
+      description: 'Short-term medical-treatment visa. Requires hospital admission letter.',
+      sortOrder: 50,
     },
   ];
   const visaTypeIds: Record<string, string> = {};
   for (const v of VISA_TYPE_DATA) {
     let visaType = await prisma.visaType.findFirst({
-      where: { purpose: v.purpose, deletedAt: null },
+      where: { purpose: v.purpose, entries: v.entries, deletedAt: null },
     });
     if (visaType) {
-      console.log(`  ⏭️  ${v.label} (${v.purpose}) (exists)`);
+      // Idempotent update — keep the row's id and sortOrder stable but
+      // refresh label / description / validity / maxStay from canonical
+      // seed values so seed re-runs heal accidental admin typos.
+      visaType = await prisma.visaType.update({
+        where: { id: visaType.id },
+        data: {
+          label: v.label,
+          description: v.description,
+          validityDays: v.validityDays,
+          maxStay: v.maxStay,
+        },
+      });
     } else {
       visaType = await prisma.visaType.create({
         data: { ...v, isActive: true },
       });
-      console.log(`  ✅ ${v.label} (${v.purpose})`);
     }
     visaTypeIds[v.purpose] = visaType.id;
+    console.log(`  ✅ ${v.label} (${v.purpose} / ${v.entries})`);
   }
 
   // D. Email Templates — upsert by templateKey (unique). Use the keys the
@@ -578,6 +817,240 @@ async function main() {
     });
     console.log(`  ✅ ${t.templateKey}`);
   }
+
+  // ===========================================
+  // Sprint 1 / Task A — production email templates (8 dot-case keys)
+  // ===========================================
+  // Bilingual (Az + En) production-ready HTML using Handlebars
+  // {{var}} interpolation. Insert-if-missing only — once an admin
+  // tweaks copy via the Module 3 admin UI we never overwrite.
+  //
+  // Important: these 8 dot-case keys are NOT yet wired into runtime
+  // code (email.service.ts still references the existing snake_case
+  // templates: otp_verification, application_status_update,
+  // generic_notification, payment_confirmation, raw_email). The Sprint
+  // 5 cutover ticket migrates the runtime to this new set; until then
+  // these rows are dormant. Schema gap noted in the seed-pack report.
+  //
+  // The HTML uses table-based layout with inline styles for max client
+  // compatibility (Outlook, Gmail, Apple Mail), neutral fallback
+  // colors, and includes a header (logo placeholder) + footer (support
+  // email + unsubscribe placeholder).
+  console.log('\n📧 Production email templates (dot-case keys, dormant until Sprint 5 cutover):');
+
+  // Shared HTML scaffold — header + content slot + footer. Pre-rendered
+  // here (rather than as an interpolation step) so the seed file stays
+  // greppable and admin edits via the admin UI start from the rendered
+  // baseline.
+  const wrap = (title: string, contentHtml: string): string => `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${title}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:24px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+        <tr><td style="background-color:#0f172a;padding:20px 32px;text-align:center;">
+          <span style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:.5px;">{{logoPlaceholder|E-VISA GLOBAL}}</span>
+        </td></tr>
+        <tr><td style="padding:32px;font-size:15px;line-height:1.55;color:#1f2937;">
+          ${contentHtml}
+        </td></tr>
+        <tr><td style="background-color:#f9fafb;padding:20px 32px;text-align:center;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb;">
+          Need help? <a href="mailto:support@evisaglobal.com" style="color:#2563eb;text-decoration:none;">support@evisaglobal.com</a><br/>
+          You are receiving this because you applied via the E-Visa Global portal. <a href="{{unsubscribeUrl|#}}" style="color:#6b7280;text-decoration:underline;">Manage preferences</a>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  const PROD_EMAIL_TEMPLATES: Array<{
+    templateKey: string;
+    subject: string;
+    description: string;
+    /** Variables list documented in description for admin reference; the runtime renderer enforces required vars elsewhere. */
+    variables: string[];
+    bodyHtml: string;
+    bodyText: string;
+  }> = [
+    {
+      templateKey: 'otp.send',
+      subject: 'Your E-Visa Global verification code',
+      description: 'OTP code emailed to portal users during login + email verification flows. Variables: otpCode, expiresInMinutes',
+      variables: ['otpCode', 'expiresInMinutes'],
+      bodyHtml: wrap(
+        'Your verification code',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">Verification code / Təsdiq kodu</h1>
+        <p>Your one-time code is:</p>
+        <p style="font-size:32px;font-weight:700;letter-spacing:6px;color:#0f172a;background-color:#f3f4f6;padding:16px 24px;border-radius:6px;text-align:center;margin:16px 0;">{{otpCode}}</p>
+        <p>This code expires in <strong>{{expiresInMinutes}} minutes</strong>. If you did not request it, you can safely ignore this email.</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="font-size:13px;color:#6b7280;">Birdəfəlik kodunuz: <strong>{{otpCode}}</strong>. Bu kod <strong>{{expiresInMinutes}} dəqiqə</strong> ərzində etibarlıdır.</p>`,
+      ),
+      bodyText: `Your E-Visa Global verification code\n\nYour one-time code: {{otpCode}}\nThis code expires in {{expiresInMinutes}} minutes.\n\nIf you did not request it, you can safely ignore this email.\n\n— E-Visa Global team`,
+    },
+    {
+      templateKey: 'application.created',
+      subject: 'Application started — {{applicationCode}}',
+      description: 'Sent immediately after an applicant creates a draft application. Variables: userName, applicationCode, destinationCountry',
+      variables: ['userName', 'applicationCode', 'destinationCountry'],
+      bodyHtml: wrap(
+        'Application started',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">Hello {{userName}},</h1>
+        <p>You've started an application for a visa to <strong>{{destinationCountry}}</strong>.</p>
+        <p>Your application reference is:</p>
+        <p style="font-size:18px;font-weight:600;color:#0f172a;background-color:#f3f4f6;padding:12px 16px;border-radius:6px;text-align:center;margin:16px 0;">{{applicationCode}}</p>
+        <p>You can complete your application at any time using this reference. The application stays in <strong>Draft</strong> status until you submit it for review and pay the visa fee.</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="font-size:13px;color:#6b7280;">Salam {{userName}}, <strong>{{destinationCountry}}</strong> üçün viza müraciətinizi başlatdınız. Müraciət nömrəniz: <strong>{{applicationCode}}</strong>.</p>`,
+      ),
+      bodyText: `Hello {{userName}},\n\nYou've started an application for a visa to {{destinationCountry}}.\n\nApplication reference: {{applicationCode}}\n\nYou can return to complete it any time. Your application stays in Draft until you submit and pay the fee.\n\n— E-Visa Global team`,
+    },
+    {
+      templateKey: 'application.submitted',
+      subject: 'Application submitted for review — {{applicationCode}}',
+      description: 'Sent when applicant pays + submits. Variables: userName, applicationCode',
+      variables: ['userName', 'applicationCode'],
+      bodyHtml: wrap(
+        'Submitted for review',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">Submitted for review</h1>
+        <p>Hello {{userName}},</p>
+        <p>Your application <strong>{{applicationCode}}</strong> has been received and is now under review by our team.</p>
+        <p>You will receive an update by email once a decision is made — typically within 1–5 business days depending on the destination.</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="font-size:13px;color:#6b7280;">Müraciətiniz <strong>{{applicationCode}}</strong> qəbul olundu və komandamız tərəfindən nəzərdən keçirilir.</p>`,
+      ),
+      bodyText: `Hello {{userName}},\n\nYour application {{applicationCode}} has been submitted and is now under review.\n\nYou'll receive an email once a decision is made — typically within 1-5 business days.\n\n— E-Visa Global team`,
+    },
+    {
+      templateKey: 'application.approved',
+      subject: '✓ Visa approved — {{applicationCode}}',
+      description: 'Sent on approve action. Variables: userName, applicationCode, destinationCountry',
+      variables: ['userName', 'applicationCode', 'destinationCountry'],
+      bodyHtml: wrap(
+        'Visa approved',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#059669;">Your visa has been approved 🎉</h1>
+        <p>Hello {{userName}},</p>
+        <p>Your application <strong>{{applicationCode}}</strong> for entry to <strong>{{destinationCountry}}</strong> has been <strong style="color:#059669;">APPROVED</strong>.</p>
+        <p>Your e-Visa is now ready to download from your portal account. Please print a copy and present it with your passport at the port of entry.</p>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="{{downloadUrl|https://evisaglobal.com/me}}" style="display:inline-block;background-color:#059669;color:#ffffff;font-weight:600;padding:12px 24px;border-radius:6px;text-decoration:none;">Open my account</a>
+        </p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="font-size:13px;color:#6b7280;"><strong>{{destinationCountry}}</strong> vizasınız təsdiq edildi. e-Vizanı portal hesabınızdan yükləyə bilərsiniz.</p>`,
+      ),
+      bodyText: `Hello {{userName}},\n\nGreat news — your application {{applicationCode}} for {{destinationCountry}} has been APPROVED.\n\nYour e-Visa is ready to download from your portal account. Please print and present it with your passport at the port of entry.\n\n— E-Visa Global team`,
+    },
+    {
+      templateKey: 'application.rejected',
+      subject: 'Application decision — {{applicationCode}}',
+      description: 'Sent on reject action. Variables: userName, applicationCode, rejectionReason',
+      variables: ['userName', 'applicationCode', 'rejectionReason'],
+      bodyHtml: wrap(
+        'Application decision',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">Application decision</h1>
+        <p>Hello {{userName}},</p>
+        <p>We regret to inform you that your application <strong>{{applicationCode}}</strong> has not been approved.</p>
+        <p style="background-color:#fef2f2;border:1px solid #fecaca;padding:16px;border-radius:6px;color:#991b1b;"><strong>Reason:</strong> {{rejectionReason}}</p>
+        <p>You may submit a new application addressing the issue above. Application fees are non-refundable per our terms of service.</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="font-size:13px;color:#6b7280;">Müraciətiniz təsdiq edilmədi. Səbəb: {{rejectionReason}}.</p>`,
+      ),
+      bodyText: `Hello {{userName}},\n\nWe regret to inform you that your application {{applicationCode}} has not been approved.\n\nReason: {{rejectionReason}}\n\nYou may submit a new application addressing the issue. Fees are non-refundable per our terms of service.\n\n— E-Visa Global team`,
+    },
+    {
+      templateKey: 'application.need_docs',
+      subject: 'Additional documents requested — {{applicationCode}}',
+      description: 'Sent on request-documents action. Variables: userName, applicationCode, requestedDocuments, adminNote',
+      variables: ['userName', 'applicationCode', 'requestedDocuments', 'adminNote'],
+      bodyHtml: wrap(
+        'Additional documents needed',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">Additional documents needed</h1>
+        <p>Hello {{userName}},</p>
+        <p>Our reviewer needs additional documentation to continue processing application <strong>{{applicationCode}}</strong>.</p>
+        <p style="background-color:#fffbeb;border:1px solid #fde68a;padding:16px;border-radius:6px;color:#92400e;"><strong>Requested:</strong> {{requestedDocuments}}<br/><br/><strong>Reviewer note:</strong> {{adminNote}}</p>
+        <p>Please return to your application and upload the requested documents. Once received, your application returns to the review queue.</p>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="https://evisaglobal.com/me" style="display:inline-block;background-color:#2563eb;color:#ffffff;font-weight:600;padding:12px 24px;border-radius:6px;text-decoration:none;">Upload documents</a>
+        </p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="font-size:13px;color:#6b7280;">Müraciət üçün əlavə sənədlər tələb olunur: {{requestedDocuments}}.</p>`,
+      ),
+      bodyText: `Hello {{userName}},\n\nOur reviewer needs additional documentation for application {{applicationCode}}.\n\nRequested: {{requestedDocuments}}\nReviewer note: {{adminNote}}\n\nPlease return to your portal account and upload the requested documents.\n\n— E-Visa Global team`,
+    },
+    {
+      templateKey: 'application.ready_to_download',
+      subject: 'Your e-Visa is ready — {{applicationCode}}',
+      description: 'Sent when approved e-Visa PDF is ready. Variables: userName, applicationCode, downloadUrl',
+      variables: ['userName', 'applicationCode', 'downloadUrl'],
+      bodyHtml: wrap(
+        'Your e-Visa is ready',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">Your e-Visa is ready</h1>
+        <p>Hello {{userName}},</p>
+        <p>Your e-Visa for application <strong>{{applicationCode}}</strong> is ready to download.</p>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="{{downloadUrl}}" style="display:inline-block;background-color:#0f172a;color:#ffffff;font-weight:600;padding:14px 28px;border-radius:6px;text-decoration:none;">Download e-Visa PDF</a>
+        </p>
+        <p>Please print a copy and carry it with your passport at all times during your trip.</p>
+        <p style="font-size:13px;color:#6b7280;background-color:#f9fafb;padding:12px;border-radius:6px;">⚠️ <strong>Tip:</strong> save the PDF to your phone as a backup, but immigration authorities at the port of entry may require a printed copy.</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="font-size:13px;color:#6b7280;">e-Vizanız hazırdır. Səfər zamanı çap edilmiş nüsxəni pasportla birlikdə daşımağınız tövsiyə olunur.</p>`,
+      ),
+      bodyText: `Hello {{userName}},\n\nYour e-Visa for application {{applicationCode}} is ready.\n\nDownload: {{downloadUrl}}\n\nPlease print a copy and carry it with your passport at all times during your trip.\n\n— E-Visa Global team`,
+    },
+    {
+      templateKey: 'payment.success',
+      subject: 'Payment confirmed — {{applicationCode}}',
+      description: 'Sent when payment provider confirms a successful transaction. Variables: userName, applicationCode, amount, currency',
+      variables: ['userName', 'applicationCode', 'amount', 'currency'],
+      bodyHtml: wrap(
+        'Payment confirmed',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">Payment received</h1>
+        <p>Hello {{userName}},</p>
+        <p>We've received your payment for application <strong>{{applicationCode}}</strong>:</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;margin:16px 0;">
+          <tr><td style="padding:12px 16px;color:#6b7280;">Amount</td><td style="padding:12px 16px;font-weight:600;text-align:right;color:#0f172a;">{{amount}} {{currency}}</td></tr>
+          <tr><td style="padding:12px 16px;color:#6b7280;border-top:1px solid #e5e7eb;">Application</td><td style="padding:12px 16px;font-weight:600;text-align:right;color:#0f172a;border-top:1px solid #e5e7eb;">{{applicationCode}}</td></tr>
+        </table>
+        <p>Your application has now been submitted for review.</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="font-size:13px;color:#6b7280;">{{amount}} {{currency}} ödənişiniz qəbul olundu. Müraciətiniz indi nəzərdən keçirilir.</p>`,
+      ),
+      bodyText: `Hello {{userName}},\n\nWe've received your payment of {{amount}} {{currency}} for application {{applicationCode}}.\n\nYour application is now submitted for review.\n\n— E-Visa Global team`,
+    },
+  ];
+
+  let createdEmailTemplates = 0,
+    skippedEmailTemplates = 0;
+  for (const t of PROD_EMAIL_TEMPLATES) {
+    const existing = await prisma.emailTemplate.findUnique({
+      where: { templateKey: t.templateKey },
+    });
+    if (existing) {
+      skippedEmailTemplates++;
+      continue;
+    }
+    await prisma.emailTemplate.create({
+      data: {
+        templateKey: t.templateKey,
+        subject: t.subject,
+        bodyHtml: t.bodyHtml,
+        bodyText: t.bodyText,
+        description: `${t.description} | Variables: ${t.variables.join(', ')}`,
+        isActive: true,
+      },
+    });
+    createdEmailTemplates++;
+    console.log(`  ✅ ${t.templateKey} (vars: ${t.variables.join(', ')})`);
+  }
+  console.log(
+    `     prod email templates: ${createdEmailTemplates} new + ${skippedEmailTemplates} preserved`,
+  );
 
   // E. Form Template — upsert by key (unique).
   console.log('\n📋 Form template:');
@@ -656,6 +1129,391 @@ async function main() {
     console.log(`  ✅ ${f.fieldKey} (${f.fieldType})`);
   }
 
+  // ===========================================
+  // Sprint 1 / Task A — production form templates
+  // ===========================================
+  // 3 real-shape templates with full section + field hierarchy:
+  //   • tourismStandardV1   — 5 sections, 19 fields, 1 conditional
+  //   • businessStandardV1  — 7 sections, 27 fields, 1 conditional
+  //   • transitSimpleV1     — 4 sections, 10 fields
+  //
+  // Each template / section / field is upserted by its compound natural
+  // key (unique constraints in schema), so re-runs heal drift without
+  // duplicating rows. Conditional visibility uses `visibilityRulesJson`
+  // — the public form renderer will hide a field unless its source
+  // field matches the declared `equals` value.
+  console.log('\n📝 Form templates (production v1 — 3 templates):');
+
+  type TemplateFieldSpec = {
+    fieldKey: string;
+    fieldType: string;
+    label: string;
+    placeholder?: string;
+    helpText?: string;
+    isRequired: boolean;
+    sortOrder: number;
+    optionsJson?: unknown;
+    validationRulesJson?: unknown;
+    visibilityRulesJson?: unknown;
+  };
+  type TemplateSectionSpec = {
+    key: string;
+    title: string;
+    description?: string;
+    sortOrder: number;
+    fields: TemplateFieldSpec[];
+  };
+  type TemplateSpec = {
+    key: string;
+    name: string;
+    description: string;
+    version: number;
+    sections: TemplateSectionSpec[];
+  };
+
+  // Common reusable field building blocks (kept inline for readability).
+  // The conditional visibility rule shape consumed by the renderer is:
+  //   { mode: 'show', when: { field: '<otherFieldKey>', equals: <value> } }
+  // (mode 'hide' also supported; absence of rule = always visible.)
+  const yesNoOptions = [
+    { value: 'yes', label: 'Yes' },
+    { value: 'no', label: 'No' },
+  ];
+  const genderOptions = [
+    { value: 'male', label: 'Male' },
+    { value: 'female', label: 'Female' },
+    { value: 'other', label: 'Other / Prefer not to say' },
+  ];
+  const accommodationOptions = [
+    { value: 'hotel', label: 'Hotel' },
+    { value: 'airbnb', label: 'Airbnb / short-term rental' },
+    { value: 'family', label: 'Staying with family / friends' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  const TEMPLATES: TemplateSpec[] = [
+    // ──────────────────────────────────────────────────────────
+    // Template 1: tourismStandardV1 — Standard Tourism Form
+    // ──────────────────────────────────────────────────────────
+    {
+      key: 'tourismStandardV1',
+      name: 'Standard Tourism Form',
+      description: 'Production form for tourist e-Visa applications. 5 sections, 19 fields, 1 conditional (otherPassportNumber).',
+      version: 1,
+      sections: [
+        {
+          key: 'personal',
+          title: 'Personal Information',
+          description: 'Applicant identity details — must match the passport bio page exactly.',
+          sortOrder: 0,
+          fields: [
+            { fieldKey: 'firstName',     fieldType: 'text',   label: 'First Name (Given)',  placeholder: 'As shown on passport', isRequired: true, sortOrder: 0, validationRulesJson: { minLength: 2, maxLength: 100 } },
+            { fieldKey: 'lastName',      fieldType: 'text',   label: 'Last Name (Family)',  placeholder: 'As shown on passport', isRequired: true, sortOrder: 1, validationRulesJson: { minLength: 2, maxLength: 100 } },
+            { fieldKey: 'dateOfBirth',   fieldType: 'date',   label: 'Date of Birth',       isRequired: true, sortOrder: 2, validationRulesJson: { min: '1900-01-01', max: '2026-01-01' } },
+            { fieldKey: 'gender',        fieldType: 'select', label: 'Gender',              isRequired: true, sortOrder: 3, optionsJson: genderOptions },
+            { fieldKey: 'nationality',   fieldType: 'country',label: 'Nationality',         helpText: 'Passport-issuing country', isRequired: true, sortOrder: 4 },
+          ],
+        },
+        {
+          key: 'passport',
+          title: 'Passport Details',
+          description: 'Travel document data — verify expiry date carefully (most countries require 6 months validity).',
+          sortOrder: 1,
+          fields: [
+            { fieldKey: 'passportNumber',     fieldType: 'text',   label: 'Passport Number', placeholder: 'e.g. AZ12345678', isRequired: true, sortOrder: 0, validationRulesJson: { pattern: '^[A-Z0-9]{6,12}$', message: 'Use 6–12 uppercase letters or digits' } },
+            { fieldKey: 'passportIssueDate',  fieldType: 'date',   label: 'Passport Issue Date',                            isRequired: true, sortOrder: 1 },
+            { fieldKey: 'passportExpiryDate', fieldType: 'date',   label: 'Passport Expiry Date', helpText: 'Must be valid for at least 6 months after planned arrival', isRequired: true, sortOrder: 2 },
+            { fieldKey: 'issuingCountry',     fieldType: 'country',label: 'Issuing Country',                                  isRequired: true, sortOrder: 3 },
+            { fieldKey: 'hasOtherPassport',   fieldType: 'radio',  label: 'Do you hold another nationality / passport?',     isRequired: true, sortOrder: 4, optionsJson: yesNoOptions },
+            // Conditional field — shown only when the radio above is "yes".
+            // Renderer reads `visibilityRulesJson` and hides the field
+            // server-rendered + client-rendered until the predicate matches.
+            { fieldKey: 'otherPassportNumber', fieldType: 'text',  label: 'Other Passport Number', placeholder: 'Enter the second passport number', isRequired: false, sortOrder: 5,
+              validationRulesJson: { pattern: '^[A-Z0-9]{6,12}$', message: 'Use 6–12 uppercase letters or digits' },
+              visibilityRulesJson: { mode: 'show', when: { field: 'hasOtherPassport', equals: 'yes' } },
+            },
+          ],
+        },
+        {
+          key: 'travel',
+          title: 'Travel Information',
+          sortOrder: 2,
+          fields: [
+            { fieldKey: 'arrivalDate',          fieldType: 'date',     label: 'Planned Arrival Date',  isRequired: true, sortOrder: 0 },
+            { fieldKey: 'departureDate',        fieldType: 'date',     label: 'Planned Departure Date',isRequired: true, sortOrder: 1 },
+            { fieldKey: 'accommodationType',    fieldType: 'select',   label: 'Accommodation Type',    isRequired: true, sortOrder: 2, optionsJson: accommodationOptions },
+            { fieldKey: 'accommodationAddress', fieldType: 'textarea', label: 'Accommodation Address', placeholder: 'Hotel name + full address, or host address', isRequired: true, sortOrder: 3, validationRulesJson: { minLength: 10, maxLength: 500 } },
+            { fieldKey: 'purposeOfVisit',       fieldType: 'textarea', label: 'Purpose of Visit',      placeholder: 'Describe your trip in 2-3 sentences', isRequired: true, sortOrder: 4, validationRulesJson: { minLength: 20, maxLength: 1000 } },
+          ],
+        },
+        {
+          key: 'contact',
+          title: 'Contact Information',
+          sortOrder: 3,
+          fields: [
+            { fieldKey: 'email',                fieldType: 'email', label: 'Email',                  isRequired: true, sortOrder: 0 },
+            { fieldKey: 'phone',                fieldType: 'phone', label: 'Phone',                  helpText: 'Include country code, e.g. +994501234567', isRequired: true, sortOrder: 1 },
+            { fieldKey: 'emergencyContactName', fieldType: 'text',  label: 'Emergency Contact Name', isRequired: true, sortOrder: 2, validationRulesJson: { minLength: 2, maxLength: 200 } },
+            { fieldKey: 'emergencyContactPhone',fieldType: 'phone', label: 'Emergency Contact Phone',isRequired: true, sortOrder: 3 },
+          ],
+        },
+        {
+          key: 'documents',
+          title: 'Documents',
+          description: 'Upload required attachments. Photo must be passport-style (light background, neutral expression, no headwear unless religious).',
+          sortOrder: 4,
+          fields: [
+            { fieldKey: 'passportScan',  fieldType: 'file', label: 'Passport Bio Page Scan', isRequired: true, sortOrder: 0, validationRulesJson: { accept: ['application/pdf', 'image/jpeg', 'image/png'], maxSizeMb: 5 } },
+            { fieldKey: 'passportPhoto', fieldType: 'file', label: 'Passport Photo',        isRequired: true, sortOrder: 1, validationRulesJson: { accept: ['image/jpeg', 'image/png'], maxSizeMb: 5 } },
+            { fieldKey: 'hotelBooking',  fieldType: 'file', label: 'Hotel Booking (optional)', isRequired: false, sortOrder: 2, validationRulesJson: { accept: ['application/pdf', 'image/jpeg', 'image/png'], maxSizeMb: 5 } },
+            { fieldKey: 'returnTicket',  fieldType: 'file', label: 'Return Ticket (optional)', isRequired: false, sortOrder: 3, validationRulesJson: { accept: ['application/pdf', 'image/jpeg', 'image/png'], maxSizeMb: 5 } },
+          ],
+        },
+      ],
+    },
+
+    // ──────────────────────────────────────────────────────────
+    // Template 2: businessStandardV1 — Business Visa Form
+    // ──────────────────────────────────────────────────────────
+    {
+      key: 'businessStandardV1',
+      name: 'Business Visa Form',
+      description: 'Production form for business e-Visa applications. Tourism base + Business Details + Additional Documents (invitation letter required).',
+      version: 1,
+      sections: [
+        {
+          key: 'personal',
+          title: 'Personal Information',
+          sortOrder: 0,
+          fields: [
+            { fieldKey: 'firstName',   fieldType: 'text',   label: 'First Name (Given)',  isRequired: true, sortOrder: 0, validationRulesJson: { minLength: 2, maxLength: 100 } },
+            { fieldKey: 'lastName',    fieldType: 'text',   label: 'Last Name (Family)',  isRequired: true, sortOrder: 1, validationRulesJson: { minLength: 2, maxLength: 100 } },
+            { fieldKey: 'dateOfBirth', fieldType: 'date',   label: 'Date of Birth',       isRequired: true, sortOrder: 2 },
+            { fieldKey: 'gender',      fieldType: 'select', label: 'Gender',              isRequired: true, sortOrder: 3, optionsJson: genderOptions },
+            { fieldKey: 'nationality', fieldType: 'country',label: 'Nationality',         isRequired: true, sortOrder: 4 },
+          ],
+        },
+        {
+          key: 'passport',
+          title: 'Passport Details',
+          sortOrder: 1,
+          fields: [
+            { fieldKey: 'passportNumber',      fieldType: 'text',   label: 'Passport Number',      isRequired: true, sortOrder: 0, validationRulesJson: { pattern: '^[A-Z0-9]{6,12}$' } },
+            { fieldKey: 'passportIssueDate',   fieldType: 'date',   label: 'Passport Issue Date',  isRequired: true, sortOrder: 1 },
+            { fieldKey: 'passportExpiryDate',  fieldType: 'date',   label: 'Passport Expiry Date', isRequired: true, sortOrder: 2 },
+            { fieldKey: 'issuingCountry',      fieldType: 'country',label: 'Issuing Country',      isRequired: true, sortOrder: 3 },
+            { fieldKey: 'hasOtherPassport',    fieldType: 'radio',  label: 'Do you hold another nationality / passport?', isRequired: true, sortOrder: 4, optionsJson: yesNoOptions },
+            { fieldKey: 'otherPassportNumber', fieldType: 'text',   label: 'Other Passport Number', isRequired: false, sortOrder: 5,
+              validationRulesJson: { pattern: '^[A-Z0-9]{6,12}$' },
+              visibilityRulesJson: { mode: 'show', when: { field: 'hasOtherPassport', equals: 'yes' } },
+            },
+          ],
+        },
+        {
+          key: 'business',
+          title: 'Business Details',
+          description: 'Information about your employer and the inviting organisation.',
+          sortOrder: 2,
+          fields: [
+            { fieldKey: 'companyName',           fieldType: 'text',     label: 'Your Company Name',         isRequired: true, sortOrder: 0, validationRulesJson: { minLength: 2, maxLength: 200 } },
+            { fieldKey: 'position',              fieldType: 'text',     label: 'Your Position / Title',     isRequired: true, sortOrder: 1, validationRulesJson: { minLength: 2, maxLength: 200 } },
+            { fieldKey: 'invitingCompany',       fieldType: 'text',     label: 'Inviting Company',          helpText: 'Full legal name of the host organisation', isRequired: true, sortOrder: 2, validationRulesJson: { minLength: 2, maxLength: 200 } },
+            { fieldKey: 'invitingCompanyAddress',fieldType: 'textarea', label: 'Inviting Company Address',  isRequired: true, sortOrder: 3, validationRulesJson: { minLength: 10, maxLength: 500 } },
+            { fieldKey: 'invitationLetterDate',  fieldType: 'date',     label: 'Invitation Letter Date',    isRequired: true, sortOrder: 4 },
+            { fieldKey: 'businessPurpose',       fieldType: 'textarea', label: 'Business Purpose',          placeholder: 'Meetings, conferences, contract negotiation, etc.', isRequired: true, sortOrder: 5, validationRulesJson: { minLength: 20, maxLength: 1000 } },
+          ],
+        },
+        {
+          key: 'travel',
+          title: 'Travel Information',
+          sortOrder: 3,
+          fields: [
+            { fieldKey: 'arrivalDate',          fieldType: 'date',     label: 'Planned Arrival Date',   isRequired: true, sortOrder: 0 },
+            { fieldKey: 'departureDate',        fieldType: 'date',     label: 'Planned Departure Date', isRequired: true, sortOrder: 1 },
+            { fieldKey: 'accommodationType',    fieldType: 'select',   label: 'Accommodation Type',     isRequired: true, sortOrder: 2, optionsJson: accommodationOptions },
+            { fieldKey: 'accommodationAddress', fieldType: 'textarea', label: 'Accommodation Address',  isRequired: true, sortOrder: 3, validationRulesJson: { minLength: 10, maxLength: 500 } },
+          ],
+        },
+        {
+          key: 'contact',
+          title: 'Contact Information',
+          sortOrder: 4,
+          fields: [
+            { fieldKey: 'email',                 fieldType: 'email', label: 'Email',                   isRequired: true, sortOrder: 0 },
+            { fieldKey: 'phone',                 fieldType: 'phone', label: 'Phone',                   isRequired: true, sortOrder: 1 },
+            { fieldKey: 'emergencyContactName',  fieldType: 'text',  label: 'Emergency Contact Name',  isRequired: true, sortOrder: 2 },
+            { fieldKey: 'emergencyContactPhone', fieldType: 'phone', label: 'Emergency Contact Phone', isRequired: true, sortOrder: 3 },
+          ],
+        },
+        {
+          key: 'documents',
+          title: 'Documents',
+          sortOrder: 5,
+          fields: [
+            { fieldKey: 'passportScan',  fieldType: 'file', label: 'Passport Bio Page Scan', isRequired: true, sortOrder: 0, validationRulesJson: { accept: ['application/pdf', 'image/jpeg', 'image/png'], maxSizeMb: 5 } },
+            { fieldKey: 'passportPhoto', fieldType: 'file', label: 'Passport Photo',         isRequired: true, sortOrder: 1, validationRulesJson: { accept: ['image/jpeg', 'image/png'], maxSizeMb: 5 } },
+          ],
+        },
+        {
+          key: 'additionalDocuments',
+          title: 'Additional Documents',
+          description: 'Mandatory supporting documents specific to business travel.',
+          sortOrder: 6,
+          fields: [
+            { fieldKey: 'invitationLetter', fieldType: 'file', label: 'Invitation Letter',  helpText: 'Signed letter on company letterhead from inviting organisation', isRequired: true, sortOrder: 0, validationRulesJson: { accept: ['application/pdf', 'image/jpeg', 'image/png'], maxSizeMb: 10 } },
+            { fieldKey: 'businessLicense',  fieldType: 'file', label: 'Business License',   helpText: 'Either your employer’s or the inviting company’s registration certificate', isRequired: true, sortOrder: 1, validationRulesJson: { accept: ['application/pdf', 'image/jpeg', 'image/png'], maxSizeMb: 10 } },
+            { fieldKey: 'returnTicket',     fieldType: 'file', label: 'Return Ticket',      isRequired: false, sortOrder: 2, validationRulesJson: { accept: ['application/pdf', 'image/jpeg', 'image/png'], maxSizeMb: 5 } },
+          ],
+        },
+      ],
+    },
+
+    // ──────────────────────────────────────────────────────────
+    // Template 3: transitSimpleV1 — Transit Visa Form (slim)
+    // ──────────────────────────────────────────────────────────
+    {
+      key: 'transitSimpleV1',
+      name: 'Transit Visa Form',
+      description: 'Slim form for short-stay transit visas (typically 5-day max). Skips accommodation + emergency contact (not relevant for transit).',
+      version: 1,
+      sections: [
+        {
+          key: 'personal',
+          title: 'Personal Information',
+          sortOrder: 0,
+          fields: [
+            { fieldKey: 'firstName',   fieldType: 'text',   label: 'First Name', isRequired: true, sortOrder: 0, validationRulesJson: { minLength: 2, maxLength: 100 } },
+            { fieldKey: 'lastName',    fieldType: 'text',   label: 'Last Name',  isRequired: true, sortOrder: 1, validationRulesJson: { minLength: 2, maxLength: 100 } },
+            { fieldKey: 'dateOfBirth', fieldType: 'date',   label: 'Date of Birth', isRequired: true, sortOrder: 2 },
+            { fieldKey: 'nationality', fieldType: 'country',label: 'Nationality', isRequired: true, sortOrder: 3 },
+          ],
+        },
+        {
+          key: 'passport',
+          title: 'Passport Details',
+          sortOrder: 1,
+          fields: [
+            { fieldKey: 'passportNumber',     fieldType: 'text', label: 'Passport Number', isRequired: true, sortOrder: 0, validationRulesJson: { pattern: '^[A-Z0-9]{6,12}$' } },
+            { fieldKey: 'passportExpiryDate', fieldType: 'date', label: 'Passport Expiry Date', helpText: 'Must be valid for at least 6 months after transit', isRequired: true, sortOrder: 1 },
+          ],
+        },
+        {
+          key: 'transit',
+          title: 'Transit Details',
+          sortOrder: 2,
+          fields: [
+            { fieldKey: 'originCountry',      fieldType: 'country', label: 'Departing From',          isRequired: true, sortOrder: 0 },
+            { fieldKey: 'destinationCountry', fieldType: 'country', label: 'Final Destination',       isRequired: true, sortOrder: 1 },
+            { fieldKey: 'transitDate',        fieldType: 'date',    label: 'Transit Date',            isRequired: true, sortOrder: 2 },
+            { fieldKey: 'transitDuration',    fieldType: 'number',  label: 'Transit Duration (hours)', isRequired: true, sortOrder: 3, validationRulesJson: { min: 1, max: 120 } },
+          ],
+        },
+        {
+          key: 'documents',
+          title: 'Documents',
+          sortOrder: 3,
+          fields: [
+            { fieldKey: 'passportScan',  fieldType: 'file', label: 'Passport Bio Page Scan', isRequired: true, sortOrder: 0, validationRulesJson: { accept: ['application/pdf', 'image/jpeg', 'image/png'], maxSizeMb: 5 } },
+            { fieldKey: 'onwardTicket',  fieldType: 'file', label: 'Onward Ticket',          helpText: 'Confirmed flight ticket leaving the transit country', isRequired: true, sortOrder: 1, validationRulesJson: { accept: ['application/pdf', 'image/jpeg', 'image/png'], maxSizeMb: 5 } },
+          ],
+        },
+      ],
+    },
+  ];
+
+  // Idempotent template upsert: walks the spec tree and uses the
+  // schema's compound unique constraints at each level.
+  // Counters keep the seed log honest about new vs preserved rows.
+  const templateIdsByKey: Record<string, string> = {};
+  let createdTemplates = 0,
+    updatedTemplates = 0,
+    createdSectionsT = 0,
+    skippedSectionsT = 0,
+    createdFields = 0,
+    skippedFields = 0;
+
+  for (const t of TEMPLATES) {
+    const existingTpl = await prisma.template.findUnique({ where: { key: t.key } });
+    const tpl = await prisma.template.upsert({
+      where: { key: t.key },
+      // Update path keeps name/description/version fresh — these are
+      // canonical metadata, not admin-edited field copy.
+      update: { name: t.name, description: t.description, version: t.version, isActive: true },
+      create: { key: t.key, name: t.name, description: t.description, version: t.version, isActive: true },
+    });
+    templateIdsByKey[t.key] = tpl.id;
+    if (existingTpl) updatedTemplates++;
+    else createdTemplates++;
+
+    for (const s of t.sections) {
+      // Sections: composite unique (templateId, key). Update non-id
+      // metadata on re-run — title / description are spec-driven.
+      const existingSec = await prisma.templateSection.findUnique({
+        where: { templateId_key: { templateId: tpl.id, key: s.key } },
+      });
+      const section = await prisma.templateSection.upsert({
+        where: { templateId_key: { templateId: tpl.id, key: s.key } },
+        update: { title: s.title, description: s.description, sortOrder: s.sortOrder, isActive: true },
+        create: {
+          templateId: tpl.id,
+          key: s.key,
+          title: s.title,
+          description: s.description,
+          sortOrder: s.sortOrder,
+          isActive: true,
+        },
+      });
+      if (existingSec) skippedSectionsT++;
+      else createdSectionsT++;
+
+      for (const f of s.fields) {
+        // Fields: composite unique (templateSectionId, fieldKey).
+        // Update path refreshes label / help / validation / visibility
+        // / options / required so the spec tree is the source of truth.
+        const existingField = await prisma.templateField.findUnique({
+          where: { templateSectionId_fieldKey: { templateSectionId: section.id, fieldKey: f.fieldKey } },
+        });
+        await prisma.templateField.upsert({
+          where: { templateSectionId_fieldKey: { templateSectionId: section.id, fieldKey: f.fieldKey } },
+          update: {
+            fieldType: f.fieldType,
+            label: f.label,
+            placeholder: f.placeholder ?? null,
+            helpText: f.helpText ?? null,
+            isRequired: f.isRequired,
+            sortOrder: f.sortOrder,
+            isActive: true,
+            optionsJson: (f.optionsJson as any) ?? null,
+            validationRulesJson: (f.validationRulesJson as any) ?? null,
+            visibilityRulesJson: (f.visibilityRulesJson as any) ?? null,
+          },
+          create: {
+            templateSectionId: section.id,
+            fieldKey: f.fieldKey,
+            fieldType: f.fieldType,
+            label: f.label,
+            placeholder: f.placeholder,
+            helpText: f.helpText,
+            isRequired: f.isRequired,
+            sortOrder: f.sortOrder,
+            isActive: true,
+            optionsJson: (f.optionsJson as any) ?? undefined,
+            validationRulesJson: (f.validationRulesJson as any) ?? undefined,
+            visibilityRulesJson: (f.visibilityRulesJson as any) ?? undefined,
+          },
+        });
+        if (existingField) skippedFields++;
+        else createdFields++;
+      }
+    }
+    console.log(
+      `  ✅ ${t.key} — ${t.sections.length} sections, ${t.sections.reduce((n, s) => n + s.fields.length, 0)} fields`,
+    );
+  }
+  console.log(
+    `     templates: ${createdTemplates} new + ${updatedTemplates} refreshed | sections: ${createdSectionsT} new + ${skippedSectionsT} updated | fields: ${createdFields} new + ${skippedFields} updated`,
+  );
+
   // H. Template binding — composite unique (destinationCountryId, visaTypeId).
   console.log('\n🔗 Template binding:');
   const binding = await prisma.templateBinding.upsert({
@@ -717,6 +1575,147 @@ async function main() {
     );
   }
 
+  // ===========================================
+  // Sprint 1 / Task A — production bindings + per-nationality fees
+  // ===========================================
+  // Plan: 11 bindings spanning the 12 active destinations × 3 visa
+  // types (tourism / business / transit). The existing TR+tourism
+  // binding above keeps test-tourism template (preserved — admin may
+  // have applications referencing it). All new bindings point at the
+  // production templates seeded in this pack.
+  //
+  // Each binding gets 5 nationality fees (AZ, RU, UA, KZ, UZ).
+  // Tourism/business use the standard fee table; transit halves both
+  // government and service fees per Sprint 1 brief. Expedited fee
+  // applies to business bindings only (`expeditedEnabled=true`).
+  console.log('\n🔗 Production template bindings + nationality fees:');
+
+  const NATIONALITY_FEES_STD = [
+    { iso: 'AZ', gov: 25, svc: 15 },
+    { iso: 'RU', gov: 40, svc: 20 },
+    { iso: 'UA', gov: 35, svc: 20 },
+    { iso: 'KZ', gov: 30, svc: 15 },
+    { iso: 'UZ', gov: 30, svc: 15 },
+  ];
+  const NATIONALITY_FEES_TRANSIT = [
+    { iso: 'AZ', gov: 12.5, svc: 7.5 },
+    { iso: 'RU', gov: 20, svc: 10 },
+    { iso: 'UA', gov: 17.5, svc: 10 },
+    { iso: 'KZ', gov: 15, svc: 7.5 },
+    { iso: 'UZ', gov: 15, svc: 7.5 },
+  ];
+
+  type BindingPlan = {
+    destIso: string;
+    visaPurpose: 'tourism' | 'business' | 'transit';
+    templateKey: string;
+  };
+  const BINDING_PLAN: BindingPlan[] = [
+    // tourismStandardV1 — 7 destinations (TR already has test-tourism, skip)
+    { destIso: 'AE', visaPurpose: 'tourism',  templateKey: 'tourismStandardV1' },
+    { destIso: 'EG', visaPurpose: 'tourism',  templateKey: 'tourismStandardV1' },
+    { destIso: 'TH', visaPurpose: 'tourism',  templateKey: 'tourismStandardV1' },
+    { destIso: 'GE', visaPurpose: 'tourism',  templateKey: 'tourismStandardV1' },
+    { destIso: 'VN', visaPurpose: 'tourism',  templateKey: 'tourismStandardV1' },
+    { destIso: 'LK', visaPurpose: 'tourism',  templateKey: 'tourismStandardV1' },
+    // businessStandardV1 — 3 destinations
+    { destIso: 'TR', visaPurpose: 'business', templateKey: 'businessStandardV1' },
+    { destIso: 'AE', visaPurpose: 'business', templateKey: 'businessStandardV1' },
+    { destIso: 'EG', visaPurpose: 'business', templateKey: 'businessStandardV1' },
+    // transitSimpleV1 — 2 destinations
+    { destIso: 'TR', visaPurpose: 'transit',  templateKey: 'transitSimpleV1' },
+    { destIso: 'AE', visaPurpose: 'transit',  templateKey: 'transitSimpleV1' },
+  ];
+
+  let createdBindings = 0,
+    skippedBindings = 0,
+    createdFees = 0,
+    skippedFees = 0;
+
+  for (const plan of BINDING_PLAN) {
+    const destId = countryIds[plan.destIso];
+    const visaTypeId = visaTypeIds[plan.visaPurpose];
+    const tplId = templateIdsByKey[plan.templateKey];
+    if (!destId || !visaTypeId || !tplId) {
+      console.log(
+        `  ⚠️  skip ${plan.destIso}+${plan.visaPurpose}+${plan.templateKey} — missing reference id`,
+      );
+      continue;
+    }
+
+    // Bindings: composite unique (destinationCountryId, visaTypeId).
+    // INSERT IF MISSING — never overwrite an existing binding's
+    // templateId, since live applications reference the binding and
+    // re-pointing the template would break them.
+    const existingBinding = await prisma.templateBinding.findUnique({
+      where: { destinationCountryId_visaTypeId: { destinationCountryId: destId, visaTypeId } },
+    });
+    let bindingRow;
+    if (existingBinding) {
+      bindingRow = existingBinding;
+      skippedBindings++;
+    } else {
+      bindingRow = await prisma.templateBinding.create({
+        data: {
+          destinationCountryId: destId,
+          visaTypeId,
+          templateId: tplId,
+          isActive: true,
+        },
+      });
+      createdBindings++;
+    }
+
+    // Fees: composite unique (templateBindingId, nationalityCountryId).
+    // Per-nationality table per Sprint 1 brief; transit uses halved
+    // schedule; expedited only enabled for business.
+    const feeTable =
+      plan.visaPurpose === 'transit' ? NATIONALITY_FEES_TRANSIT : NATIONALITY_FEES_STD;
+    const isExpeditedEnabled = plan.visaPurpose === 'business';
+    const expeditedAmount = isExpeditedEnabled ? 50 : null;
+
+    for (const f of feeTable) {
+      const natId = countryIds[f.iso];
+      if (!natId) {
+        console.log(`     ⚠️  nationality ${f.iso} not found`);
+        continue;
+      }
+      const existingFee = await prisma.bindingNationalityFee.findUnique({
+        where: {
+          templateBindingId_nationalityCountryId: {
+            templateBindingId: bindingRow.id,
+            nationalityCountryId: natId,
+          },
+        },
+      });
+      if (existingFee) {
+        skippedFees++;
+        continue;
+      }
+      await prisma.bindingNationalityFee.create({
+        data: {
+          templateBindingId: bindingRow.id,
+          nationalityCountryId: natId,
+          governmentFeeAmount: f.gov,
+          serviceFeeAmount: f.svc,
+          expeditedFeeAmount: expeditedAmount ?? undefined,
+          currencyCode: 'USD',
+          expeditedEnabled: isExpeditedEnabled,
+          isActive: true,
+        },
+      });
+      createdFees++;
+    }
+    console.log(
+      `  ✅ ${plan.destIso}+${plan.visaPurpose} → ${plan.templateKey}` +
+        (existingBinding ? ' (binding exists)' : '') +
+        ` — fees +${feeTable.length}`,
+    );
+  }
+  console.log(
+    `     bindings: ${createdBindings} new + ${skippedBindings} preserved | fees: ${createdFees} new + ${skippedFees} preserved`,
+  );
+
   // J. Settings (singleton) — findFirst + create.
   console.log('\n⚙️  Settings (singleton):');
   const existingSetting = await prisma.setting.findFirst();
@@ -767,25 +1766,23 @@ async function main() {
     console.log(`  ✅ Payment page config created`);
   }
 
-  console.log('\n📊 Pre-Sprint 3 config tally:');
-  console.log('─'.repeat(50));
-  console.log(`  Countries (UN reference): 250 (ISO 3166-1 alpha-2)`);
-  console.log(`  Country pages:            3 (TR, AZ, AE — publishable)`);
-  console.log(`  Country sections:         3 (TR page)`);
-  console.log(`  Visa types:               2 (tourism, business)`);
-  console.log(
-    `  Email templates:          2 (otp_verification, application_status_update)`,
-  );
-  console.log(`  Form template:            1 (test-tourism)`);
-  console.log(`  Template section:         1 (personal)`);
-  console.log(`  Template fields:          2 (fullName, email)`);
-  console.log(`  Template binding:         1 (TR + tourism)`);
-  console.log(`  Binding nationality fees: 2 (AZ, AE)`);
-  console.log(`  Settings:                 1 (singleton)`);
-  console.log(`  Payment page config:      1 (singleton)`);
-  console.log('─'.repeat(50));
-  console.log(`  Total config records:     19`);
-  console.log('─'.repeat(50));
+  console.log('\n📊 Sprint 1 / Task A — production seed tally (target):');
+  console.log('─'.repeat(60));
+  console.log(`  Countries (UN reference):       250  (ISO 3166-1 alpha-2 reference)`);
+  console.log(`  Country pages (publishable):    13   (TR/AZ/AE legacy + 10 new destinations)`);
+  console.log(`  Country sections:               20   (5 destinations × 4 sections, real bilingual content)`);
+  console.log(`  Visa types:                     5    (tourism, business, transit, student, medical)`);
+  console.log(`  Email templates:                10   (2 legacy snake_case + 8 new dot-case)`);
+  console.log(`  Form templates:                 4    (test-tourism legacy + 3 production v1)`);
+  console.log(`  Template sections:              ~17  (1 legacy + 16 across 3 production templates)`);
+  console.log(`  Template fields:                ~58  (2 legacy + 56 across 3 production templates)`);
+  console.log(`  Template bindings:              12   (1 legacy TR+tourism + 11 production)`);
+  console.log(`  Binding nationality fees:       57   (2 legacy + 55 across 11 production bindings × 5 nationalities)`);
+  console.log(`  Settings (singleton):           1`);
+  console.log(`  Payment page config (singleton):1`);
+  console.log('─'.repeat(60));
+  console.log(`  Total config rows (excl. countries reference): ~198`);
+  console.log('─'.repeat(60));
 }
 
 main()
