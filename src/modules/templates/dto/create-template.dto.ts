@@ -21,14 +21,16 @@ export class CreateTemplateDto {
   name: string;
 
   @ApiProperty({
-    description: 'Unique template key',
-    example: 'tourist-visa-standard',
+    description:
+      'Unique template key. Must start with a lowercase letter and contain only letters, digits, and underscores. Matches the camelCase convention used by seeded templates (tourismStandardV1, businessStandardV1, transitSimpleV1).',
+    example: 'tourismStandardV1',
   })
   @IsString()
   @MinLength(2)
   @MaxLength(100)
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
-    message: 'Key must be lowercase alphanumeric with hyphens only',
+  @Matches(/^[a-z][a-zA-Z0-9_]*$/, {
+    message:
+      'Key must start with a lowercase letter and contain only letters, digits, and underscores',
   })
   key: string;
 
