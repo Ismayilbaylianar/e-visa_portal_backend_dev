@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import {
   CreateTemplateSectionDto,
   UpdateTemplateSectionDto,
@@ -12,7 +13,10 @@ import { ErrorCodes } from '@/common/constants';
 export class TemplateSectionsService {
   private readonly logger = new Logger(TemplateSectionsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogsService: AuditLogsService,
+  ) {}
 
   /**
    * Create a new section under a template
@@ -20,6 +24,7 @@ export class TemplateSectionsService {
   async create(
     templateId: string,
     dto: CreateTemplateSectionDto,
+    actorUserId?: string,
   ): Promise<TemplateSectionResponseDto> {
     const template = await this.prisma.template.findFirst({
       where: { id: templateId, deletedAt: null },
@@ -69,6 +74,22 @@ export class TemplateSectionsService {
       },
     });
 
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'template.section.create',
+        'TemplateSection',
+        section.id,
+        undefined,
+        {
+          templateId,
+          key: section.key,
+          title: section.title,
+          sortOrder: section.sortOrder,
+        },
+      );
+    }
+
     this.logger.log(
       `Template section created: ${section.id} (${section.key}) for template: ${templateId}`,
     );
@@ -81,6 +102,7 @@ export class TemplateSectionsService {
   async update(
     sectionId: string,
     dto: UpdateTemplateSectionDto,
+    actorUserId?: string,
   ): Promise<TemplateSectionResponseDto> {
     const section = await this.prisma.templateSection.findFirst({
       where: { id: sectionId, deletedAt: null },
@@ -134,6 +156,22 @@ export class TemplateSectionsService {
       },
     });
 
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'template.section.update',
+        'TemplateSection',
+        sectionId,
+        { title: section.title, key: section.key, description: section.description, isActive: section.isActive },
+        {
+          title: updatedSection.title,
+          key: updatedSection.key,
+          description: updatedSection.description,
+          isActive: updatedSection.isActive,
+        },
+      );
+    }
+
     this.logger.log(`Template section updated: ${sectionId}`);
     return this.mapToResponse(updatedSection);
   }
@@ -141,7 +179,7 @@ export class TemplateSectionsService {
   /**
    * Soft delete template section and all its fields
    */
-  async delete(sectionId: string): Promise<void> {
+  async delete(sectionId: string, actorUserId?: string): Promise<void> {
     const section = await this.prisma.templateSection.findFirst({
       where: { id: sectionId, deletedAt: null },
     });
@@ -167,6 +205,17 @@ export class TemplateSectionsService {
         data: { deletedAt: now },
       }),
     ]);
+
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'template.section.delete',
+        'TemplateSection',
+        sectionId,
+        { templateId: section.templateId, title: section.title, key: section.key },
+        undefined,
+      );
+    }
 
     this.logger.log(`Template section soft deleted: ${sectionId}`);
   }

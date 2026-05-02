@@ -21,8 +21,51 @@ import {
   GetTemplatesQueryDto,
 } from './dto';
 import { TemplateIdParamDto } from '@/common/dto';
-import { RequirePermissions, ApiPaginatedResponse } from '@/common/decorators';
+import { RequirePermissions, ApiPaginatedResponse, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
+import { AuthenticatedUser } from '@/common/types';
+import { IsArray, IsString, IsUUID, ArrayUnique, IsOptional, MinLength, MaxLength, Matches } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+/**
+ * Inline DTOs kept colocated with the controller — small one-shot
+ * payloads that don't need their own dto/ files. Validation matches
+ * the existing CreateTemplateDto rules where applicable.
+ */
+class ReorderSectionsDto {
+  @ApiProperty({
+    description: 'Section IDs in the desired final order. Must include every active section in the template.',
+    type: [String],
+    example: ['<uuid>', '<uuid>'],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true, message: 'Each id must be a valid UUID' })
+  @ArrayUnique({ message: 'IDs must be unique' })
+  orderedIds!: string[];
+}
+
+class DuplicateTemplateDto {
+  @ApiProperty({ description: 'Name for the new template', example: 'Tourism V2 Draft' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(200)
+  name!: string;
+
+  @ApiProperty({ description: 'Unique key (camelCase recommended)', example: 'tourismStandardV2' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  @Matches(/^[a-z][a-zA-Z0-9_]*$/, {
+    message: 'Key must start with lowercase letter; letters/digits/underscore only',
+  })
+  key!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
+}
 
 @ApiTags('Templates - Admin')
 @ApiBearerAuth('JWT-auth')
@@ -80,8 +123,49 @@ export class TemplatesController {
     status: 409,
     description: 'Template with this key already exists',
   })
-  async create(@Body() dto: CreateTemplateDto): Promise<TemplateResponseDto> {
-    return this.templatesService.create(dto);
+  async create(
+    @Body() dto: CreateTemplateDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<TemplateResponseDto> {
+    return this.templatesService.create(dto, user.id);
+  }
+
+  @Post(':templateId/duplicate')
+  @RequirePermissions('templates.duplicate')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Duplicate template',
+    description:
+      'Deep-clone the template plus all its sections + fields in a single transaction. New template starts at version 1 with an independent lifecycle. Bindings + applications are NOT copied.',
+  })
+  @ApiResponse({ status: 201, type: TemplateResponseDto })
+  @ApiResponse({ status: 404, description: 'Source template not found' })
+  @ApiResponse({ status: 409, description: 'New key conflicts with existing template' })
+  async duplicate(
+    @Param() params: TemplateIdParamDto,
+    @Body() dto: DuplicateTemplateDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<TemplateResponseDto> {
+    return this.templatesService.duplicate(params.templateId, dto, user.id);
+  }
+
+  @Patch(':templateId/sections/reorder')
+  @RequirePermissions('templates.update')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Reorder sections',
+    description:
+      'Bulk update sortOrder for all sections in the template. Body must list every section id in the desired order; partial reorders are rejected (prevents accidental data inconsistency).',
+  })
+  @ApiResponse({ status: 204, description: 'Sections reordered successfully' })
+  @ApiResponse({ status: 404, description: 'Template not found' })
+  @ApiResponse({ status: 409, description: 'orderedIds does not match the template sections' })
+  async reorderSections(
+    @Param() params: TemplateIdParamDto,
+    @Body() dto: ReorderSectionsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    await this.templatesService.reorderSections(params.templateId, dto.orderedIds, user.id);
   }
 
   @Patch(':templateId')
@@ -107,8 +191,9 @@ export class TemplatesController {
   async update(
     @Param() params: TemplateIdParamDto,
     @Body() dto: UpdateTemplateDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<TemplateResponseDto> {
-    return this.templatesService.update(params.templateId, dto);
+    return this.templatesService.update(params.templateId, dto, user.id);
   }
 
   @Delete(':templateId')
@@ -127,7 +212,10 @@ export class TemplatesController {
     status: 404,
     description: 'Template not found',
   })
-  async delete(@Param() params: TemplateIdParamDto): Promise<void> {
-    return this.templatesService.delete(params.templateId);
+  async delete(
+    @Param() params: TemplateIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.templatesService.delete(params.templateId, user.id);
   }
 }

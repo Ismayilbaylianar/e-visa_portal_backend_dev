@@ -17,8 +17,9 @@ import {
   TemplateSectionResponseDto,
 } from './dto';
 import { TemplateIdParamDto, SectionIdParamDto } from '@/common/dto';
-import { RequirePermissions } from '@/common/decorators';
+import { RequirePermissions, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
+import { AuthenticatedUser } from '@/common/types';
 
 @ApiTags('Template Sections - Admin')
 @ApiBearerAuth('JWT-auth')
@@ -52,8 +53,9 @@ export class TemplateSectionsController {
   async create(
     @Param() params: TemplateIdParamDto,
     @Body() dto: CreateTemplateSectionDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<TemplateSectionResponseDto> {
-    return this.templateSectionsService.create(params.templateId, dto);
+    return this.templateSectionsService.create(params.templateId, dto, user.id);
   }
 
   @Patch('templateSections/:sectionId')
@@ -79,8 +81,9 @@ export class TemplateSectionsController {
   async update(
     @Param() params: SectionIdParamDto,
     @Body() dto: UpdateTemplateSectionDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<TemplateSectionResponseDto> {
-    return this.templateSectionsService.update(params.sectionId, dto);
+    return this.templateSectionsService.update(params.sectionId, dto, user.id);
   }
 
   @Delete('templateSections/:sectionId')
@@ -99,7 +102,10 @@ export class TemplateSectionsController {
     status: 404,
     description: 'Template section not found',
   })
-  async delete(@Param() params: SectionIdParamDto): Promise<void> {
-    return this.templateSectionsService.delete(params.sectionId);
+  async delete(
+    @Param() params: SectionIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.templateSectionsService.delete(params.sectionId, user.id);
   }
 }
