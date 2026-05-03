@@ -1,9 +1,29 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsOptional, IsBoolean, IsInt, Min, Max } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { SearchQueryDto } from '@/common/dto';
 
 export class GetTemplatesQueryDto extends SearchQueryDto {
+  // Templates are admin-managed reference data — the list is small
+  // enough that the global 100-cap forces unnecessary pagination on
+  // the admin overview screen (which loads `limit=200` to show stats
+  // + table on one page). Match the cap-lift convention already in
+  // place on countries / countryPages / templateBindings / visaTypes /
+  // emailTemplates / users / roles list DTOs.
+  @ApiPropertyOptional({
+    description: 'Items per page (1-500)',
+    minimum: 1,
+    maximum: 500,
+    default: 50,
+    example: 200,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number = 50;
+
   @ApiPropertyOptional({
     description: 'Filter by active status',
   })
