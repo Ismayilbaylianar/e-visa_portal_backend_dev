@@ -163,23 +163,33 @@ export class TemplateBindingsService {
   }
 
   /**
-   * Create a new template binding
-   * Duplicate rule: Only one active binding allowed per destinationCountryId + visaTypeId
+   * Create a new template binding.
+   *
+   * Duplicate rules:
+   *   • An active binding for (destination, visaType) blocks creation
+   *     with 409 — caller should edit the existing one or deactivate it.
+   *   • A SOFT-DELETED binding for the same pair is *revived* in place
+   *     rather than a fresh INSERT. The DB unique index on
+   *     `(destination_country_id, visa_type_id)` is unconditional
+   *     (doesn't exclude `deleted_at IS NOT NULL`) so a fresh INSERT
+   *     would 500 against the constraint. Reviving keeps the row id
+   *     stable (avoiding orphaned references) and applies the new
+   *     template/isActive/dates.
    */
   async create(
     dto: CreateTemplateBindingDto,
     actorUserId?: string,
   ): Promise<TemplateBindingResponseDto> {
-    // Check for duplicate binding (same destination + visa type)
-    const existingBinding = await this.prisma.templateBinding.findFirst({
+    // First: any binding (active OR soft-deleted) for this combo?
+    // We need to know which case to take: 409, revive, or fresh insert.
+    const anyExisting = await this.prisma.templateBinding.findFirst({
       where: {
         destinationCountryId: dto.destinationCountryId,
         visaTypeId: dto.visaTypeId,
-        deletedAt: null,
       },
     });
 
-    if (existingBinding) {
+    if (anyExisting && anyExisting.deletedAt === null) {
       throw new ConflictException('Template binding already exists', [
         {
           reason: ErrorCodes.CONFLICT,
@@ -191,35 +201,52 @@ export class TemplateBindingsService {
 
     await this.validateRelations(dto);
 
-    const binding = await this.prisma.templateBinding.create({
-      data: {
-        destinationCountryId: dto.destinationCountryId,
-        visaTypeId: dto.visaTypeId,
-        templateId: dto.templateId,
-        isActive: dto.isActive ?? true,
-        validFrom: dto.validFrom ? new Date(dto.validFrom) : null,
-        validTo: dto.validTo ? new Date(dto.validTo) : null,
+    const includeShape = {
+      destinationCountry: {
+        select: { id: true, name: true, isoCode: true },
       },
-      include: {
-        destinationCountry: {
-          select: { id: true, name: true, isoCode: true },
-        },
-        visaType: {
-          select: { id: true, label: true, purpose: true },
-        },
-        template: {
-          select: { id: true, name: true, key: true },
-        },
-        nationalityFees: {
-          where: { deletedAt: null },
-          include: {
-            nationalityCountry: {
-              select: { id: true, name: true, isoCode: true },
-            },
+      visaType: {
+        select: { id: true, label: true, purpose: true },
+      },
+      template: {
+        select: { id: true, name: true, key: true },
+      },
+      nationalityFees: {
+        where: { deletedAt: null },
+        include: {
+          nationalityCountry: {
+            select: { id: true, name: true, isoCode: true },
           },
         },
       },
-    });
+    } as const;
+
+    const binding = anyExisting
+      ? // Revival path — clear deletedAt and apply the new field values.
+        // Note: any soft-deleted nationality fees stay deleted; admin
+        // adds fresh fee rows on the detail page after revival.
+        await this.prisma.templateBinding.update({
+          where: { id: anyExisting.id },
+          data: {
+            deletedAt: null,
+            templateId: dto.templateId,
+            isActive: dto.isActive ?? true,
+            validFrom: dto.validFrom ? new Date(dto.validFrom) : null,
+            validTo: dto.validTo ? new Date(dto.validTo) : null,
+          },
+          include: includeShape,
+        })
+      : await this.prisma.templateBinding.create({
+          data: {
+            destinationCountryId: dto.destinationCountryId,
+            visaTypeId: dto.visaTypeId,
+            templateId: dto.templateId,
+            isActive: dto.isActive ?? true,
+            validFrom: dto.validFrom ? new Date(dto.validFrom) : null,
+            validTo: dto.validTo ? new Date(dto.validTo) : null,
+          },
+          include: includeShape,
+        });
 
     if (actorUserId) {
       await this.auditLogsService.logAdminAction(
