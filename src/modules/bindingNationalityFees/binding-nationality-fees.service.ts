@@ -92,16 +92,21 @@ export class BindingNationalityFeesService {
       ]);
     }
 
-    // Check for duplicate nationality within binding
-    const existingFee = await this.prisma.bindingNationalityFee.findFirst({
+    // Same DB-level concern as bindings: the unique index on
+    // `(template_binding_id, nationality_country_id)` is unconditional,
+    // so a fresh INSERT against a soft-deleted slot would 500. Detect
+    // any existing row (active or soft-deleted) and branch:
+    //   • active → 409 (caller should PATCH instead)
+    //   • soft-deleted → revive in place with the new values
+    //   • none → fresh INSERT
+    const anyExisting = await this.prisma.bindingNationalityFee.findFirst({
       where: {
         templateBindingId: bindingId,
         nationalityCountryId: dto.nationalityCountryId,
-        deletedAt: null,
       },
     });
 
-    if (existingFee) {
+    if (anyExisting && anyExisting.deletedAt === null) {
       throw new ConflictException('Nationality fee already exists', [
         {
           field: 'nationalityCountryId',
@@ -125,23 +130,39 @@ export class BindingNationalityFeesService {
       ]);
     }
 
-    const fee = await this.prisma.bindingNationalityFee.create({
-      data: {
-        templateBindingId: bindingId,
-        nationalityCountryId: dto.nationalityCountryId,
-        governmentFeeAmount: new Decimal(dto.governmentFeeAmount),
-        serviceFeeAmount: new Decimal(dto.serviceFeeAmount),
-        expeditedFeeAmount: dto.expeditedFeeAmount ? new Decimal(dto.expeditedFeeAmount) : null,
-        currencyCode: dto.currencyCode.toUpperCase(),
-        expeditedEnabled: dto.expeditedEnabled ?? false,
-        isActive: dto.isActive ?? true,
-      },
-      include: {
-        nationalityCountry: {
-          select: { id: true, name: true, isoCode: true },
-        },
-      },
-    });
+    const writeData = {
+      governmentFeeAmount: new Decimal(dto.governmentFeeAmount),
+      serviceFeeAmount: new Decimal(dto.serviceFeeAmount),
+      expeditedFeeAmount: dto.expeditedFeeAmount
+        ? new Decimal(dto.expeditedFeeAmount)
+        : null,
+      currencyCode: dto.currencyCode.toUpperCase(),
+      expeditedEnabled: dto.expeditedEnabled ?? false,
+      isActive: dto.isActive ?? true,
+    };
+
+    const fee = anyExisting
+      ? await this.prisma.bindingNationalityFee.update({
+          where: { id: anyExisting.id },
+          data: { ...writeData, deletedAt: null },
+          include: {
+            nationalityCountry: {
+              select: { id: true, name: true, isoCode: true },
+            },
+          },
+        })
+      : await this.prisma.bindingNationalityFee.create({
+          data: {
+            templateBindingId: bindingId,
+            nationalityCountryId: dto.nationalityCountryId,
+            ...writeData,
+          },
+          include: {
+            nationalityCountry: {
+              select: { id: true, name: true, isoCode: true },
+            },
+          },
+        });
 
     if (actorUserId) {
       await this.auditLogsService.logAdminAction(
@@ -368,17 +389,27 @@ export class BindingNationalityFeesService {
     }
 
     // Pre-fetch existing fees for all targets in one query to keep the
-    // transaction tight (no N+1 inside the writer loop below).
+    // transaction tight (no N+1 inside the writer loop below). We need
+    // BOTH active and soft-deleted matches because the unique index
+    // doesn't exclude soft-deleted rows — a fresh INSERT against a
+    // soft-deleted slot would 500. Soft-deleted matches are revived
+    // (deletedAt cleared) the same way single-fee create does.
     const existingTargets = await this.prisma.bindingNationalityFee.findMany({
       where: {
         templateBindingId: bindingId,
         nationalityCountryId: { in: dto.targetNationalityCountryIds },
-        deletedAt: null,
       },
-      select: { id: true, nationalityCountryId: true },
+      select: {
+        id: true,
+        nationalityCountryId: true,
+        deletedAt: true,
+      },
     });
     const existingByNationality = new Map(
-      existingTargets.map((row) => [row.nationalityCountryId, row.id]),
+      existingTargets.map((row) => [
+        row.nationalityCountryId,
+        { id: row.id, isSoftDeleted: row.deletedAt !== null },
+      ]),
     );
 
     const overwrite = dto.overwriteExisting === true;
@@ -417,8 +448,13 @@ export class BindingNationalityFeesService {
         continue;
       }
 
-      const existingId = existingByNationality.get(targetId);
-      if (existingId && !overwrite) {
+      const existing = existingByNationality.get(targetId);
+
+      // ACTIVE row + no overwrite → skip with the explicit reason.
+      // Soft-deleted rows are NOT treated as "existing" for the skip
+      // decision because the admin already deleted them; reviving with
+      // the source values is the right behavior either way.
+      if (existing && !existing.isSoftDeleted && !overwrite) {
         details.push({
           nationalityCountryId: targetId,
           outcome: 'skipped_exists',
@@ -427,10 +463,11 @@ export class BindingNationalityFeesService {
         continue;
       }
 
-      if (existingId && overwrite) {
+      if (existing && !existing.isSoftDeleted && overwrite) {
+        // Active row + overwrite → straight UPDATE.
         ops.push(
           this.prisma.bindingNationalityFee.update({
-            where: { id: existingId },
+            where: { id: existing.id },
             data: valuesFromSource,
           }),
         );
@@ -439,7 +476,23 @@ export class BindingNationalityFeesService {
           outcome: 'updated',
         });
         updated += 1;
+      } else if (existing && existing.isSoftDeleted) {
+        // Soft-deleted row → revive in place. Counted as "created"
+        // for the admin (they're seeing a fresh fee row appear) even
+        // though under the hood we're un-deleting.
+        ops.push(
+          this.prisma.bindingNationalityFee.update({
+            where: { id: existing.id },
+            data: { ...valuesFromSource, deletedAt: null },
+          }),
+        );
+        details.push({
+          nationalityCountryId: targetId,
+          outcome: 'created',
+        });
+        created += 1;
       } else {
+        // No row at all → fresh INSERT.
         ops.push(
           this.prisma.bindingNationalityFee.create({
             data: {
