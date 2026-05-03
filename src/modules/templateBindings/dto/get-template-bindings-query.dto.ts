@@ -1,9 +1,38 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsUUID, IsString, MaxLength } from 'class-validator';
-import { Transform } from 'class-transformer';
+import {
+  IsOptional,
+  IsBoolean,
+  IsUUID,
+  IsString,
+  MaxLength,
+  IsInt,
+  Min,
+  Max,
+} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { PaginationQueryDto } from '@/common/dto';
 
 export class GetTemplateBindingsQueryDto extends PaginationQueryDto {
+  // Bindings are admin-managed reference data — the list is small
+  // enough that the standard 100-cap forces unnecessary pagination on
+  // an admin overview screen. Match the country/countryPages convention
+  // and lift the cap to 500 so the admin can see all bindings on one
+  // page (and so the stats row can compute "Active w/o fees" without
+  // needing to walk every page).
+  @ApiPropertyOptional({
+    description: 'Items per page (1-500)',
+    minimum: 1,
+    maximum: 500,
+    default: 50,
+    example: 200,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number = 50;
+
   @ApiPropertyOptional({
     description:
       'Free-text search across template name/key, destination country name/ISO, and visa type label/purpose. Case-insensitive.',
