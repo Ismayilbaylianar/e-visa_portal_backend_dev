@@ -1,12 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
+import { EmailService } from '../email/email.service';
+import { EmailTemplateService } from '../email/templates/email-template.service';
 import {
   CreateEmailTemplateDto,
   UpdateEmailTemplateDto,
   EmailTemplateResponseDto,
   EmailTemplateListResponseDto,
   GetEmailTemplatesQueryDto,
+  PreviewEmailTemplateDto,
+  PreviewEmailTemplateResponseDto,
+  TestSendEmailTemplateDto,
+  TestSendEmailTemplateResponseDto,
 } from './dto';
 import { NotFoundException, ConflictException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
@@ -33,6 +39,8 @@ export class EmailTemplatesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly emailService: EmailService,
+    private readonly emailTemplateService: EmailTemplateService,
   ) {}
 
   /**
@@ -295,6 +303,120 @@ export class EmailTemplatesService {
     }
 
     this.logger.log(`Email template soft deleted: ${id} (${template.templateKey})`);
+  }
+
+  /**
+   * Module 8 — Render the template against a sample variables map and
+   * return the rendered subject + html + text without sending. Reuses
+   * the same EmailTemplateService.renderWithValidation path that
+   * production email sends use, so what the admin previews is exactly
+   * what the recipient will receive.
+   *
+   * Preview is read-only; no audit entry is emitted.
+   */
+  async preview(
+    id: string,
+    dto: PreviewEmailTemplateDto,
+  ): Promise<PreviewEmailTemplateResponseDto> {
+    const template = await this.prisma.emailTemplate.findFirst({
+      where: { id, deletedAt: null },
+    });
+
+    if (!template) {
+      throw new NotFoundException('Email template not found', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Email template does not exist or has been deleted',
+        },
+      ]);
+    }
+
+    const variables = dto.variables ?? {};
+    const result = await this.emailTemplateService.renderWithValidation(
+      template.templateKey,
+      variables,
+    );
+    const requiredVariables = this.emailTemplateService.getRequiredVariables(
+      template.templateKey,
+    );
+
+    return {
+      success: result.success,
+      rendered: result.rendered,
+      error: result.error,
+      missingVariables: result.missingVariables,
+      requiredVariables,
+    };
+  }
+
+  /**
+   * Module 8 — Send the rendered template to a real inbox so the admin
+   * can verify end-to-end delivery, including provider behavior (HTML
+   * rendering in Gmail / Outlook, deliverability, etc.). Defaults the
+   * recipient to the calling admin's own email so the common case
+   * "send me a test" needs no input.
+   *
+   * Emits `emailTemplate.test_send` audit so we have a paper trail of
+   * who triggered which template against which inbox — important
+   * because misuse (spamming a customer's inbox) leaves a record.
+   */
+  async testSend(
+    id: string,
+    dto: TestSendEmailTemplateDto,
+    actor: { id: string; email: string },
+  ): Promise<TestSendEmailTemplateResponseDto> {
+    const template = await this.prisma.emailTemplate.findFirst({
+      where: { id, deletedAt: null },
+    });
+
+    if (!template) {
+      throw new NotFoundException('Email template not found', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'Email template does not exist or has been deleted',
+        },
+      ]);
+    }
+
+    const recipient = dto.recipientEmail ?? actor.email;
+    const variables = dto.variables ?? {};
+
+    const sendResult = await this.emailService.sendTemplatedEmail({
+      to: recipient,
+      templateKey: template.templateKey,
+      variables,
+      relatedEntity: 'EmailTemplate',
+      relatedEntityId: template.id,
+    });
+
+    await this.auditLogsService.logAdminAction(
+      actor.id,
+      'emailTemplate.test_send',
+      'EmailTemplate',
+      template.id,
+      undefined,
+      {
+        templateKey: template.templateKey,
+        recipient,
+        success: sendResult.success,
+        provider: sendResult.provider,
+        logId: sendResult.logId,
+        errorCode: sendResult.errorCode,
+      },
+    );
+
+    this.logger.log(
+      `Email template test send: ${template.templateKey} → ${recipient} (success=${sendResult.success})`,
+    );
+
+    return {
+      success: sendResult.success,
+      recipient,
+      provider: sendResult.provider,
+      logId: sendResult.logId,
+      error: sendResult.error,
+      errorCode: sendResult.errorCode,
+    };
   }
 
   /**

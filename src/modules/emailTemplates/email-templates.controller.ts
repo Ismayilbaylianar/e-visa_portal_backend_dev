@@ -19,6 +19,10 @@ import {
   EmailTemplateResponseDto,
   EmailTemplateListResponseDto,
   GetEmailTemplatesQueryDto,
+  PreviewEmailTemplateDto,
+  PreviewEmailTemplateResponseDto,
+  TestSendEmailTemplateDto,
+  TestSendEmailTemplateResponseDto,
 } from './dto';
 import { RequirePermissions, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
@@ -127,6 +131,54 @@ export class EmailTemplatesController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<EmailTemplateResponseDto> {
     return this.emailTemplatesService.update(templateId, dto, currentUser.id);
+  }
+
+  @Post(':templateId/preview')
+  @RequirePermissions('emailTemplates.read')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Preview rendered template',
+    description:
+      'Render the template against an optional sample variables map and return the rendered subject + html + text without sending. Reuses the same render path used by production sends, so what the admin previews matches what the recipient receives.',
+  })
+  @ApiParam({ name: 'templateId', description: 'Email template ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Render result (success=false when required variables are missing)',
+    type: PreviewEmailTemplateResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Email template not found' })
+  async preview(
+    @Param('templateId') templateId: string,
+    @Body() dto: PreviewEmailTemplateDto,
+  ): Promise<PreviewEmailTemplateResponseDto> {
+    return this.emailTemplatesService.preview(templateId, dto);
+  }
+
+  @Post(':templateId/test-send')
+  @RequirePermissions('emailTemplates.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Send a test email rendered from this template',
+    description:
+      'Render and send the template via the active provider. Recipient defaults to the calling admin’s own email. Emits an `emailTemplate.test_send` audit entry tying the template + recipient to the actor.',
+  })
+  @ApiParam({ name: 'templateId', description: 'Email template ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Send result (success=false when render or provider fails)',
+    type: TestSendEmailTemplateResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Email template not found' })
+  async testSend(
+    @Param('templateId') templateId: string,
+    @Body() dto: TestSendEmailTemplateDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<TestSendEmailTemplateResponseDto> {
+    return this.emailTemplatesService.testSend(templateId, dto, {
+      id: currentUser.id,
+      email: currentUser.email,
+    });
   }
 
   @Delete(':templateId')

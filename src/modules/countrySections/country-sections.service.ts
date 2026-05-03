@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { CreateCountrySectionDto, UpdateCountrySectionDto } from './dto';
 import { CountrySectionResponseDto } from '../countries/dto';
-import { NotFoundException } from '@/common/exceptions';
+import { NotFoundException, ConflictException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 
 /**
@@ -155,6 +155,88 @@ export class CountrySectionsService {
     }
 
     this.logger.log(`Country section soft deleted: ${sectionId}`);
+  }
+
+  /**
+   * Bulk reorder — set sortOrder = index for every section under one
+   * CountryPage in a single transaction. Mirrors the Module 7 template
+   * reorder pattern: validates parent existence, validates every id
+   * belongs to the page, requires the full set (no partial reorders),
+   * and emits a single `countrySection.reorder` audit entry with
+   * before/after order so admins can trace section moves.
+   */
+  async reorderSections(
+    countryPageId: string,
+    orderedIds: string[],
+    actorUserId?: string,
+  ): Promise<void> {
+    const page = await this.prisma.countryPage.findFirst({
+      where: { id: countryPageId, deletedAt: null },
+      include: {
+        sections: {
+          where: { deletedAt: null },
+          select: { id: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+
+    if (!page) {
+      throw new NotFoundException('CountryPage not found', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'CountryPage does not exist or has been deleted',
+        },
+      ]);
+    }
+
+    const knownIds = new Set(page.sections.map((s) => s.id));
+    const unknown = orderedIds.filter((id) => !knownIds.has(id));
+    if (unknown.length > 0) {
+      throw new ConflictException('Reorder rejected', [
+        {
+          field: 'orderedIds',
+          reason: ErrorCodes.CONFLICT,
+          message: `Sections do not belong to this country page: ${unknown.join(', ')}`,
+        },
+      ]);
+    }
+
+    if (orderedIds.length !== page.sections.length) {
+      throw new ConflictException('Reorder rejected', [
+        {
+          field: 'orderedIds',
+          reason: ErrorCodes.CONFLICT,
+          message: `Expected ${page.sections.length} section ids, received ${orderedIds.length}`,
+        },
+      ]);
+    }
+
+    const beforeOrder = page.sections.map((s) => s.id);
+
+    await this.prisma.$transaction(
+      orderedIds.map((id, index) =>
+        this.prisma.countrySection.update({
+          where: { id },
+          data: { sortOrder: index },
+        }),
+      ),
+    );
+
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'countrySection.reorder',
+        'CountryPage',
+        countryPageId,
+        { order: beforeOrder },
+        { order: orderedIds },
+      );
+    }
+
+    this.logger.log(
+      `Country sections reordered: ${countryPageId} (${orderedIds.length} sections)`,
+    );
   }
 
   private mapToResponse(section: any): CountrySectionResponseDto {
