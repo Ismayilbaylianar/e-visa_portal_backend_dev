@@ -1,9 +1,19 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsUUID } from 'class-validator';
+import { IsOptional, IsBoolean, IsUUID, IsString, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { PaginationQueryDto } from '@/common/dto';
 
 export class GetTemplateBindingsQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Free-text search across template name/key, destination country name/ISO, and visa type label/purpose. Case-insensitive.',
+    example: 'turkey',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
+
   @ApiPropertyOptional({
     description: 'Filter by active status',
   })

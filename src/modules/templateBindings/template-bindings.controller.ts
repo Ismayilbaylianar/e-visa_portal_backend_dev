@@ -21,8 +21,9 @@ import {
   GetTemplateBindingsQueryDto,
 } from './dto';
 import { BindingIdParamDto } from '@/common/dto';
-import { RequirePermissions, ApiPaginatedResponse } from '@/common/decorators';
+import { RequirePermissions, ApiPaginatedResponse, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
+import { AuthenticatedUser } from '@/common/types';
 
 @ApiTags('Template Bindings - Admin')
 @ApiBearerAuth('JWT-auth')
@@ -86,8 +87,11 @@ export class TemplateBindingsController {
     description:
       'Template binding already exists for this destination country and visa type combination',
   })
-  async create(@Body() dto: CreateTemplateBindingDto): Promise<TemplateBindingResponseDto> {
-    return this.templateBindingsService.create(dto);
+  async create(
+    @Body() dto: CreateTemplateBindingDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<TemplateBindingResponseDto> {
+    return this.templateBindingsService.create(dto, user.id);
   }
 
   @Patch(':bindingId')
@@ -113,8 +117,9 @@ export class TemplateBindingsController {
   async update(
     @Param() params: BindingIdParamDto,
     @Body() dto: UpdateTemplateBindingDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<TemplateBindingResponseDto> {
-    return this.templateBindingsService.update(params.bindingId, dto);
+    return this.templateBindingsService.update(params.bindingId, dto, user.id);
   }
 
   @Delete(':bindingId')
@@ -122,7 +127,8 @@ export class TemplateBindingsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete template binding',
-    description: 'Soft delete a template binding and all its nationality fees',
+    description:
+      'Soft-deletes a template binding and cascades the soft-delete to its nationality fees in one transaction. Hard-blocked (409) when any Application still references the binding — caller must complete/cancel/refund those apps first.',
   })
   @ApiParam({ name: 'bindingId', description: 'Template binding UUID' })
   @ApiResponse({
@@ -133,7 +139,14 @@ export class TemplateBindingsController {
     status: 404,
     description: 'Template binding not found',
   })
-  async delete(@Param() params: BindingIdParamDto): Promise<void> {
-    return this.templateBindingsService.delete(params.bindingId);
+  @ApiResponse({
+    status: 409,
+    description: 'Binding has active applications — cannot delete',
+  })
+  async delete(
+    @Param() params: BindingIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.templateBindingsService.delete(params.bindingId, user.id);
   }
 }

@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Patch,
   Delete,
@@ -15,10 +16,13 @@ import {
   CreateBindingNationalityFeeDto,
   UpdateBindingNationalityFeeDto,
   BindingNationalityFeeResponseDto,
+  BulkCopyFeesDto,
+  BulkCopyFeesResultDto,
 } from './dto';
 import { BindingIdParamDto, FeeIdParamDto } from '@/common/dto';
-import { RequirePermissions } from '@/common/decorators';
+import { RequirePermissions, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
+import { AuthenticatedUser } from '@/common/types';
 
 @ApiTags('Binding Nationality Fees - Admin')
 @ApiBearerAuth('JWT-auth')
@@ -26,6 +30,26 @@ import { JwtAuthGuard } from '@/common/guards';
 @Controller('admin')
 export class BindingNationalityFeesController {
   constructor(private readonly bindingNationalityFeesService: BindingNationalityFeesService) {}
+
+  @Get('templateBindings/:bindingId/nationalityFees')
+  @RequirePermissions('templateBindings.read')
+  @ApiOperation({
+    summary: 'List nationality fees for a binding',
+    description:
+      'Returns active nationality fees under one binding, ordered by country name. Use this when you need fees only (the binding detail endpoint already includes fees nested).',
+  })
+  @ApiParam({ name: 'bindingId', description: 'Template binding UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Nationality fees',
+    type: [BindingNationalityFeeResponseDto],
+  })
+  @ApiResponse({ status: 404, description: 'Template binding not found' })
+  async findByBinding(
+    @Param() params: BindingIdParamDto,
+  ): Promise<BindingNationalityFeeResponseDto[]> {
+    return this.bindingNationalityFeesService.findByBinding(params.bindingId);
+  }
 
   @Post('templateBindings/:bindingId/nationalityFees')
   @RequirePermissions('templateBindings.create')
@@ -52,8 +76,35 @@ export class BindingNationalityFeesController {
   async create(
     @Param() params: BindingIdParamDto,
     @Body() dto: CreateBindingNationalityFeeDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<BindingNationalityFeeResponseDto> {
-    return this.bindingNationalityFeesService.create(params.bindingId, dto);
+    return this.bindingNationalityFeesService.create(params.bindingId, dto, user.id);
+  }
+
+  @Post('templateBindings/:bindingId/nationalityFees/bulk-copy')
+  @RequirePermissions('templateBindings.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Bulk copy fees from one nationality to many on the same binding',
+    description:
+      'Reads the source nationality fee and clones its values onto each target nationality under the same binding. `overwriteExisting=false` (default) skips targets that already have a fee. All writes happen in one transaction so the binding never lands in a partially-applied state.',
+  })
+  @ApiParam({ name: 'bindingId', description: 'Template binding UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Bulk copy summary with per-target outcome',
+    type: BulkCopyFeesResultDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Template binding or source fee not found',
+  })
+  async bulkCopy(
+    @Param() params: BindingIdParamDto,
+    @Body() dto: BulkCopyFeesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<BulkCopyFeesResultDto> {
+    return this.bindingNationalityFeesService.bulkCopy(params.bindingId, dto, user.id);
   }
 
   @Patch('bindingNationalityFees/:feeId')
@@ -79,8 +130,9 @@ export class BindingNationalityFeesController {
   async update(
     @Param() params: FeeIdParamDto,
     @Body() dto: UpdateBindingNationalityFeeDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<BindingNationalityFeeResponseDto> {
-    return this.bindingNationalityFeesService.update(params.feeId, dto);
+    return this.bindingNationalityFeesService.update(params.feeId, dto, user.id);
   }
 
   @Delete('bindingNationalityFees/:feeId')
@@ -99,7 +151,10 @@ export class BindingNationalityFeesController {
     status: 404,
     description: 'Nationality fee not found',
   })
-  async delete(@Param() params: FeeIdParamDto): Promise<void> {
-    return this.bindingNationalityFeesService.delete(params.feeId);
+  async delete(
+    @Param() params: FeeIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.bindingNationalityFeesService.delete(params.feeId, user.id);
   }
 }
