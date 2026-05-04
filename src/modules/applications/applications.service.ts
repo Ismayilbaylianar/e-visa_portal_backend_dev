@@ -10,6 +10,8 @@ import {
   ApproveApplicationDto,
   RejectApplicationDto,
   RequestDocumentsDto,
+  UpdateEstimatedTimeDto,
+  EstimatedTimeChangeEntryDto,
 } from './dto';
 import { NotFoundException, BadRequestException, ForbiddenException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
@@ -1041,5 +1043,111 @@ export class ApplicationsService {
       createdAt: application.createdAt,
       updatedAt: application.updatedAt,
     };
+  }
+
+  /**
+   * Module 9 — admin updates the SLA estimate for an application.
+   * Every change writes an `application_estimated_time_changes` row
+   * (so customer-facing UIs can show the trail) AND emits an
+   * `application.estimated_time.update` audit entry. `reason` is
+   * required at the DTO level.
+   */
+  async updateEstimatedTime(
+    applicationId: string,
+    userId: string,
+    dto: UpdateEstimatedTimeDto,
+  ): Promise<ApplicationResponseDto> {
+    const application = await this.prisma.application.findFirst({
+      where: { id: applicationId, deletedAt: null },
+    });
+    if (!application) {
+      throw new NotFoundException('Application not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Application does not exist or has been deleted' },
+      ]);
+    }
+
+    const oldDays = application.estimatedProcessingDays;
+    if (oldDays === dto.estimatedDays) {
+      // No-op short circuit — same value, skip the audit + history row.
+      return this.findById(applicationId);
+    }
+
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.application.update({
+        where: { id: applicationId },
+        data: {
+          estimatedProcessingDays: dto.estimatedDays,
+          estimatedTimeUpdatedAt: now,
+        },
+      }),
+      this.prisma.applicationEstimatedTimeChange.create({
+        data: {
+          applicationId,
+          oldDays,
+          newDays: dto.estimatedDays,
+          reason: dto.reason,
+          changedByUserId: userId,
+        },
+      }),
+    ]);
+
+    await this.auditLogsService.logAdminAction(
+      userId,
+      'application.estimated_time.update',
+      'Application',
+      applicationId,
+      { estimatedProcessingDays: oldDays },
+      { estimatedProcessingDays: dto.estimatedDays, reason: dto.reason },
+    );
+
+    this.logger.log(
+      `Estimated time for application ${applicationId}: ${oldDays ?? '(unset)'} → ${dto.estimatedDays} (${dto.reason})`,
+    );
+
+    return this.findById(applicationId);
+  }
+
+  /**
+   * Module 9 — full estimated-time change history (newest first).
+   * Each row includes the actor's name + email so the admin UI can
+   * render "by Anar — 5m ago" without a second user lookup.
+   */
+  async getEstimatedTimeChanges(
+    applicationId: string,
+  ): Promise<EstimatedTimeChangeEntryDto[]> {
+    const application = await this.prisma.application.findFirst({
+      where: { id: applicationId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!application) {
+      throw new NotFoundException('Application not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Application does not exist or has been deleted' },
+      ]);
+    }
+
+    const rows = await this.prisma.applicationEstimatedTimeChange.findMany({
+      where: { applicationId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        changedByUser: { select: { id: true, fullName: true, email: true } },
+      },
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      oldDays: r.oldDays,
+      newDays: r.newDays,
+      reason: r.reason,
+      changedByUserId: r.changedByUserId,
+      changedByUser: r.changedByUser
+        ? {
+            id: r.changedByUser.id,
+            fullName: r.changedByUser.fullName,
+            email: r.changedByUser.email,
+          }
+        : null,
+      createdAt: r.createdAt,
+    }));
   }
 }

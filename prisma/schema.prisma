@@ -164,14 +164,15 @@ model User {
   updatedAt    DateTime  @updatedAt @map("updated_at")
   deletedAt    DateTime? @map("deleted_at")
 
-  role                      Role?                      @relation(fields: [roleId], references: [id])
+  role                      Role?                            @relation(fields: [roleId], references: [id])
   sessions                  Session[]
   userPermissions           UserPermission[]
-  applicationStatusHistory  ApplicationStatusHistory[] @relation("ChangedByUser")
-  applicantStatusHistory    ApplicantStatusHistory[]   @relation("ChangedByUser")
-  applicationReviews        Application[]              @relation("ApplicationReviewedByUser")
-  documentReviews           Document[]                 @relation("ReviewedByUser")
-  paymentStatusHistory      PaymentStatusHistory[]     @relation("ChangedByUser")
+  applicationStatusHistory  ApplicationStatusHistory[]       @relation("ChangedByUser")
+  applicantStatusHistory    ApplicantStatusHistory[]         @relation("ChangedByUser")
+  applicationReviews        Application[]                    @relation("ApplicationReviewedByUser")
+  applicationEstTimeChanges ApplicationEstimatedTimeChange[] @relation("EstTimeChangedBy")
+  documentReviews           Document[]                       @relation("ReviewedByUser")
+  paymentStatusHistory      PaymentStatusHistory[]           @relation("ChangedByUser")
   auditLogs                 AuditLog[]
 
   @@index([email])
@@ -345,11 +346,11 @@ model Country {
   updatedAt     DateTime  @updatedAt @map("updated_at")
   deletedAt     DateTime? @map("deleted_at")
 
-  page                         CountryPage?
-  templateBindingsDestination  TemplateBinding[]        @relation("DestinationCountry")
-  bindingNationalityFees       BindingNationalityFee[]  @relation("NationalityCountry")
-  applicationsNationality      Application[]            @relation("NationalityCountry")
-  applicationsDestination      Application[]            @relation("DestinationCountry")
+  page                        CountryPage?
+  templateBindingsDestination TemplateBinding[]       @relation("DestinationCountry")
+  bindingNationalityFees      BindingNationalityFee[] @relation("NationalityCountry")
+  applicationsNationality     Application[]           @relation("NationalityCountry")
+  applicationsDestination     Application[]           @relation("DestinationCountry")
 
   @@index([isoCode])
   @@index([continentCode])
@@ -577,18 +578,18 @@ model PaymentPageConfig {
   supportText           String?  @map("support_text")
   footerNote            String?  @map("footer_note")
   // Layout
-  showCardLogos         Boolean  @default(true)  @map("show_card_logos")
-  showSecurityBadges    Boolean  @default(true)  @map("show_security_badges")
+  showCardLogos         Boolean  @default(true) @map("show_card_logos")
+  showSecurityBadges    Boolean  @default(true) @map("show_security_badges")
   // Behavior
   primaryButtonText     String   @default("Pay Now") @map("primary_button_text")
   /// Minutes before the unpaid-session warning fires on the public
   /// payment page. DTO clamps to 1-30.
-  timeoutWarningMinutes Int      @default(5)    @map("timeout_warning_minutes")
+  timeoutWarningMinutes Int      @default(5) @map("timeout_warning_minutes")
   termsCheckboxRequired Boolean  @default(false) @map("terms_checkbox_required")
   termsCheckboxText     String?  @map("terms_checkbox_text")
   // Forward-compat slot (advanced section builder, Sprint 4)
   sectionsJson          Json     @map("sections_json")
-  isActive              Boolean  @default(true)  @map("is_active")
+  isActive              Boolean  @default(true) @map("is_active")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 
@@ -626,35 +627,35 @@ model EmailTemplate {
 /// today but the runtime still reads .env / hardcoded format until the
 /// Sprint 5 cutover ticket wires them up.
 model Setting {
-  id                          String   @id @default(uuid())
+  id                          String  @id @default(uuid())
   // General
-  siteName                    String   @map("site_name")
-  siteUrl                     String   @default("") @map("site_url")
-  supportEmail                String   @map("support_email")
+  siteName                    String  @map("site_name")
+  siteUrl                     String  @default("") @map("site_url")
+  supportEmail                String  @map("support_email")
   // Payment
-  defaultCurrency             String   @default("USD") @map("default_currency")
-  paymentTimeoutHours         Int      @default(3) @map("payment_timeout_hours")
+  defaultCurrency             String  @default("USD") @map("default_currency")
+  paymentTimeoutHours         Int     @default(3) @map("payment_timeout_hours")
   // Email (informational until Sprint 5 cutover)
-  smtpFromAddress             String   @default("") @map("smtp_from_address")
-  smtpFromName                String   @default("") @map("smtp_from_name")
-  notificationEmailEnabled    Boolean  @default(true) @map("notification_email_enabled")
+  smtpFromAddress             String  @default("") @map("smtp_from_address")
+  smtpFromName                String  @default("") @map("smtp_from_name")
+  notificationEmailEnabled    Boolean @default(true) @map("notification_email_enabled")
   // Application (informational until Sprint 5 cutover)
-  applicationCodeFormat       String   @default("EV-{YYYY}-{NNNN}") @map("application_code_format")
-  maxApplicantsPerApplication Int      @default(10) @map("max_applicants_per_application")
-  allowMultipleVisaTypes      Boolean  @default(false) @map("allow_multiple_visa_types")
+  applicationCodeFormat       String  @default("EV-{YYYY}-{NNNN}") @map("application_code_format")
+  maxApplicantsPerApplication Int     @default(10) @map("max_applicants_per_application")
+  allowMultipleVisaTypes      Boolean @default(false) @map("allow_multiple_visa_types")
   // Maintenance
-  maintenanceMode             Boolean  @default(false) @map("maintenance_mode")
-  maintenanceMessage          String?  @map("maintenance_message")
+  maintenanceMode             Boolean @default(false) @map("maintenance_mode")
+  maintenanceMessage          String? @map("maintenance_message")
   // Branding (logoUrl is consumed by the Sprint 4 frontend header)
-  logoUrl                     String?  @map("logo_url")
-  faviconUrl                  String?  @map("favicon_url")
-  googleAnalyticsId           String?  @map("google_analytics_id")
+  logoUrl                     String? @map("logo_url")
+  faviconUrl                  String? @map("favicon_url")
+  googleAnalyticsId           String? @map("google_analytics_id")
   // Legal
-  termsUrl                    String?  @map("terms_url")
-  privacyUrl                  String?  @map("privacy_url")
+  termsUrl                    String? @map("terms_url")
+  privacyUrl                  String? @map("privacy_url")
 
-  createdAt                   DateTime @default(now()) @map("created_at")
-  updatedAt                   DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
 }
@@ -684,21 +685,29 @@ model Application {
   adminNote               String?           @map("admin_note") @db.Text
   rejectionReason         String?           @map("rejection_reason") @db.Text
   requestedDocumentTypes  String[]          @default([]) @map("requested_document_types")
+  // Module 9 — admin-supplied SLA estimate. Lives on the application
+  // (not per-applicant) because the customer cares about the whole-
+  // case turnaround. Each change is also logged in
+  // ApplicationEstimatedTimeChange so the admin can see the
+  // adjustment trail with reasons.
+  estimatedProcessingDays Int?              @map("estimated_processing_days")
+  estimatedTimeUpdatedAt  DateTime?         @map("estimated_time_updated_at")
   // Timestamps
   createdAt               DateTime          @default(now()) @map("created_at")
   updatedAt               DateTime          @updatedAt @map("updated_at")
   deletedAt               DateTime?         @map("deleted_at")
 
-  portalIdentity     PortalIdentity             @relation(fields: [portalIdentityId], references: [id])
-  nationalityCountry Country                    @relation("NationalityCountry", fields: [nationalityCountryId], references: [id])
-  destinationCountry Country                    @relation("DestinationCountry", fields: [destinationCountryId], references: [id])
-  visaType           VisaType                   @relation(fields: [visaTypeId], references: [id])
-  template           Template                   @relation(fields: [templateId], references: [id])
-  templateBinding    TemplateBinding            @relation(fields: [templateBindingId], references: [id])
-  reviewedByUser     User?                      @relation("ApplicationReviewedByUser", fields: [reviewedByUserId], references: [id])
-  applicants         ApplicationApplicant[]
-  statusHistory      ApplicationStatusHistory[]
-  payments           Payment[]
+  portalIdentity       PortalIdentity                   @relation(fields: [portalIdentityId], references: [id])
+  nationalityCountry   Country                          @relation("NationalityCountry", fields: [nationalityCountryId], references: [id])
+  destinationCountry   Country                          @relation("DestinationCountry", fields: [destinationCountryId], references: [id])
+  visaType             VisaType                         @relation(fields: [visaTypeId], references: [id])
+  template             Template                         @relation(fields: [templateId], references: [id])
+  templateBinding      TemplateBinding                  @relation(fields: [templateBindingId], references: [id])
+  reviewedByUser       User?                            @relation("ApplicationReviewedByUser", fields: [reviewedByUserId], references: [id])
+  applicants           ApplicationApplicant[]
+  statusHistory        ApplicationStatusHistory[]
+  estimatedTimeChanges ApplicationEstimatedTimeChange[]
+  payments             Payment[]
 
   @@index([portalIdentityId])
   @@index([nationalityCountryId])
@@ -716,21 +725,27 @@ model Application {
 }
 
 model ApplicationApplicant {
-  id                        String          @id @default(uuid())
-  applicationId             String          @map("application_id")
-  isMainApplicant           Boolean         @default(false) @map("is_main_applicant")
-  email                     String
-  phone                     String?
-  formDataJson              Json            @map("form_data_json")
-  status                    ApplicantStatus @default(DRAFT)
-  applicationCode           String?         @unique @map("application_code")
-  resultFileName            String?         @map("result_file_name")
-  resultStorageKey          String?         @map("result_storage_key")
-  requiredDocumentsJson     Json?           @map("required_documents_json")
-  additionalDocsRequestedJson Json?         @map("additional_docs_requested_json")
-  createdAt                 DateTime        @default(now()) @map("created_at")
-  updatedAt                 DateTime        @updatedAt @map("updated_at")
-  deletedAt                 DateTime?       @map("deleted_at")
+  id                          String          @id @default(uuid())
+  applicationId               String          @map("application_id")
+  isMainApplicant             Boolean         @default(false) @map("is_main_applicant")
+  email                       String
+  phone                       String?
+  formDataJson                Json            @map("form_data_json")
+  status                      ApplicantStatus @default(DRAFT)
+  // Module 9 — denormalized "last status touch" metadata so list
+  // queries can render "READY (admin@x.com, 5m ago)" without a
+  // join into ApplicantStatusHistory. The history table remains the
+  // source of truth for the full timeline.
+  statusUpdatedAt             DateTime?       @map("status_updated_at")
+  statusUpdatedByUserId       String?         @map("status_updated_by_user_id")
+  applicationCode             String?         @unique @map("application_code")
+  resultFileName              String?         @map("result_file_name")
+  resultStorageKey            String?         @map("result_storage_key")
+  requiredDocumentsJson       Json?           @map("required_documents_json")
+  additionalDocsRequestedJson Json?           @map("additional_docs_requested_json")
+  createdAt                   DateTime        @default(now()) @map("created_at")
+  updatedAt                   DateTime        @updatedAt @map("updated_at")
+  deletedAt                   DateTime?       @map("deleted_at")
 
   application   Application              @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   statusHistory ApplicantStatusHistory[]
@@ -783,6 +798,33 @@ model ApplicantStatusHistory {
   @@map("applicant_status_history")
 }
 
+/// Module 9 — change-log for the application's SLA estimate.
+/// Every adjustment requires a `reason` (admin can't silently move
+/// goalposts on the customer). Read order: createdAt DESC for the
+/// "last 5 changes" widget on the admin Operations Center.
+model ApplicationEstimatedTimeChange {
+  id              String   @id @default(uuid())
+  applicationId   String   @map("application_id")
+  /// Estimate before the change — null on the first time the admin
+  /// sets an estimate (the application had no prior value).
+  oldDays         Int?     @map("old_days")
+  newDays         Int      @map("new_days")
+  /// Required by the service layer, not nullable at DB level so old
+  /// rows can never be retroactively reason-stripped. Empty string
+  /// not allowed; min length enforced in DTO.
+  reason          String   @db.Text
+  changedByUserId String?  @map("changed_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  changedByUser User?       @relation("EstTimeChangedBy", fields: [changedByUserId], references: [id])
+
+  @@index([applicationId])
+  @@index([changedByUserId])
+  @@index([createdAt])
+  @@map("application_estimated_time_changes")
+}
+
 model Document {
   id                     String               @id @default(uuid())
   applicationApplicantId String               @map("application_applicant_id")
@@ -821,31 +863,31 @@ model Document {
 // ===========================================
 
 model Payment {
-  id                   String        @id @default(uuid())
-  applicationId        String        @map("application_id")
-  paymentReference     String        @unique @map("payment_reference")
-  paymentProviderKey   String        @map("payment_provider_key")
-  paymentMethodKey     String?       @map("payment_method_key")
-  currencyCode         String        @map("currency_code")
-  governmentFeeAmount  Decimal       @map("government_fee_amount") @db.Decimal(10, 2)
-  serviceFeeAmount     Decimal       @map("service_fee_amount") @db.Decimal(10, 2)
-  expeditedFeeAmount   Decimal?      @map("expedited_fee_amount") @db.Decimal(10, 2)
-  totalAmount          Decimal       @map("total_amount") @db.Decimal(10, 2)
-  payableAmount        Decimal       @map("payable_amount") @db.Decimal(10, 2)
-  paymentStatus        PaymentStatus @default(PENDING) @map("payment_status")
-  providerPaymentId    String?       @map("provider_payment_id")
-  providerSessionId    String?       @map("provider_session_id")
-  providerOrderId      String?       @map("provider_order_id")
-  idempotencyKey       String?       @unique @map("idempotency_key")
-  expiresAt            DateTime?     @map("expires_at")
-  paidAt               DateTime?     @map("paid_at")
-  failedAt             DateTime?     @map("failed_at")
-  cancelledAt          DateTime?     @map("cancelled_at")
-  createdAt            DateTime      @default(now()) @map("created_at")
-  updatedAt            DateTime      @updatedAt @map("updated_at")
-  deletedAt            DateTime?     @map("deleted_at")
+  id                  String        @id @default(uuid())
+  applicationId       String        @map("application_id")
+  paymentReference    String        @unique @map("payment_reference")
+  paymentProviderKey  String        @map("payment_provider_key")
+  paymentMethodKey    String?       @map("payment_method_key")
+  currencyCode        String        @map("currency_code")
+  governmentFeeAmount Decimal       @map("government_fee_amount") @db.Decimal(10, 2)
+  serviceFeeAmount    Decimal       @map("service_fee_amount") @db.Decimal(10, 2)
+  expeditedFeeAmount  Decimal?      @map("expedited_fee_amount") @db.Decimal(10, 2)
+  totalAmount         Decimal       @map("total_amount") @db.Decimal(10, 2)
+  payableAmount       Decimal       @map("payable_amount") @db.Decimal(10, 2)
+  paymentStatus       PaymentStatus @default(PENDING) @map("payment_status")
+  providerPaymentId   String?       @map("provider_payment_id")
+  providerSessionId   String?       @map("provider_session_id")
+  providerOrderId     String?       @map("provider_order_id")
+  idempotencyKey      String?       @unique @map("idempotency_key")
+  expiresAt           DateTime?     @map("expires_at")
+  paidAt              DateTime?     @map("paid_at")
+  failedAt            DateTime?     @map("failed_at")
+  cancelledAt         DateTime?     @map("cancelled_at")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  deletedAt           DateTime?     @map("deleted_at")
 
-  application    Application              @relation(fields: [applicationId], references: [id])
+  application    Application             @relation(fields: [applicationId], references: [id])
   transactions   PaymentTransaction[]
   statusHistory  PaymentStatusHistory[]
   callbacks      PaymentCallback[]
@@ -907,19 +949,19 @@ model PaymentStatusHistory {
 }
 
 model PaymentCallback {
-  id                       String                     @id @default(uuid())
-  paymentId                String                     @map("payment_id")
-  paymentTransactionId     String?                    @map("payment_transaction_id")
-  providerKey              String                     @map("provider_key")
-  callbackType             String                     @map("callback_type")
-  providerEventId          String?                    @map("provider_event_id")
-  headersJson              Json?                      @map("headers_json")
-  payloadJson              Json                       @map("payload_json")
+  id                        String                    @id @default(uuid())
+  paymentId                 String                    @map("payment_id")
+  paymentTransactionId      String?                   @map("payment_transaction_id")
+  providerKey               String                    @map("provider_key")
+  callbackType              String                    @map("callback_type")
+  providerEventId           String?                   @map("provider_event_id")
+  headersJson               Json?                     @map("headers_json")
+  payloadJson               Json                      @map("payload_json")
   signatureValidationStatus SignatureValidationStatus @default(NOT_CHECKED) @map("signature_validation_status")
-  processingStatus         CallbackProcessingStatus  @default(PENDING) @map("processing_status")
-  errorMessage             String?                    @map("error_message")
-  receivedAt               DateTime                   @default(now()) @map("received_at")
-  processedAt              DateTime?                  @map("processed_at")
+  processingStatus          CallbackProcessingStatus  @default(PENDING) @map("processing_status")
+  errorMessage              String?                   @map("error_message")
+  receivedAt                DateTime                  @default(now()) @map("received_at")
+  processedAt               DateTime?                 @map("processed_at")
 
   payment            Payment             @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id])
@@ -957,22 +999,22 @@ model PaymentReconciliation {
 // ===========================================
 
 model Notification {
-  id            String             @id @default(uuid())
+  id            String              @id @default(uuid())
   channel       NotificationChannel
-  templateKey   String             @map("template_key")
+  templateKey   String              @map("template_key")
   recipient     String
   subject       String?
-  payloadJson   Json               @map("payload_json")
-  status        NotificationStatus @default(PENDING)
-  retryCount    Int                @default(0) @map("retry_count")
-  maxRetryCount Int                @default(3) @map("max_retry_count")
-  provider      String?            // Provider used for sending (smtp, console, etc.)
-  messageId     String?            @map("message_id") // External message ID from provider
-  sentAt        DateTime?          @map("sent_at")
-  failedAt      DateTime?          @map("failed_at")
-  errorMessage  String?            @map("error_message")
-  createdAt     DateTime           @default(now()) @map("created_at")
-  updatedAt     DateTime           @updatedAt @map("updated_at")
+  payloadJson   Json                @map("payload_json")
+  status        NotificationStatus  @default(PENDING)
+  retryCount    Int                 @default(0) @map("retry_count")
+  maxRetryCount Int                 @default(3) @map("max_retry_count")
+  provider      String? // Provider used for sending (smtp, console, etc.)
+  messageId     String?             @map("message_id") // External message ID from provider
+  sentAt        DateTime?           @map("sent_at")
+  failedAt      DateTime?           @map("failed_at")
+  errorMessage  String?             @map("error_message")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
 
   @@index([channel])
   @@index([templateKey])
