@@ -223,7 +223,11 @@ export class ApplicationsAdminController {
    * Status guard inside the service: only APPROVED applications.
    */
   @Post(':applicationId/applicants/:applicantId/issue-visa')
-  @RequirePermissions('applications.update')
+  // Module 9 — gated by applications.approve (NOT applications.update)
+  // because issuing a visa is the final blessing on the case;
+  // operators have applications.update for note-taking but should
+  // not have authority to mint visas. Admin + super-admin in seed.
+  @RequirePermissions('applications.approve')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({
     summary: 'Issue visa for an applicant',
@@ -275,7 +279,10 @@ export class ApplicationsAdminController {
    * an `application.estimated_time.update` audit log entry.
    */
   @Patch(':applicationId/estimated-time')
-  @RequirePermissions('applications.update')
+  // Module 9 — gated by applications.approve (admin/super-admin
+  // only). The SLA estimate is a customer-facing promise; operators
+  // (review staff) shouldn't shift it unilaterally.
+  @RequirePermissions('applications.approve')
   @ApiOperation({
     summary: 'Update estimated processing time',
     description:

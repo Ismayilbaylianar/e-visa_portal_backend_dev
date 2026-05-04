@@ -192,7 +192,12 @@ export class ApplicantsAdminController {
    * to re-submit the whole application.
    */
   @Patch(':applicantId/email')
-  @RequirePermissions('applications.update')
+  // Module 9 — gated by applications.approve (admin/super-admin
+  // only). Email is sensitive: a typo "fix" could redirect future
+  // emails to an attacker-controlled address. Operators (review
+  // staff) use applications.update for status + notes; this carries
+  // higher trust requirements.
+  @RequirePermissions('applications.approve')
   @ApiOperation({
     summary: 'Update applicant email (admin)',
     description:

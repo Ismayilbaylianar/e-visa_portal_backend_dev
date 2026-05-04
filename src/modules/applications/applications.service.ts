@@ -989,6 +989,8 @@ export class ApplicationsService {
       adminNote: application.adminNote || undefined,
       rejectionReason: application.rejectionReason || undefined,
       requestedDocumentTypes: application.requestedDocumentTypes || undefined,
+      estimatedProcessingDays: application.estimatedProcessingDays ?? null,
+      estimatedTimeUpdatedAt: application.estimatedTimeUpdatedAt ?? null,
       portalIdentity: application.portalIdentity
         ? {
             id: application.portalIdentity.id,

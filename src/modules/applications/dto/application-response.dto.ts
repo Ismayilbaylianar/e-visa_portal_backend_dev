@@ -198,6 +198,18 @@ export class ApplicationResponseDto {
   })
   requestedDocumentTypes?: string[];
 
+  /**
+   * Module 9 — admin-set SLA estimate for the customer. null when
+   * the admin hasn't set one yet. `estimatedTimeUpdatedAt` reflects
+   * the last change; the full change log lives at
+   * /admin/applications/:id/estimated-time-changes.
+   */
+  @ApiPropertyOptional({ description: 'Estimated processing days (1-365)', nullable: true })
+  estimatedProcessingDays?: number | null;
+
+  @ApiPropertyOptional({ description: 'When the estimate was last changed', nullable: true })
+  estimatedTimeUpdatedAt?: Date | null;
+
   @ApiPropertyOptional({
     type: PortalIdentityDto,
     description: 'Portal identity details',
