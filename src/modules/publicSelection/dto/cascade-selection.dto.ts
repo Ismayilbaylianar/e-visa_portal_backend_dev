@@ -105,9 +105,15 @@ export class DetectNationalityResponseDto {
 
   @ApiPropertyOptional({
     description:
-      'Country reference matched against our active nationalities. Only present when `countryCode` resolved AND the country exists in the DB. Lets the frontend pre-select the dropdown without a second lookup.',
+      'Country reference matched against our active nationalities. Only present when `countryCode` resolved AND the country exists in the DB. Lets the frontend pre-select the dropdown without a second lookup. `slug` is set when the matched country also has a published CountryPage; otherwise undefined.',
   })
-  country?: { id: string; name: string; isoCode: string; flagEmoji?: string };
+  country?: {
+    id: string;
+    name: string;
+    isoCode: string;
+    flagEmoji?: string;
+    slug?: string;
+  };
 
   @ApiPropertyOptional({
     description:

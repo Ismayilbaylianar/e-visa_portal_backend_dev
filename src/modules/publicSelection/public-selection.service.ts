@@ -412,6 +412,9 @@ export class PublicSelectionService {
     // isn't one we serve as a nationality, surface countryCode for
     // diagnostics but leave `country` undefined so the frontend falls
     // through to the manual dropdown.
+    // M10 hotfix — also pull `page.slug` so the frontend can deep-link
+    // to the destination's marketing page when the same country is
+    // both nationality + destination (e.g. AZ user looking at AZ page).
     const country = await this.prisma.country.findFirst({
       where: {
         isoCode: geo.countryCode.toUpperCase(),
@@ -423,6 +426,7 @@ export class PublicSelectionService {
         name: true,
         isoCode: true,
         flagEmoji: true,
+        page: { select: { slug: true } },
       },
     });
 
@@ -441,6 +445,7 @@ export class PublicSelectionService {
         name: country.name,
         isoCode: country.isoCode,
         flagEmoji: country.flagEmoji ?? undefined,
+        slug: country.page?.slug,
       },
     };
   }
