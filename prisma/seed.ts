@@ -1004,6 +1004,32 @@ async function main() {
       bodyText: `Hello {{userName}},\n\nYour e-Visa for application {{applicationCode}} is ready.\n\nDownload: {{downloadUrl}}\n\nPlease print a copy and carry it with your passport at all times during your trip.\n\n— E-Visa Global team`,
     },
     {
+      // M9b — fires when a customer resubmits documents the admin
+      // requested. Goes to the admin team mailbox (resolved at send
+      // time from Setting.supportEmail), NOT the customer.
+      templateKey: 'application.documents.resubmitted',
+      subject: 'Customer resubmitted documents — {{applicationCode}}',
+      description:
+        'Sent to the admin team when a customer uploads the requested documents and the application returns to SUBMITTED. Variables: adminName, applicationCode, applicantNames, documentsList, appLink',
+      variables: ['adminName', 'applicationCode', 'applicantNames', 'documentsList', 'appLink'],
+      bodyHtml: wrap(
+        'Documents resubmitted',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">Customer resubmitted documents</h1>
+        <p>Hi {{adminName}},</p>
+        <p>The customer has resubmitted the documents you requested for application <strong>{{applicationCode}}</strong>. The application is now back in the review queue.</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;margin:16px 0;">
+          <tr><td style="padding:12px 16px;color:#6b7280;width:140px;">Applicant(s)</td><td style="padding:12px 16px;font-weight:600;color:#0f172a;">{{applicantNames}}</td></tr>
+          <tr><td style="padding:12px 16px;color:#6b7280;border-top:1px solid #e5e7eb;">Resubmitted</td><td style="padding:12px 16px;font-weight:600;color:#0f172a;border-top:1px solid #e5e7eb;">{{documentsList}}</td></tr>
+        </table>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="{{appLink}}" style="display:inline-block;background-color:#2563eb;color:#ffffff;font-weight:600;padding:12px 24px;border-radius:6px;text-decoration:none;">Open application in admin</a>
+        </p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="font-size:13px;color:#6b7280;">{{applicationCode}} — müştəri tələb olunan sənədləri yenidən təqdim etdi: {{documentsList}}.</p>`,
+      ),
+      bodyText: `Hi {{adminName}},\n\nThe customer has resubmitted the documents you requested for application {{applicationCode}}. The application is now back in the review queue.\n\nApplicant(s): {{applicantNames}}\nResubmitted: {{documentsList}}\n\nOpen in admin: {{appLink}}\n\n— E-Visa Global system`,
+    },
+    {
       templateKey: 'payment.success',
       subject: 'Payment confirmed — {{applicationCode}}',
       description: 'Sent when payment provider confirms a successful transaction. Variables: userName, applicationCode, amount, currency',

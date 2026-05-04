@@ -47,6 +47,10 @@ export const ErrorCodes = {
   COUNTRY_NOT_FOUND: 'countryNotFound',
   VISA_TYPE_NOT_FOUND: 'visaTypeNotFound',
   APPLICANT_NOT_FOUND: 'applicantNotFound',
+  // M9b — customer document resubmission
+  NOT_NEED_DOCS_STATE: 'notNeedDocsState',
+  DOCUMENT_TYPE_NOT_REQUESTED: 'documentTypeNotRequested',
+  RESUBMIT_FILE_LIMIT_EXCEEDED: 'resubmitFileLimitExceeded',
 
   // ==========================================
   // Upload/Storage errors
@@ -132,6 +136,10 @@ export const ErrorCodeHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.COUNTRY_NOT_FOUND]: 404,
   [ErrorCodes.VISA_TYPE_NOT_FOUND]: 404,
   [ErrorCodes.APPLICANT_NOT_FOUND]: 404,
+  // M9b
+  [ErrorCodes.NOT_NEED_DOCS_STATE]: 409,
+  [ErrorCodes.DOCUMENT_TYPE_NOT_REQUESTED]: 400,
+  [ErrorCodes.RESUBMIT_FILE_LIMIT_EXCEEDED]: 400,
 
   // Upload/Storage
   [ErrorCodes.FILE_TOO_LARGE]: 413,

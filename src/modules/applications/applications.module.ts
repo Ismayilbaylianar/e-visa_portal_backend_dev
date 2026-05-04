@@ -8,6 +8,7 @@ import { PortalAuthModule } from '../portalAuth/portal-auth.module';
 import { AuditLogsModule } from '../auditLogs/audit-logs.module';
 import { EmailModule } from '../email/email.module';
 import { ApplicantsModule } from '../applicants/applicants.module';
+import { CustomerPortalModule } from '../customerPortal/customer-portal.module';
 
 @Module({
   imports: [
@@ -19,6 +20,9 @@ import { ApplicantsModule } from '../applicants/applicants.module';
     // so we need ApplicantsService here. forwardRef avoids circular
     // module init when ApplicantsModule eventually imports back.
     forwardRef(() => ApplicantsModule),
+    // Module 9b — resubmit endpoint lives in ApplicationsPortalController
+    // (URL group fits there) but its logic is in CustomerPortalService.
+    CustomerPortalModule,
   ],
   controllers: [ApplicationsAdminController, ApplicationsPortalController],
   providers: [ApplicationsService],

@@ -11,14 +11,18 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   Res,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiConsumes } from '@nestjs/swagger';
 import type { Response, Request } from 'express';
 import { ApplicationsService } from './applications.service';
 import { ApplicantsService } from '../applicants/applicants.service';
+import { CustomerPortalService } from '../customerPortal/customer-portal.service';
+import { ResubmitDocumentsResponseDto } from '../customerPortal/dto';
 import {
   CreateApplicationDto,
   UpdateApplicationDto,
@@ -333,6 +337,10 @@ export class ApplicationsPortalController {
     /** Module 9 — visa download endpoints route through ApplicantsService
      *  so the ownership check + audit logic stays in one place. */
     private readonly applicantsService: ApplicantsService,
+    /** Module 9b — customer document resubmission. Same controller
+     *  prefix as the visa download so URLs stay grouped under
+     *  /portal/applications/:id/applicants/:applicantId/... */
+    private readonly customerPortalService: CustomerPortalService,
   ) {}
 
   @Post('applications')
@@ -555,6 +563,68 @@ export class ApplicationsPortalController {
       applicationId,
       applicantId,
       portalIdentity.id,
+    );
+  }
+
+  // ========================================================
+  // Module 9b — Customer document resubmission
+  // ========================================================
+
+  /**
+   * Resubmit one or more documents the admin requested via
+   * /admin/applications/:id/request-documents (which left the
+   * application in NEED_DOCS).
+   *
+   * Multipart shape:
+   *   files[]  — uploaded files (PDF/JPG/PNG, max 10MB each, max 10)
+   *   types[]  — parallel array of documentTypeKey strings, one per
+   *              file in the same order. Each MUST appear in the
+   *              application's requestedDocumentTypes list.
+   *
+   * `types` arrives either as a string (single value) or string[]
+   * depending on how the client encodes it; we coerce here so the
+   * service always sees an array.
+   */
+  @Post('applications/:applicationId/applicants/:applicantId/documents/resubmit')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FilesInterceptor('files', 10))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Resubmit requested documents',
+    description:
+      'Customer-side resubmission for an application in NEED_DOCS. Replaces existing documents of the matching type (soft-delete + insert). When every requested type is satisfied, atomically flips the application back to SUBMITTED and notifies admin.',
+  })
+  @ApiParam({ name: 'applicationId', description: 'Application UUID' })
+  @ApiParam({ name: 'applicantId', description: 'Applicant UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Resubmission processed',
+    type: ResubmitDocumentsResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid file or document type not requested' })
+  @ApiResponse({ status: 403, description: 'Application does not belong to current portal user' })
+  @ApiResponse({ status: 409, description: 'Application is not in NEED_DOCS state' })
+  async resubmitDocuments(
+    @Param('applicationId') applicationId: string,
+    @Param('applicantId') applicantId: string,
+    @UploadedFiles() files: MulterFile[],
+    @Body('types') typesRaw: string | string[] | undefined,
+    @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
+    @Req() req: Request,
+  ): Promise<ResubmitDocumentsResponseDto> {
+    if (typesRaw === undefined) {
+      throw new BadRequestException('Missing types[]');
+    }
+    const types = Array.isArray(typesRaw) ? typesRaw : [typesRaw];
+
+    return this.customerPortalService.resubmitDocuments(
+      applicationId,
+      applicantId,
+      portalIdentity.id,
+      files ?? [],
+      types,
+      req.ip,
+      req.get('user-agent') ?? undefined,
     );
   }
 }
