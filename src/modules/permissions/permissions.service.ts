@@ -270,6 +270,97 @@ export class PermissionsService {
   }
 
   /**
+   * Module 6b — orphan permission cleanup.
+   *
+   * Hard-delete a permission row from the system. Designed to remove
+   * dead permission keys that exist in the DB but are no longer used by
+   * any code path (the M1 audit flagged `countries.create` and
+   * `countries.delete` as phantoms — Country is reference data, those
+   * actions never fire).
+   *
+   * Safety guards:
+   *   • Block when ANY role still references the permission (the admin
+   *     should strip it from roles first, then delete). 409 with the
+   *     count + list of role keys so the admin can locate them.
+   *   • Block when ANY user override references the permission. Same
+   *     reasoning.
+   *
+   * No soft-delete — Permission has no `deletedAt` column; this is a
+   * hard delete. PermissionEffect-typed UserPermission rows would
+   * cascade-error if we left them around, so the `userPermission`
+   * guard above is mandatory, not optional.
+   *
+   * Audit: `permission.delete` with the deleted key + module/action so
+   * the audit feed clearly shows what's gone.
+   */
+  async deletePermission(
+    permissionId: string,
+    actorUserId?: string,
+  ): Promise<{ deletedKey: string }> {
+    const permission = await this.prisma.permission.findUnique({
+      where: { id: permissionId },
+    });
+    if (!permission) {
+      throw new NotFoundException('Permission not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Permission does not exist' },
+      ]);
+    }
+
+    // Guard: blocked if assigned to any role.
+    const roleAssignments = await this.prisma.rolePermission.findMany({
+      where: { permissionId },
+      include: { role: { select: { key: true } } },
+    });
+    if (roleAssignments.length > 0) {
+      const roleKeys = roleAssignments.map((rp) => rp.role.key).sort();
+      throw new ConflictException('Permission is assigned to roles', [
+        {
+          field: 'permissionId',
+          reason: ErrorCodes.CONFLICT,
+          message: `Permission "${permission.permissionKey}" is still assigned to ${roleAssignments.length} role(s): ${roleKeys.join(', ')}. Strip it from those roles first.`,
+        },
+      ]);
+    }
+
+    // Guard: blocked if any user override references it.
+    const overrideCount = await this.prisma.userPermission.count({
+      where: { permissionId },
+    });
+    if (overrideCount > 0) {
+      throw new ConflictException('Permission has user overrides', [
+        {
+          field: 'permissionId',
+          reason: ErrorCodes.CONFLICT,
+          message: `Permission "${permission.permissionKey}" still has ${overrideCount} user override(s). Clear them first.`,
+        },
+      ]);
+    }
+
+    await this.prisma.permission.delete({ where: { id: permissionId } });
+
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'permission.delete',
+        'Permission',
+        permissionId,
+        {
+          permissionKey: permission.permissionKey,
+          moduleKey: permission.moduleKey,
+          actionKey: permission.actionKey,
+          description: permission.description,
+        },
+        undefined,
+      );
+    }
+
+    this.logger.log(
+      `Permission deleted: ${permissionId} (${permission.permissionKey}) by user ${actorUserId ?? '<system>'}`,
+    );
+    return { deletedKey: permission.permissionKey };
+  }
+
+  /**
    * Update user permission overrides.
    * Super-admin user overrides are locked (DENY on god-mode is dangerous).
    */

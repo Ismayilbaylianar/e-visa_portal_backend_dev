@@ -82,6 +82,21 @@ export class RolesService {
   /**
    * Create new role. `isSystem` from the DTO is ignored — admin cannot
    * mint system roles via the API; that flag is reserved for the seed.
+   *
+   * Module 6b — when `permissionIds` are provided, role + role-permission
+   * rows are written in one transaction so a partial failure never
+   * leaves an empty orphan role behind. Permission existence is
+   * validated before the write so we fail fast with a 404 instead of
+   * a Prisma FK error.
+   *
+   * Two audit entries are emitted on success:
+   *   • `role.create` — name + key + description snapshot
+   *   • `role.permissions.update` — the initial permission key set
+   * Splitting these matches the matrix page edit flow (where
+   * `role.permissions.update` is the only entry per save) so an audit
+   * tail filtered on `role.permissions.update` shows all permission
+   * changes uniformly regardless of whether they came from create or
+   * subsequent edit.
    */
   async create(dto: CreateRoleDto, actorUserId?: string): Promise<RoleResponseDto> {
     const existingByKey = await this.prisma.role.findFirst({ where: { key: dto.key } });
@@ -98,15 +113,51 @@ export class RolesService {
       ]);
     }
 
-    const role = await this.prisma.role.create({
-      data: {
-        name: dto.name,
-        key: dto.key,
-        description: dto.description,
-        // Admin cannot mint system roles via the API — only the seed sets it.
-        isSystem: false,
-      },
-      include: { _count: { select: { users: { where: { deletedAt: null } } } } },
+    // Pre-validate permission IDs (avoid partial create + FK error half-way).
+    let permissionsToAssign: { id: string; permissionKey: string }[] = [];
+    if (dto.permissionIds && dto.permissionIds.length > 0) {
+      const found = await this.prisma.permission.findMany({
+        where: { id: { in: dto.permissionIds } },
+        select: { id: true, permissionKey: true },
+      });
+      if (found.length !== dto.permissionIds.length) {
+        const foundIds = new Set(found.map((p) => p.id));
+        const missing = dto.permissionIds.filter((id) => !foundIds.has(id));
+        throw new NotFoundException('Some permissions not found', [
+          {
+            field: 'permissionIds',
+            reason: ErrorCodes.NOT_FOUND,
+            message: `Permission IDs not found: ${missing.join(', ')}`,
+          },
+        ]);
+      }
+      permissionsToAssign = found;
+    }
+
+    // Create role + assign permissions atomically. The include re-runs
+    // after both writes commit so the response reflects the final state.
+    const role = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.role.create({
+        data: {
+          name: dto.name,
+          key: dto.key,
+          description: dto.description,
+          // Admin cannot mint system roles via the API — only the seed sets it.
+          isSystem: false,
+        },
+      });
+      if (permissionsToAssign.length > 0) {
+        await tx.rolePermission.createMany({
+          data: permissionsToAssign.map((p) => ({
+            roleId: created.id,
+            permissionId: p.id,
+          })),
+        });
+      }
+      return tx.role.findUniqueOrThrow({
+        where: { id: created.id },
+        include: { _count: { select: { users: { where: { deletedAt: null } } } } },
+      });
     });
 
     if (actorUserId) {
@@ -118,9 +169,24 @@ export class RolesService {
         undefined,
         { key: role.key, name: role.name, description: role.description, isSystem: role.isSystem },
       );
+      // Always emit the permissions.update entry — even when zero perms
+      // were assigned — so the audit trail clearly shows initial state.
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'role.permissions.update',
+        'Role',
+        role.id,
+        { permissionKeys: [], count: 0 },
+        {
+          permissionKeys: permissionsToAssign.map((p) => p.permissionKey).sort(),
+          count: permissionsToAssign.length,
+        },
+      );
     }
 
-    this.logger.log(`Role created: ${role.id} (${role.key})`);
+    this.logger.log(
+      `Role created: ${role.id} (${role.key}) with ${permissionsToAssign.length} permission(s)`,
+    );
     return this.mapToResponse(role);
   }
 

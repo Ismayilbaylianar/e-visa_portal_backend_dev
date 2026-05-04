@@ -2,9 +2,12 @@ import {
   Controller,
   Get,
   Patch,
+  Delete,
   Body,
   Param,
   UseGuards,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -86,6 +89,28 @@ export class PermissionsController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<UpdateRolePermissionsResponseDto> {
     return this.permissionsService.updateRolePermissions(roleId, dto, currentUser.id);
+  }
+
+  @Delete(':permissionId')
+  @RequirePermissions('permissions.update')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete a permission (orphan cleanup)',
+    description:
+      'Hard-deletes a permission row. Blocked (409) if the permission is still assigned to any role or referenced by any user override. Use case: removing dead permission keys flagged by the M1 audit (e.g. countries.create / countries.delete that have no callsite).',
+  })
+  @ApiParam({ name: 'permissionId', description: 'Permission ID' })
+  @ApiResponse({ status: 204, description: 'Permission deleted' })
+  @ApiResponse({ status: 404, description: 'Permission not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Permission still assigned to roles or has user overrides',
+  })
+  async deletePermission(
+    @Param('permissionId') permissionId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<void> {
+    await this.permissionsService.deletePermission(permissionId, currentUser.id);
   }
 
   @Patch('users/:userId/permissions')
