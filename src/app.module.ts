@@ -63,6 +63,11 @@ import { GeoLookupModule } from './modules/geoLookup/geo-lookup.module';
 import { EmailModule } from './modules/email/email.module';
 import { StorageModule } from './modules/storage/storage.module';
 
+// M11.B — Content Management
+import { ContentPagesModule } from './modules/contentPages/content-pages.module';
+import { ContactInfoModule } from './modules/contactInfo/contact-info.module';
+import { FaqItemsModule } from './modules/faqItems/faq-items.module';
+
 @Module({
   imports: [
     // Configuration
@@ -147,6 +152,11 @@ import { StorageModule } from './modules/storage/storage.module';
 
     // Storage Infrastructure
     StorageModule,
+
+    // M11.B — Content Management (CMS)
+    ContentPagesModule,
+    ContactInfoModule,
+    FaqItemsModule,
   ],
   providers: [
     // Global rate limiting guard

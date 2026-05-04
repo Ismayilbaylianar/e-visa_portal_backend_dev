@@ -116,6 +116,10 @@ const PERMISSIONS = [
   
   // Dashboard module
   { moduleKey: 'dashboard', actionKey: 'read', description: 'View dashboard statistics' },
+
+  // M11.B — Content Management (CMS)
+  { moduleKey: 'content', actionKey: 'read', description: 'View content pages, contact info, and FAQ items' },
+  { moduleKey: 'content', actionKey: 'update', description: 'Create, edit, reorder, or delete content (pages, contact info, FAQ)' },
 ];
 
 // Role definitions with their permissions
@@ -157,6 +161,8 @@ const ROLES = [
       'jobs.read', 'jobs.update',
       'auditLogs.read',
       'dashboard.read',
+      // M11.B — admin can edit content
+      'content.read', 'content.update',
     ],
   },
   {
@@ -188,6 +194,8 @@ const ROLES = [
       'notifications.read',
       'jobs.read',
       'dashboard.read',
+      // M11.B — operator can VIEW but not edit content
+      'content.read',
     ],
   },
 ];
@@ -1808,6 +1816,241 @@ async function main() {
   console.log(`  Payment page config (singleton):1`);
   console.log('─'.repeat(60));
   console.log(`  Total config rows (excl. countries reference): ~198`);
+  console.log('─'.repeat(60));
+
+  // ───────────────────────────────────────────────────────────
+  // M11.B — Default CMS content (5 pages + contact + 10 FAQs)
+  // ───────────────────────────────────────────────────────────
+  // Idempotent: each row is only created if its natural key (slug
+  // for pages, id for the singleton, question+category for FAQs)
+  // doesn't already exist. Re-running never overwrites existing
+  // admin edits.
+  console.log('\n📄 M11.B — CMS content:');
+  let pagesCreated = 0;
+  let pagesPreserved = 0;
+
+  const CONTENT_PAGES: Array<{
+    slug: string;
+    title: string;
+    metaTitle?: string;
+    metaDescription?: string;
+    contentHtml: string;
+  }> = [
+    {
+      slug: 'about',
+      title: 'About E-Visa Global',
+      metaTitle: 'About E-Visa Global — Your Trusted E-Visa Partner',
+      metaDescription:
+        'E-Visa Global helps travelers worldwide apply for electronic visas quickly, securely, and transparently.',
+      contentHtml: `<h1>About E-Visa Global</h1>
+<p>E-Visa Global is your trusted partner for fast, reliable electronic visa applications. We simplify international travel by providing a streamlined platform that connects travelers with official e-visa services for destinations worldwide.</p>
+<h2>Our Mission</h2>
+<p>To make international travel accessible by removing the friction from visa applications. We handle the paperwork so you can focus on your journey.</p>
+<h2>Why Choose Us</h2>
+<ul>
+  <li>Fast processing — most visas issued within 5–7 business days</li>
+  <li>Secure platform — your data is encrypted and never shared</li>
+  <li>24/7 customer support throughout your application</li>
+  <li>Transparent pricing with no hidden fees</li>
+  <li>Trusted by travelers from over 200 countries</li>
+</ul>
+<h2>How It Works</h2>
+<p>Apply online in minutes, upload your documents, pay securely, and receive your e-visa via email — all from the comfort of your home or office.</p>`,
+    },
+    {
+      slug: 'privacy',
+      title: 'Privacy Policy',
+      metaTitle: 'Privacy Policy — E-Visa Global',
+      metaDescription:
+        'How E-Visa Global collects, uses, and protects your personal information during the visa application process.',
+      contentHtml: `<h1>Privacy Policy</h1>
+<p><em>Last updated: ${new Date().toISOString().slice(0, 10)}</em></p>
+<h2>1. Information We Collect</h2>
+<p>We collect information necessary to process your visa application, including personal details, passport information, travel dates, and payment data.</p>
+<h2>2. How We Use Your Information</h2>
+<p>Your information is used solely to process your visa application and communicate with you about your application status. We do not sell or share your data with third parties except as required to process your visa.</p>
+<h2>3. Data Security</h2>
+<p>We implement industry-standard security measures including SSL encryption, secure data storage, and access controls to protect your information.</p>
+<h2>4. Cookies</h2>
+<p>We use cookies to enhance your browsing experience and maintain your session during the application process.</p>
+<h2>5. Your Rights</h2>
+<p>You have the right to access, correct, or delete your personal information. Contact us to exercise these rights.</p>
+<h2>6. Contact Us</h2>
+<p>For privacy-related questions, please <a href="/contact">contact us</a>.</p>`,
+    },
+    {
+      slug: 'terms',
+      title: 'Terms of Service',
+      metaTitle: 'Terms of Service — E-Visa Global',
+      metaDescription:
+        'The terms governing your use of the E-Visa Global platform and visa application service.',
+      contentHtml: `<h1>Terms of Service</h1>
+<p><em>Last updated: ${new Date().toISOString().slice(0, 10)}</em></p>
+<h2>1. Service Description</h2>
+<p>E-Visa Global provides an online platform to facilitate electronic visa applications. We are an intermediary service; visa decisions are made solely by the destination country&apos;s authorities.</p>
+<h2>2. Application Process</h2>
+<p>By submitting an application through our platform, you confirm that all information provided is accurate and complete. False information may result in visa denial without refund.</p>
+<h2>3. Fees and Payments</h2>
+<p>Service fees are non-refundable once an application is submitted to the destination country&apos;s authorities. Government fees are subject to the destination country&apos;s policies.</p>
+<h2>4. Processing Times</h2>
+<p>Processing times are estimates provided by destination countries. We cannot guarantee specific processing times.</p>
+<h2>5. Visa Decisions</h2>
+<p>We do not influence visa decisions. Approval or denial is at the sole discretion of the destination country&apos;s authorities.</p>
+<h2>6. Limitation of Liability</h2>
+<p>Our liability is limited to the service fees paid. We are not responsible for visa denials, travel disruptions, or other consequences arising from visa decisions.</p>
+<h2>7. Changes to Terms</h2>
+<p>We reserve the right to update these terms. Continued use of our service constitutes acceptance of updated terms.</p>`,
+    },
+    {
+      slug: 'contact',
+      title: 'Contact Us',
+      metaTitle: 'Contact Us — E-Visa Global',
+      metaDescription: 'Get in touch with the E-Visa Global team for questions about your visa application.',
+      contentHtml: `<h1>Contact Us</h1>
+<p>We&apos;re here to help with your visa application. Reach out through any of the channels listed below.</p>
+<p>For frequently asked questions, please visit our <a href="/faq">FAQ page</a>.</p>`,
+    },
+    {
+      slug: 'faq',
+      title: 'Frequently Asked Questions',
+      metaTitle: 'FAQ — E-Visa Global',
+      metaDescription: 'Answers to the most common questions about applying for an e-visa with E-Visa Global.',
+      contentHtml: `<h1>Frequently Asked Questions</h1>
+<p>Find answers to common questions about our visa application service. Use the categories below to browse, or jump to a specific topic.</p>`,
+    },
+  ];
+
+  for (const p of CONTENT_PAGES) {
+    const existing = await prisma.contentPage.findUnique({ where: { slug: p.slug } });
+    if (existing) {
+      pagesPreserved++;
+      continue;
+    }
+    await prisma.contentPage.create({
+      data: {
+        slug: p.slug,
+        title: p.title,
+        contentHtml: p.contentHtml,
+        metaTitle: p.metaTitle,
+        metaDescription: p.metaDescription,
+        isPublished: true,
+        publishedAt: new Date(),
+      },
+    });
+    pagesCreated++;
+  }
+  console.log(`  Content pages: ${pagesCreated} new + ${pagesPreserved} preserved`);
+
+  // Contact info singleton
+  const existingContact = await prisma.contactInfo.findFirst();
+  if (existingContact) {
+    console.log('  Contact info: preserved (singleton)');
+  } else {
+    await prisma.contactInfo.create({
+      data: {
+        email: 'support@evisaglobal.com',
+        phone: '+994 50 000 00 00',
+        whatsapp: '+994 50 000 00 00',
+        businessHours: 'Monday – Friday: 9:00 AM – 6:00 PM (UTC+4)',
+        supportHours: '24/7 Email Support',
+        socialLinksJson: {},
+      },
+    });
+    console.log('  Contact info: created (singleton)');
+  }
+
+  // FAQ items — natural key is (question, category) so re-runs skip
+  // an item the admin may already have edited.
+  const FAQ_SEEDS: Array<{
+    category: string;
+    question: string;
+    answer: string;
+    displayOrder: number;
+  }> = [
+    {
+      category: 'general', displayOrder: 0,
+      question: 'What is an e-visa?',
+      answer:
+        'An e-visa is an electronic visa that allows you to travel to a destination country without visiting an embassy or consulate. The visa is issued digitally and linked to your passport.',
+    },
+    {
+      category: 'general', displayOrder: 1,
+      question: 'Which countries does E-Visa Global support?',
+      answer:
+        'We support visa applications for over 50 destination countries including Türkiye, UAE, Egypt, Georgia, Sri Lanka, Thailand, and many more. Check our homepage for the full list.',
+    },
+    {
+      category: 'application', displayOrder: 0,
+      question: 'How long does the application take?',
+      answer:
+        'The online application typically takes 10–15 minutes to complete. Make sure you have your passport and travel details ready before you start.',
+    },
+    {
+      category: 'application', displayOrder: 1,
+      question: 'What documents do I need?',
+      answer:
+        'Required documents vary by destination, but typically include a passport scan, passport photo, and proof of travel arrangements (hotel booking, flight tickets). Specific requirements are shown during the application process.',
+    },
+    {
+      category: 'application', displayOrder: 2,
+      question: 'Can I apply for multiple people in one application?',
+      answer:
+        'Yes. You can add multiple applicants to a single application. Each applicant requires their own passport details and documents.',
+    },
+    {
+      category: 'payment', displayOrder: 0,
+      question: 'Which payment methods do you accept?',
+      answer:
+        'We accept all major credit and debit cards including Visa, Mastercard, and American Express. Payments are processed securely through encrypted channels.',
+    },
+    {
+      category: 'payment', displayOrder: 1,
+      question: 'Is the service fee refundable?',
+      answer:
+        'Service fees are non-refundable once your application is submitted to the destination country&apos;s authorities. If you cancel before submission, we issue a full refund.',
+    },
+    {
+      category: 'visa', displayOrder: 0,
+      question: 'How long does visa processing take?',
+      answer:
+        'Processing times vary by destination country, typically 3–10 business days. Express processing is available for many destinations for an additional fee.',
+    },
+    {
+      category: 'visa', displayOrder: 1,
+      question: 'What if my visa is denied?',
+      answer:
+        'Visa decisions are made by destination country authorities. If denied, the government fee is forfeited per destination country policy. Our service fee may or may not be refundable depending on the circumstances.',
+    },
+    {
+      category: 'visa', displayOrder: 2,
+      question: 'How will I receive my approved visa?',
+      answer:
+        'Approved visas are sent to your registered email address as a PDF. You can also download your visa from your customer portal at /me. Print the visa and carry it with you when traveling.',
+    },
+  ];
+
+  let faqCreated = 0;
+  let faqPreserved = 0;
+  for (const f of FAQ_SEEDS) {
+    const existing = await prisma.faqItem.findFirst({
+      where: { question: f.question, category: f.category, deletedAt: null },
+    });
+    if (existing) {
+      faqPreserved++;
+      continue;
+    }
+    await prisma.faqItem.create({
+      data: {
+        question: f.question,
+        answer: f.answer,
+        category: f.category,
+        displayOrder: f.displayOrder,
+        isPublished: true,
+      },
+    });
+    faqCreated++;
+  }
+  console.log(`  FAQ items: ${faqCreated} new + ${faqPreserved} preserved`);
   console.log('─'.repeat(60));
 }
 

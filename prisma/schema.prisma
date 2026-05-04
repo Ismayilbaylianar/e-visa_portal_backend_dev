@@ -1125,3 +1125,78 @@ model EmailLog {
   @@index([createdAt])
   @@map("email_logs")
 }
+
+// ===========================================
+// MODULE 11.B — CONTENT MANAGEMENT (CMS)
+// ===========================================
+// Admin-managed copy for the public marketing pages (about / privacy /
+// terms / contact / faq) plus a contact-info singleton that drives the
+// site footer. All three tables are designed to be edited live without
+// a redeploy. Public reads are unauthenticated; writes require the
+// `content.update` permission.
+
+/// Markdown/HTML body for one public marketing page, addressed by slug
+/// from the public router (e.g. `/about` → slug='about'). One row per
+/// page; slug is the natural unique key.
+model ContentPage {
+  id              String    @id @default(uuid())
+  slug            String    @unique
+  title           String
+  contentHtml     String    @map("content_html")
+  metaTitle       String?   @map("meta_title")
+  metaDescription String?   @map("meta_description")
+  isPublished     Boolean   @default(true) @map("is_published")
+  publishedAt     DateTime? @map("published_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdByUserId String?   @map("created_by_user_id")
+  updatedByUserId String?   @map("updated_by_user_id")
+  deletedAt       DateTime? @map("deleted_at")
+
+  @@index([slug])
+  @@index([isPublished, deletedAt])
+  @@map("content_pages")
+}
+
+/// Singleton — one row per environment, holds the contact / hours /
+/// social-link info shown in the footer + on /contact. Service layer
+/// auto-creates on first read so no NPE if the seed hasn't run yet.
+model ContactInfo {
+  id               String   @id @default(uuid())
+  email            String
+  phone            String?
+  whatsapp         String?
+  address          String?
+  city             String?
+  country          String?
+  businessHours    String?  @map("business_hours")
+  supportHours     String?  @map("support_hours")
+  // socialLinks shape: { facebook?, twitter?, instagram?, linkedin?, ... }
+  socialLinksJson  Json?    @map("social_links_json")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  updatedByUserId  String?  @map("updated_by_user_id")
+
+  @@map("contact_info")
+}
+
+/// One Q+A on the public /faq page. `category` lets the public view
+/// group items (general / application / payment / visa / etc.).
+/// `displayOrder` is the per-category sort key used by the admin
+/// drag-drop reorder endpoint.
+model FaqItem {
+  id              String    @id @default(uuid())
+  question        String
+  answer          String
+  category        String?
+  displayOrder    Int       @default(0) @map("display_order")
+  isPublished     Boolean   @default(true) @map("is_published")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdByUserId String?   @map("created_by_user_id")
+  updatedByUserId String?   @map("updated_by_user_id")
+  deletedAt       DateTime? @map("deleted_at")
+
+  @@index([category, displayOrder])
+  @@index([isPublished, deletedAt])
+  @@map("faq_items")
+}
