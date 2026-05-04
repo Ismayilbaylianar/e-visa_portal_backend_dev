@@ -41,16 +41,26 @@ export class AuditLogResponseDto {
   entityId?: string;
 
   @ApiPropertyOptional({
-    description: 'Previous state before action',
+    description:
+      'Snapshot of the entity BEFORE the action. Maps from `old_value_json` in the DB. May be null on `*.create` actions where there is no prior state.',
     type: 'object',
   })
-  oldData?: Record<string, unknown>;
+  oldValue?: Record<string, unknown>;
 
   @ApiPropertyOptional({
-    description: 'New state after action',
+    description:
+      'Snapshot of the entity AFTER the action. Maps from `new_value_json` in the DB. May be null on `*.delete` actions where there is no post state.',
     type: 'object',
   })
-  newData?: Record<string, unknown>;
+  newValue?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description:
+      'Actor type — USER for human admin actions, SYSTEM for cron / job / migration actions.',
+    enum: ['USER', 'SYSTEM'],
+    example: 'USER',
+  })
+  actorType?: 'USER' | 'SYSTEM';
 
   @ApiPropertyOptional({
     description: 'IP address of the request',
