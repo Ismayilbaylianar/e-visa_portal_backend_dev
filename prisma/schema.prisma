@@ -351,6 +351,8 @@ model Country {
   bindingNationalityFees      BindingNationalityFee[] @relation("NationalityCountry")
   applicationsNationality     Application[]           @relation("NationalityCountry")
   applicationsDestination     Application[]           @relation("DestinationCountry")
+  // M11.1 — homepage slides may link to a country (auto-derives slug + name).
+  homepageSlides              HomepageSlide[]
 
   @@index([isoCode])
   @@index([continentCode])
@@ -377,8 +379,10 @@ model CountryPage {
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
 
-  country  Country          @relation(fields: [countryId], references: [id])
+  country  Country            @relation(fields: [countryId], references: [id])
   sections CountrySection[]
+  // M11.1 — hero slider images managed per page.
+  images   CountryPageImage[]
 
   @@index([countryId])
   @@index([slug])
@@ -1199,4 +1203,66 @@ model FaqItem {
   @@index([category, displayOrder])
   @@index([isPublished, deletedAt])
   @@map("faq_items")
+}
+
+// ===========================================
+// MODULE 11.1 — CAROUSEL & COUNTRY-PAGE IMAGES
+// ===========================================
+// Two additive tables for the public marketing surface:
+//   • CountryPageImage — hero-slider images per country page
+//   • HomepageSlide    — promotional carousel cards on the homepage
+// Both are admin-managed (countryPages.update + homepageSlides.update),
+// store the file via the existing StorageService abstraction, and
+// expose published-only public read endpoints.
+
+/// Hero-slider images for a public country page (one CountryPage → many).
+/// `imageUrl` holds the storage key (relative path inside the storage
+/// provider) — frontend resolves it through the existing signed-URL
+/// flow if needed, or treats it as a relative path under the storage
+/// CDN base URL.
+model CountryPageImage {
+  id              String      @id @default(uuid())
+  countryPageId   String      @map("country_page_id")
+  imageUrl        String      @map("image_url")
+  altText         String?     @map("alt_text")
+  displayOrder    Int         @default(0) @map("display_order")
+  isPublished     Boolean     @default(true) @map("is_published")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+  createdByUserId String?     @map("created_by_user_id")
+  updatedByUserId String?     @map("updated_by_user_id")
+  deletedAt       DateTime?   @map("deleted_at")
+
+  countryPage CountryPage @relation(fields: [countryPageId], references: [id], onDelete: Cascade)
+
+  @@index([countryPageId, displayOrder])
+  @@index([isPublished, deletedAt])
+  @@map("country_page_images")
+}
+
+/// One promotional card on the homepage carousel. `countryId` is
+/// optional — when set, the frontend auto-derives the CTA URL to
+/// `/country/{country.page.slug}` and falls back to the country flag
+/// when no `imageUrl` is uploaded.
+model HomepageSlide {
+  id              String   @id @default(uuid())
+  countryId       String?  @map("country_id")
+  imageUrl        String?  @map("image_url")
+  title           String
+  subtitle        String?
+  ctaText         String   @default("Apply Now") @map("cta_text")
+  ctaUrl          String?  @map("cta_url")
+  displayOrder    Int      @default(0) @map("display_order")
+  isPublished     Boolean  @default(true) @map("is_published")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdByUserId String?  @map("created_by_user_id")
+  updatedByUserId String?  @map("updated_by_user_id")
+  deletedAt       DateTime? @map("deleted_at")
+
+  country Country? @relation(fields: [countryId], references: [id], onDelete: SetNull)
+
+  @@index([displayOrder])
+  @@index([isPublished, deletedAt])
+  @@map("homepage_slides")
 }

@@ -75,6 +75,54 @@ export class CountryPageListResponseDto {
 }
 
 /**
+ * M11.1 — public-facing visa-type summary embedded in the country
+ * page response. Lets the country page render a visa-type card grid
+ * in one round trip. Pricing here is intentionally GENERIC (the
+ * lowest-cost active fee for any nationality) — nationality-specific
+ * pricing still flows through the cascade preview endpoint.
+ */
+export class PublicCountryPageVisaTypeDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  purpose: string;
+
+  @ApiProperty()
+  label: string;
+
+  @ApiProperty()
+  validityDays: number;
+
+  @ApiProperty()
+  maxStay: number;
+
+  @ApiProperty()
+  entries: string;
+
+  @ApiPropertyOptional({ description: 'Lowest active total fee across nationalities (display only)' })
+  fromAmount?: string;
+
+  @ApiPropertyOptional()
+  currencyCode?: string;
+}
+
+/** M11.1 — hero image embed on the public country page. */
+export class PublicCountryPageImageDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ description: 'Resolved public URL' })
+  imageUrl: string;
+
+  @ApiPropertyOptional()
+  altText?: string;
+
+  @ApiProperty()
+  displayOrder: number;
+}
+
+/**
  * Public response shape (no admin-only fields like isActive). Includes the
  * embedded country and active sections for public detail rendering.
  */
@@ -96,6 +144,14 @@ export class PublicCountryPageResponseDto {
 
   @ApiPropertyOptional({ type: [CountrySectionResponseDto] })
   sections?: CountrySectionResponseDto[];
+
+  /** M11.1 — published hero images, ordered by displayOrder. */
+  @ApiPropertyOptional({ type: [PublicCountryPageImageDto] })
+  images?: PublicCountryPageImageDto[];
+
+  /** M11.1 — visa types with active bindings for this destination. */
+  @ApiPropertyOptional({ type: [PublicCountryPageVisaTypeDto] })
+  visaTypes?: PublicCountryPageVisaTypeDto[];
 }
 
 export class PublicCountryPageListResponseDto {

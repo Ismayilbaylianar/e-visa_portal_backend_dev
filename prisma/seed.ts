@@ -120,6 +120,10 @@ const PERMISSIONS = [
   // M11.B — Content Management (CMS)
   { moduleKey: 'content', actionKey: 'read', description: 'View content pages, contact info, and FAQ items' },
   { moduleKey: 'content', actionKey: 'update', description: 'Create, edit, reorder, or delete content (pages, contact info, FAQ)' },
+
+  // M11.1 — Homepage slides (countryPages.update is reused for hero images)
+  { moduleKey: 'homepageSlides', actionKey: 'read', description: 'View homepage carousel slides' },
+  { moduleKey: 'homepageSlides', actionKey: 'update', description: 'Create, edit, reorder, publish, or delete homepage slides' },
 ];
 
 // Role definitions with their permissions
@@ -163,6 +167,8 @@ const ROLES = [
       'dashboard.read',
       // M11.B — admin can edit content
       'content.read', 'content.update',
+      // M11.1 — admin can manage homepage slides
+      'homepageSlides.read', 'homepageSlides.update',
     ],
   },
   {
@@ -196,6 +202,8 @@ const ROLES = [
       'dashboard.read',
       // M11.B — operator can VIEW but not edit content
       'content.read',
+      // M11.1 — operator can VIEW homepage slides but not edit
+      'homepageSlides.read',
     ],
   },
 ];
@@ -2051,6 +2059,65 @@ async function main() {
     faqCreated++;
   }
   console.log(`  FAQ items: ${faqCreated} new + ${faqPreserved} preserved`);
+  console.log('─'.repeat(60));
+
+  // ───────────────────────────────────────────────────────────
+  // M11.1 — Default homepage carousel slides
+  // ───────────────────────────────────────────────────────────
+  // Idempotent: insert one slide per popular destination if no slide
+  // already references that country. Image URLs are intentionally
+  // null — admin uploads later via /admin/homepage-slides; the
+  // public carousel renders a flag-emoji fallback meanwhile.
+  console.log('\n🖼  M11.1 — Homepage slides:');
+  const HOMEPAGE_SLIDE_SEEDS: Array<{
+    destinationIso: string;
+    title: string;
+    subtitle: string;
+  }> = [
+    { destinationIso: 'TR', title: 'Türkiye Visa', subtitle: 'Apply in minutes, travel within days' },
+    { destinationIso: 'AE', title: 'UAE Visa', subtitle: 'Skip the embassy queue — apply online' },
+    { destinationIso: 'EG', title: 'Egypt Visa', subtitle: 'See the pyramids — visa in 5–7 days' },
+    { destinationIso: 'GE', title: 'Georgia Visa', subtitle: 'Caucasus mountains, Black Sea coast' },
+    { destinationIso: 'LK', title: 'Sri Lanka Visa', subtitle: 'Tea country & tropical beaches' },
+  ];
+
+  let slidesCreated = 0;
+  let slidesPreserved = 0;
+  let displayOrder = 0;
+  for (const s of HOMEPAGE_SLIDE_SEEDS) {
+    const country = await prisma.country.findFirst({
+      where: { isoCode: s.destinationIso, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (!country) {
+      console.log(`  ⚠️  skip ${s.destinationIso} — country missing`);
+      continue;
+    }
+    // Idempotency key: one slide per countryId. Re-runs never create
+    // duplicates and never overwrite admin-edited content.
+    const existing = await prisma.homepageSlide.findFirst({
+      where: { countryId: country.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (existing) {
+      slidesPreserved++;
+      displayOrder++;
+      continue;
+    }
+    await prisma.homepageSlide.create({
+      data: {
+        countryId: country.id,
+        title: s.title,
+        subtitle: s.subtitle,
+        ctaText: 'Apply Now',
+        displayOrder,
+        isPublished: true,
+      },
+    });
+    slidesCreated++;
+    displayOrder++;
+  }
+  console.log(`  Homepage slides: ${slidesCreated} new + ${slidesPreserved} preserved`);
   console.log('─'.repeat(60));
 }
 

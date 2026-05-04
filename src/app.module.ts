@@ -68,6 +68,10 @@ import { ContentPagesModule } from './modules/contentPages/content-pages.module'
 import { ContactInfoModule } from './modules/contactInfo/contact-info.module';
 import { FaqItemsModule } from './modules/faqItems/faq-items.module';
 
+// M11.1 — Country page hero images + homepage carousel slides
+import { CountryPageImagesModule } from './modules/countryPageImages/country-page-images.module';
+import { HomepageSlidesModule } from './modules/homepageSlides/homepage-slides.module';
+
 @Module({
   imports: [
     // Configuration
@@ -157,6 +161,10 @@ import { FaqItemsModule } from './modules/faqItems/faq-items.module';
     ContentPagesModule,
     ContactInfoModule,
     FaqItemsModule,
+
+    // M11.1 — Carousel + country page images
+    CountryPageImagesModule,
+    HomepageSlidesModule,
   ],
   providers: [
     // Global rate limiting guard

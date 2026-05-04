@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
+import { StorageService } from '../storage/storage.service';
 import {
   CreateCountryPageDto,
   UpdateCountryPageDto,
@@ -32,6 +33,7 @@ export class CountryPagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly storageService: StorageService,
   ) {}
 
   async findAll(query: GetCountryPagesQueryDto): Promise<CountryPageListResponseDto> {
@@ -325,6 +327,11 @@ export class CountryPagesService {
           where: { deletedAt: null, isActive: true },
           orderBy: { sortOrder: 'asc' },
         },
+        // M11.1 — published hero images, ordered for the slider.
+        images: {
+          where: { deletedAt: null, isPublished: true },
+          orderBy: { displayOrder: 'asc' },
+        },
       },
     });
 
@@ -334,7 +341,70 @@ export class CountryPagesService {
       ]);
     }
 
-    return this.mapToPublicResponse(page);
+    // M11.1 — visa types with active bindings for this destination,
+    // joined to fees so the public card grid can show "from $X". The
+    // displayed price is the lowest active total fee across all
+    // nationalities (purely a display hint — actual nationality-aware
+    // pricing flows through the cascade preview endpoint at apply time).
+    const bindings = await this.prisma.templateBinding.findMany({
+      where: {
+        destinationCountryId: page.country.id,
+        isActive: true,
+        deletedAt: null,
+        visaType: { isActive: true, deletedAt: null },
+      },
+      select: {
+        visaType: {
+          select: {
+            id: true,
+            purpose: true,
+            label: true,
+            validityDays: true,
+            maxStay: true,
+            entries: true,
+            sortOrder: true,
+          },
+        },
+        nationalityFees: {
+          where: { isActive: true, deletedAt: null },
+          select: {
+            governmentFeeAmount: true,
+            serviceFeeAmount: true,
+            currencyCode: true,
+          },
+        },
+      },
+    });
+
+    const visaTypes = bindings
+      .filter((b) => b.visaType)
+      .map((b) => {
+        const totals = b.nationalityFees.map((f) => ({
+          total: Number(f.governmentFeeAmount) + Number(f.serviceFeeAmount),
+          currencyCode: f.currencyCode,
+        }));
+        // Pick the cheapest total across nationalities for the "from X" hint.
+        const cheapest = totals.reduce<typeof totals[number] | undefined>(
+          (acc, cur) => (acc === undefined || cur.total < acc.total ? cur : acc),
+          undefined,
+        );
+        return {
+          id: b.visaType!.id,
+          purpose: b.visaType!.purpose,
+          label: b.visaType!.label,
+          validityDays: b.visaType!.validityDays,
+          maxStay: b.visaType!.maxStay,
+          entries: b.visaType!.entries,
+          fromAmount: cheapest ? cheapest.total.toFixed(2) : undefined,
+          currencyCode: cheapest?.currencyCode,
+          // Carry sortOrder so we can order client-friendly below.
+          _sortOrder: b.visaType!.sortOrder,
+        };
+      })
+      .sort((a, b) => a._sortOrder - b._sortOrder)
+      .map(({ _sortOrder, ...rest }) => rest);
+
+    return this.mapToPublicResponse(page, visaTypes);
   }
 
   // ============================================================
@@ -372,7 +442,10 @@ export class CountryPagesService {
     };
   }
 
-  private mapToPublicResponse(page: any): PublicCountryPageResponseDto {
+  private mapToPublicResponse(
+    page: any,
+    visaTypes?: PublicCountryPageResponseDto['visaTypes'],
+  ): PublicCountryPageResponseDto {
     return {
       id: page.id,
       slug: page.slug,
@@ -393,6 +466,28 @@ export class CountryPagesService {
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
       })),
+      // M11.1 — images and visaTypes only included on the singular
+      // public detail (findBySlugPublic). The list endpoint stays
+      // lean. Resolve storage keys → public URLs at the boundary so
+      // frontend never has to know about provider-specific paths.
+      images: page.images?.map((img: any) => ({
+        id: img.id,
+        imageUrl: this.toPublicUrl(img.imageUrl),
+        altText: img.altText ?? undefined,
+        displayOrder: img.displayOrder,
+      })),
+      visaTypes: visaTypes,
     };
+  }
+
+  /**
+   * Convert a storage key to a browser-fetchable URL. Mirror of the
+   * helper used in countryPageImages / homepageSlides services so all
+   * public surfaces produce identical URL shapes.
+   */
+  private toPublicUrl(storageKey: string): string {
+    if (/^https?:\/\//i.test(storageKey)) return storageKey;
+    const base = this.storageService.getBaseUrl().replace(/\/$/, '');
+    return `${base}/${storageKey.replace(/^\/+/, '')}`;
   }
 }
