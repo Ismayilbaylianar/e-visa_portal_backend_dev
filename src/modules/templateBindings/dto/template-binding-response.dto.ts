@@ -168,6 +168,22 @@ export class TemplateBindingResponseDto {
   })
   validTo?: Date | null;
 
+  @ApiProperty({
+    description:
+      'M11.2 — binding-level express-processing default. Public preview reads this to ' +
+      'decide whether the express checkbox renders.',
+    example: false,
+  })
+  expeditedEnabled: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'M11.2 — express fee shown alongside `expeditedEnabled`. String to preserve decimal ' +
+      'precision; null when disabled or unset.',
+    example: '50.00',
+  })
+  expeditedFeeAmount?: string | null;
+
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
 
@@ -226,6 +242,18 @@ export class TemplateBindingListItemResponseDto {
 
   @ApiProperty({ description: 'Number of nationality fees configured' })
   nationalityFeesCount: number;
+
+  @ApiProperty({
+    description: 'M11.2 — binding-level express-processing default.',
+    example: false,
+  })
+  expeditedEnabled: boolean;
+
+  @ApiPropertyOptional({
+    description: 'M11.2 — express fee, decimal as string. Null when disabled.',
+    example: '50.00',
+  })
+  expeditedFeeAmount?: string | null;
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;

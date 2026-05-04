@@ -595,6 +595,8 @@ export class TemplateBindingsService {
       validFrom: binding.validFrom || null,
       validTo: binding.validTo || null,
       nationalityFeesCount: binding._count?.nationalityFees ?? 0,
+      expeditedEnabled: binding.expeditedEnabled ?? false,
+      expeditedFeeAmount: binding.expeditedFeeAmount?.toString() ?? null,
       createdAt: binding.createdAt,
       updatedAt: binding.updatedAt,
       destinationCountry: binding.destinationCountry
@@ -630,6 +632,10 @@ export class TemplateBindingsService {
       isActive: binding.isActive,
       validFrom: binding.validFrom || null,
       validTo: binding.validTo || null,
+      // M11.2 — binding-level express-processing default. Public
+      // preview reads availability + headline fee from these.
+      expeditedEnabled: binding.expeditedEnabled ?? false,
+      expeditedFeeAmount: binding.expeditedFeeAmount?.toString() ?? null,
       createdAt: binding.createdAt,
       updatedAt: binding.updatedAt,
       destinationCountry: binding.destinationCountry

@@ -45,6 +45,7 @@ export class TemplatesService {
     const where = {
       deletedAt: null,
       ...(query.isActive !== undefined && { isActive: query.isActive }),
+      ...(query.isBoilerplate !== undefined && { isBoilerplate: query.isBoilerplate }),
       ...(search && {
         OR: [
           { name: { contains: search, mode: 'insensitive' as const } },
@@ -512,6 +513,7 @@ export class TemplatesService {
       version: template.version,
       isActive: template.isActive,
       sectionsCount: template._count?.sections ?? 0,
+      isBoilerplate: template.isBoilerplate ?? false,
       createdAt: template.createdAt,
       updatedAt: template.updatedAt,
     };
@@ -528,6 +530,7 @@ export class TemplatesService {
       description: template.description || undefined,
       version: template.version,
       isActive: template.isActive,
+      isBoilerplate: template.isBoilerplate ?? false,
       sections: template.sections?.map((section: any) => ({
         id: section.id,
         title: section.title,

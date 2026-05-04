@@ -31,4 +31,13 @@ export class GetTemplatesQueryDto extends SearchQueryDto {
   @Transform(({ value }) => value === 'true')
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'M11.2 — filter by boilerplate flag. Pass `true` from the admin "Create from boilerplate" picker to show only blueprint templates; pass `false` to hide them from the regular admin list.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true')
+  @IsBoolean()
+  isBoilerplate?: boolean;
 }

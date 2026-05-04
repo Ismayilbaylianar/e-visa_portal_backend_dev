@@ -147,6 +147,15 @@ export class TemplateResponseDto {
   isActive: boolean;
 
   @ApiProperty({
+    description:
+      'M11.2 — true for blueprint templates seeded with industry-standard fields. ' +
+      'Boilerplates are read-only sources for `POST /admin/templates/:id/duplicate` and ' +
+      'never bound to nationalities.',
+    example: false,
+  })
+  isBoilerplate: boolean;
+
+  @ApiProperty({
     type: [TemplateSectionResponseDto],
     description: 'Template sections ordered by sortOrder, each containing fields',
   })
@@ -183,6 +192,13 @@ export class TemplateListItemResponseDto {
 
   @ApiProperty({ description: 'Number of sections in the template', example: 3 })
   sectionsCount: number;
+
+  @ApiProperty({
+    description:
+      'M11.2 — boilerplate flag. UI uses this to surface the "Create from boilerplate" picker.',
+    example: false,
+  })
+  isBoilerplate: boolean;
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
