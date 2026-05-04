@@ -35,6 +35,7 @@ export const ErrorCodes = {
   // Business logic errors
   // ==========================================
   BINDING_NOT_FOUND: 'bindingNotFound',
+  SAME_COUNTRY_BLOCKED: 'sameCountryBlocked',
   TEMPLATE_NOT_FOUND: 'templateNotFound',
   APPLICATION_NOT_FOUND: 'applicationNotFound',
   APPLICATION_ALREADY_SUBMITTED: 'applicationAlreadySubmitted',
@@ -119,6 +120,7 @@ export const ErrorCodeHttpStatus: Record<ErrorCode, number> = {
 
   // Business
   [ErrorCodes.BINDING_NOT_FOUND]: 404,
+  [ErrorCodes.SAME_COUNTRY_BLOCKED]: 400,
   [ErrorCodes.TEMPLATE_NOT_FOUND]: 404,
   [ErrorCodes.APPLICATION_NOT_FOUND]: 404,
   [ErrorCodes.APPLICATION_ALREADY_SUBMITTED]: 409,

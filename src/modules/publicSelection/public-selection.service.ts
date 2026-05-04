@@ -1,18 +1,25 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotFoundException } from '@/common/exceptions';
+import { GeoLookupService } from '../geoLookup/geo-lookup.service';
+import { NotFoundException, BadRequestException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import {
   SelectionOptionsResponseDto,
   SelectionPreviewRequestDto,
   SelectionPreviewResponseDto,
+  CascadeDestinationsResponseDto,
+  CascadeVisaTypesResponseDto,
+  DetectNationalityResponseDto,
 } from './dto';
 
 @Injectable()
 export class PublicSelectionService {
   private readonly logger = new Logger(PublicSelectionService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly geoLookupService: GeoLookupService,
+  ) {}
 
   /**
    * Get selection options for public UI
@@ -106,6 +113,19 @@ export class PublicSelectionService {
    * - If both are null, binding is always valid
    */
   async getPreview(dto: SelectionPreviewRequestDto): Promise<SelectionPreviewResponseDto> {
+    // M10 §C — same-country block (server-side authority).
+    // The cascade UI removes the user's nationality from the destination
+    // list, but a determined user could still POST a same-country combo
+    // directly. Reject it here so the rule holds regardless of caller.
+    if (dto.nationalityCountryId === dto.destinationCountryId) {
+      throw new BadRequestException('Cannot apply for visa to own country', [
+        {
+          reason: ErrorCodes.SAME_COUNTRY_BLOCKED,
+          message: 'You cannot apply for a visa to your own nationality.',
+        },
+      ]);
+    }
+
     const now = new Date();
 
     // Find active binding with date validity check
@@ -186,6 +206,241 @@ export class PublicSelectionService {
         currencyCode: nationalityFee.currencyCode,
         totalAmount: totalAmount.toFixed(2),
         expeditedEnabled: nationalityFee.expeditedEnabled,
+      },
+    };
+  }
+
+  /**
+   * M10 §A — Cascade step 1: list destinations available for a given
+   * nationality.
+   *
+   * A destination is "available" when it has at least one active,
+   * date-valid TemplateBinding that carries an active
+   * BindingNationalityFee for the requested nationality. We filter at
+   * the data layer so the dropdown never shows a country the user
+   * would later get a "Visa not available" error on.
+   *
+   * The user's own nationality is excluded server-side (§C).
+   */
+  async getDestinationsForNationality(
+    nationalityId: string,
+  ): Promise<CascadeDestinationsResponseDto> {
+    const now = new Date();
+
+    // Find every active fee for this nationality, then walk back to
+    // its binding to confirm the binding is itself active + date-valid.
+    // We pull the destination country in the same query so we can map
+    // straight to the response shape without a second round-trip.
+    const fees = await this.prisma.bindingNationalityFee.findMany({
+      where: {
+        nationalityCountryId: nationalityId,
+        isActive: true,
+        deletedAt: null,
+        templateBinding: {
+          isActive: true,
+          deletedAt: null,
+          // validFrom <= now (or null) AND validTo >= now (or null)
+          AND: [
+            { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
+            { OR: [{ validTo: null }, { validTo: { gte: now } }] },
+          ],
+          // Exclude same-country combos at the data layer.
+          destinationCountryId: { not: nationalityId },
+          destinationCountry: {
+            isActive: true,
+            deletedAt: null,
+            page: {
+              is: {
+                isActive: true,
+                isPublished: true,
+                deletedAt: null,
+              },
+            },
+          },
+        },
+      },
+      select: {
+        templateBinding: {
+          select: {
+            destinationCountry: {
+              select: {
+                id: true,
+                name: true,
+                isoCode: true,
+                flagEmoji: true,
+                page: { select: { slug: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // De-duplicate destinations (one country can appear via multiple
+    // visa types) and sort alphabetically for stable UI ordering.
+    const seen = new Map<string, CascadeDestinationsResponseDto['destinations'][number]>();
+    for (const fee of fees) {
+      const dest = fee.templateBinding?.destinationCountry;
+      if (!dest || seen.has(dest.id)) continue;
+      seen.set(dest.id, {
+        id: dest.id,
+        name: dest.name,
+        isoCode: dest.isoCode,
+        flagEmoji: dest.flagEmoji ?? undefined,
+        slug: dest.page?.slug,
+      });
+    }
+
+    const destinations = Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+    return { destinations };
+  }
+
+  /**
+   * M10 §A — Cascade step 2: list visa types available for a given
+   * (nationality, destination) pair.
+   *
+   * Same eligibility rules as `getDestinationsForNationality`, but
+   * scoped to one destination. Same-country combos return an empty
+   * list rather than throwing — the cascade UI never reaches step 2
+   * for a same-country pair, but a direct caller will simply see
+   * "no visa types available" which is consistent with the policy.
+   */
+  async getVisaTypesForCombination(
+    nationalityId: string,
+    destinationId: string,
+  ): Promise<CascadeVisaTypesResponseDto> {
+    if (nationalityId === destinationId) {
+      return { visaTypes: [] };
+    }
+
+    const now = new Date();
+
+    const fees = await this.prisma.bindingNationalityFee.findMany({
+      where: {
+        nationalityCountryId: nationalityId,
+        isActive: true,
+        deletedAt: null,
+        templateBinding: {
+          destinationCountryId: destinationId,
+          isActive: true,
+          deletedAt: null,
+          AND: [
+            { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
+            { OR: [{ validTo: null }, { validTo: { gte: now } }] },
+          ],
+          visaType: {
+            isActive: true,
+            deletedAt: null,
+          },
+        },
+      },
+      select: {
+        templateBinding: {
+          select: {
+            visaType: {
+              select: {
+                id: true,
+                label: true,
+                purpose: true,
+                validityDays: true,
+                maxStay: true,
+                entries: true,
+                sortOrder: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // De-duplicate by visaType.id (defensive — there's a uniqueness
+    // constraint on (destinationCountryId, visaTypeId), so this should
+    // be a no-op, but the cost is trivial and protects against future
+    // schema changes.
+    const seen = new Map<
+      string,
+      NonNullable<NonNullable<(typeof fees)[number]['templateBinding']>['visaType']>
+    >();
+    for (const fee of fees) {
+      const vt = fee.templateBinding?.visaType;
+      if (!vt || seen.has(vt.id)) continue;
+      seen.set(vt.id, vt);
+    }
+
+    const visaTypes = Array.from(seen.values())
+      .sort((a, b) => {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return a.label.localeCompare(b.label);
+      })
+      .map((vt) => ({
+        id: vt.id,
+        label: vt.label,
+        purpose: vt.purpose,
+        validityDays: vt.validityDays,
+        maxStay: vt.maxStay,
+        entries: vt.entries,
+      }));
+
+    return { visaTypes };
+  }
+
+  /**
+   * M10 §B — IP-based nationality auto-detect.
+   *
+   * Calls the GeoLookup stub (currently always returns null; will be
+   * wired to MaxMind/ip-api in M10b). Three outcomes:
+   *   1. Lookup returns null  → countryCode null + fallback message
+   *   2. Lookup returns ISO code, no matching active country → same as 1
+   *   3. Lookup returns ISO code, matched against active country → full
+   *      country reference so frontend can pre-select the dropdown.
+   */
+  async detectNationalityByIp(ip: string): Promise<DetectNationalityResponseDto> {
+    const fallback = 'Please select your nationality';
+
+    if (!ip) {
+      return { countryCode: null, fallback };
+    }
+
+    const geo = await this.geoLookupService.lookupByIp(ip);
+    if (!geo?.countryCode) {
+      this.logger.debug(`IP nationality detect: no resolution for ${ip}`);
+      return { countryCode: null, fallback };
+    }
+
+    // Match against our active reference list. If the resolved country
+    // isn't one we serve as a nationality, surface countryCode for
+    // diagnostics but leave `country` undefined so the frontend falls
+    // through to the manual dropdown.
+    const country = await this.prisma.country.findFirst({
+      where: {
+        isoCode: geo.countryCode.toUpperCase(),
+        isActive: true,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        isoCode: true,
+        flagEmoji: true,
+      },
+    });
+
+    if (!country) {
+      this.logger.debug(
+        `IP nationality detect: ${ip} resolved to ${geo.countryCode} but not in active list`,
+      );
+      return { countryCode: geo.countryCode, fallback };
+    }
+
+    this.logger.log(`IP nationality detect: ${ip} → ${country.isoCode}`);
+    return {
+      countryCode: country.isoCode,
+      country: {
+        id: country.id,
+        name: country.name,
+        isoCode: country.isoCode,
+        flagEmoji: country.flagEmoji ?? undefined,
       },
     };
   }
