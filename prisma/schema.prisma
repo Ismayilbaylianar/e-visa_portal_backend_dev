@@ -443,6 +443,10 @@ model Template {
   description String?
   version     Int       @default(1)
   isActive    Boolean   @default(true) @map("is_active")
+  // M11.2 — boilerplates can be cloned but not bound to live
+  // (nationality, destination, visaType) combos. Admin clones from a
+  // boilerplate via POST /admin/templates/clone to start a real form.
+  isBoilerplate Boolean @default(false) @map("is_boilerplate")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
@@ -518,6 +522,15 @@ model TemplateBinding {
   isActive             Boolean   @default(true) @map("is_active")
   validFrom            DateTime? @map("valid_from")
   validTo              DateTime? @map("valid_to")
+  // M11.2 — per-binding expedited config. Pre-M11.2 the expedited
+  // fields lived on each BindingNationalityFee — they still do for
+  // backwards compat — but the binding-level values are now the
+  // canonical source the public preview reads from. Admin sets these
+  // once per (template, destination, visaType) combo via the bulk
+  // destination manager. Migration backfills these from any existing
+  // BindingNationalityFee that had expeditedEnabled=true.
+  expeditedEnabled     Boolean   @default(false) @map("expedited_enabled")
+  expeditedFeeAmount   Decimal?  @map("expedited_fee_amount") @db.Decimal(10, 2)
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   deletedAt            DateTime? @map("deleted_at")

@@ -2119,6 +2119,307 @@ async function main() {
   }
   console.log(`  Homepage slides: ${slidesCreated} new + ${slidesPreserved} preserved`);
   console.log('─'.repeat(60));
+
+  // ───────────────────────────────────────────────────────────
+  // M11.2 — Boilerplate templates (idempotent, by templateKey)
+  // ───────────────────────────────────────────────────────────
+  // Three industry-standard templates admins clone from. All marked
+  // `isBoilerplate=true` and `isActive=false` so they cannot be bound
+  // to live (nationality, destination, visaType) combos. Cloning is
+  // done via the existing POST /admin/templates/:id/duplicate
+  // endpoint — boilerplates are explicitly skipped by the bulk-upsert
+  // bindings endpoint.
+  console.log('\n📋 M11.2 — Boilerplate templates:');
+
+  // Reused option lists. Prefix `bp_` so we don't shadow the
+  // identically-named locals declared earlier in main() for the
+  // production templates seed.
+  const bp_genderOptions = [
+    { value: 'male', label: 'Male' },
+    { value: 'female', label: 'Female' },
+    { value: 'other', label: 'Other / Prefer not to say' },
+  ];
+  const bp_passportTypeOptions = [
+    { value: 'ordinary', label: 'Ordinary' },
+    { value: 'diplomatic', label: 'Diplomatic' },
+    { value: 'service', label: 'Service' },
+  ];
+  const bp_purposeOfVisitOptions = [
+    { value: 'tourism', label: 'Tourism' },
+    { value: 'visiting_family', label: 'Visiting Family' },
+    { value: 'medical', label: 'Medical' },
+  ];
+  const bp_accommodationOptions = [
+    { value: 'hotel', label: 'Hotel' },
+    { value: 'airbnb', label: 'Airbnb / short-term rental' },
+    { value: 'family', label: 'Staying with family' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  type BoilerplateField = {
+    fieldKey: string;
+    fieldType: string;
+    label: string;
+    isRequired: boolean;
+    placeholder?: string;
+    helpText?: string;
+    optionsJson?: unknown;
+    validationRulesJson?: unknown;
+  };
+  type BoilerplateSection = {
+    key: string;
+    title: string;
+    description?: string;
+    fields: BoilerplateField[];
+  };
+  type Boilerplate = {
+    key: string;
+    name: string;
+    description: string;
+    sections: BoilerplateSection[];
+  };
+
+  const BOILERPLATES: Boilerplate[] = [
+    {
+      key: 'tourismBoilerplateV1',
+      name: 'Standard Tourism Form',
+      description:
+        'Industry-standard tourism visa form. Clone via "Create from boilerplate" to start a real bindable template.',
+      sections: [
+        {
+          key: 'personal',
+          title: 'Personal Information',
+          fields: [
+            { fieldKey: 'firstName', fieldType: 'text', label: 'First Name', isRequired: true, placeholder: 'As shown on passport', validationRulesJson: { minLength: 2, maxLength: 50 } },
+            { fieldKey: 'lastName', fieldType: 'text', label: 'Last Name', isRequired: true, placeholder: 'As shown on passport', validationRulesJson: { minLength: 2, maxLength: 50 } },
+            { fieldKey: 'dateOfBirth', fieldType: 'date', label: 'Date of Birth', isRequired: true, validationRulesJson: { max: 'today-18years' } },
+            { fieldKey: 'nationality', fieldType: 'country', label: 'Nationality', isRequired: true },
+            { fieldKey: 'gender', fieldType: 'select', label: 'Gender', isRequired: true, optionsJson: bp_genderOptions },
+          ],
+        },
+        {
+          key: 'passport',
+          title: 'Passport Details',
+          fields: [
+            { fieldKey: 'passportNumber', fieldType: 'text', label: 'Passport Number', isRequired: true, validationRulesJson: { pattern: '^[A-Z0-9]{6,15}$', message: 'Use 6–15 uppercase letters or digits' } },
+            { fieldKey: 'passportType', fieldType: 'select', label: 'Passport Type', isRequired: true, optionsJson: bp_passportTypeOptions },
+            { fieldKey: 'issueDate', fieldType: 'date', label: 'Passport Issue Date', isRequired: true, validationRulesJson: { max: 'today' } },
+            { fieldKey: 'expiryDate', fieldType: 'date', label: 'Passport Expiry Date', isRequired: true, helpText: 'Must be valid for at least 6 months from today', validationRulesJson: { min: 'today+6months' } },
+            { fieldKey: 'issuingCountry', fieldType: 'country', label: 'Issuing Country', isRequired: true },
+          ],
+        },
+        {
+          key: 'travel',
+          title: 'Travel Information',
+          fields: [
+            { fieldKey: 'arrivalDate', fieldType: 'date', label: 'Planned Arrival Date', isRequired: true, validationRulesJson: { min: 'today+1day' } },
+            { fieldKey: 'departureDate', fieldType: 'date', label: 'Planned Departure Date', isRequired: true, validationRulesJson: { min: '$arrivalDate+1day' } },
+            { fieldKey: 'purposeOfVisit', fieldType: 'select', label: 'Purpose of Visit', isRequired: true, optionsJson: bp_purposeOfVisitOptions },
+            { fieldKey: 'accommodationType', fieldType: 'select', label: 'Accommodation Type', isRequired: true, optionsJson: bp_accommodationOptions },
+            { fieldKey: 'accommodationAddress', fieldType: 'textarea', label: 'Accommodation Address', isRequired: true, validationRulesJson: { minLength: 10, maxLength: 500 } },
+          ],
+        },
+        {
+          key: 'contact',
+          title: 'Contact Information',
+          fields: [
+            { fieldKey: 'email', fieldType: 'email', label: 'Email', isRequired: true },
+            { fieldKey: 'phone', fieldType: 'phone', label: 'Phone', isRequired: true },
+            { fieldKey: 'homeAddress', fieldType: 'textarea', label: 'Home Address', isRequired: true, validationRulesJson: { minLength: 10, maxLength: 500 } },
+            { fieldKey: 'emergencyContact', fieldType: 'phone', label: 'Emergency Contact Phone', isRequired: true },
+          ],
+        },
+        {
+          key: 'documents',
+          title: 'Documents',
+          fields: [
+            { fieldKey: 'passportBioPage', fieldType: 'file', label: 'Passport Bio Page', isRequired: true, helpText: 'PDF / JPG / PNG, max 5 MB' },
+            { fieldKey: 'passportPhoto', fieldType: 'file', label: 'Passport Photo', isRequired: true, helpText: 'JPG / PNG, max 5 MB' },
+            { fieldKey: 'hotelBooking', fieldType: 'file', label: 'Hotel Booking Confirmation', isRequired: true, helpText: 'PDF, max 5 MB' },
+            { fieldKey: 'returnFlight', fieldType: 'file', label: 'Return Flight Ticket', isRequired: true, helpText: 'PDF, max 5 MB' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'businessBoilerplateV1',
+      name: 'Standard Business Form',
+      description:
+        'Industry-standard business visa form. Clone via "Create from boilerplate" to start a real bindable template.',
+      sections: [
+        {
+          key: 'personal',
+          title: 'Personal Information',
+          fields: [
+            { fieldKey: 'firstName', fieldType: 'text', label: 'First Name', isRequired: true, validationRulesJson: { minLength: 2, maxLength: 50 } },
+            { fieldKey: 'lastName', fieldType: 'text', label: 'Last Name', isRequired: true, validationRulesJson: { minLength: 2, maxLength: 50 } },
+            { fieldKey: 'dateOfBirth', fieldType: 'date', label: 'Date of Birth', isRequired: true, validationRulesJson: { max: 'today-18years' } },
+            { fieldKey: 'nationality', fieldType: 'country', label: 'Nationality', isRequired: true },
+            { fieldKey: 'gender', fieldType: 'select', label: 'Gender', isRequired: true, optionsJson: bp_genderOptions },
+          ],
+        },
+        {
+          key: 'passport',
+          title: 'Passport Details',
+          fields: [
+            { fieldKey: 'passportNumber', fieldType: 'text', label: 'Passport Number', isRequired: true, validationRulesJson: { pattern: '^[A-Z0-9]{6,15}$', message: 'Use 6–15 uppercase letters or digits' } },
+            { fieldKey: 'passportType', fieldType: 'select', label: 'Passport Type', isRequired: true, optionsJson: bp_passportTypeOptions },
+            { fieldKey: 'issueDate', fieldType: 'date', label: 'Passport Issue Date', isRequired: true, validationRulesJson: { max: 'today' } },
+            { fieldKey: 'expiryDate', fieldType: 'date', label: 'Passport Expiry Date', isRequired: true, helpText: 'Must be valid for at least 6 months from today', validationRulesJson: { min: 'today+6months' } },
+            { fieldKey: 'issuingCountry', fieldType: 'country', label: 'Issuing Country', isRequired: true },
+          ],
+        },
+        {
+          key: 'business',
+          title: 'Business Details',
+          fields: [
+            { fieldKey: 'companyName', fieldType: 'text', label: 'Company Name', isRequired: true, validationRulesJson: { minLength: 2, maxLength: 200 } },
+            { fieldKey: 'companyAddress', fieldType: 'textarea', label: 'Company Address', isRequired: true, validationRulesJson: { minLength: 10, maxLength: 500 } },
+            { fieldKey: 'jobTitle', fieldType: 'text', label: 'Job Title', isRequired: true, validationRulesJson: { minLength: 2, maxLength: 100 } },
+            { fieldKey: 'invitingCompany', fieldType: 'text', label: 'Inviting Company', isRequired: true, validationRulesJson: { minLength: 2, maxLength: 200 } },
+            { fieldKey: 'invitationLetter', fieldType: 'file', label: 'Invitation Letter', isRequired: true, helpText: 'PDF, max 5 MB' },
+            { fieldKey: 'businessPurpose', fieldType: 'textarea', label: 'Business Purpose', isRequired: true, validationRulesJson: { minLength: 20, maxLength: 1000 } },
+          ],
+        },
+        {
+          key: 'travel',
+          title: 'Travel Information',
+          fields: [
+            { fieldKey: 'arrivalDate', fieldType: 'date', label: 'Planned Arrival Date', isRequired: true, validationRulesJson: { min: 'today+1day' } },
+            { fieldKey: 'departureDate', fieldType: 'date', label: 'Planned Departure Date', isRequired: true, validationRulesJson: { min: '$arrivalDate+1day' } },
+            { fieldKey: 'purposeOfVisit', fieldType: 'select', label: 'Purpose of Visit', isRequired: true, optionsJson: [{ value: 'business_meeting', label: 'Business Meeting' }, { value: 'conference', label: 'Conference' }, { value: 'training', label: 'Training' }] },
+            { fieldKey: 'accommodationAddress', fieldType: 'textarea', label: 'Accommodation Address', isRequired: true, validationRulesJson: { minLength: 10, maxLength: 500 } },
+          ],
+        },
+        {
+          key: 'contact',
+          title: 'Contact Information',
+          fields: [
+            { fieldKey: 'email', fieldType: 'email', label: 'Email', isRequired: true },
+            { fieldKey: 'phone', fieldType: 'phone', label: 'Phone', isRequired: true },
+            { fieldKey: 'homeAddress', fieldType: 'textarea', label: 'Home Address', isRequired: true, validationRulesJson: { minLength: 10, maxLength: 500 } },
+            { fieldKey: 'emergencyContact', fieldType: 'phone', label: 'Emergency Contact Phone', isRequired: true },
+          ],
+        },
+        {
+          key: 'documents',
+          title: 'Documents',
+          fields: [
+            { fieldKey: 'passportBioPage', fieldType: 'file', label: 'Passport Bio Page', isRequired: true, helpText: 'PDF / JPG / PNG, max 5 MB' },
+            { fieldKey: 'passportPhoto', fieldType: 'file', label: 'Passport Photo', isRequired: true, helpText: 'JPG / PNG, max 5 MB' },
+            { fieldKey: 'companyId', fieldType: 'file', label: 'Company ID / Business Card', isRequired: true, helpText: 'PDF / JPG / PNG, max 5 MB' },
+            { fieldKey: 'hotelBooking', fieldType: 'file', label: 'Hotel Booking Confirmation', isRequired: true, helpText: 'PDF, max 5 MB' },
+            { fieldKey: 'returnFlight', fieldType: 'file', label: 'Return Flight Ticket', isRequired: true, helpText: 'PDF, max 5 MB' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'transitBoilerplateV1',
+      name: 'Standard Transit Form',
+      description:
+        'Industry-standard transit visa form (≤72h layovers). Clone via "Create from boilerplate" to start a real bindable template.',
+      sections: [
+        {
+          key: 'personal',
+          title: 'Personal Information',
+          fields: [
+            { fieldKey: 'firstName', fieldType: 'text', label: 'First Name', isRequired: true, validationRulesJson: { minLength: 2, maxLength: 50 } },
+            { fieldKey: 'lastName', fieldType: 'text', label: 'Last Name', isRequired: true, validationRulesJson: { minLength: 2, maxLength: 50 } },
+            { fieldKey: 'dateOfBirth', fieldType: 'date', label: 'Date of Birth', isRequired: true, validationRulesJson: { max: 'today-18years' } },
+          ],
+        },
+        {
+          key: 'passport',
+          title: 'Passport Details',
+          fields: [
+            { fieldKey: 'passportNumber', fieldType: 'text', label: 'Passport Number', isRequired: true, validationRulesJson: { pattern: '^[A-Z0-9]{6,15}$', message: 'Use 6–15 uppercase letters or digits' } },
+            { fieldKey: 'expiryDate', fieldType: 'date', label: 'Passport Expiry Date', isRequired: true, helpText: 'Must be valid for at least 6 months from today', validationRulesJson: { min: 'today+6months' } },
+            { fieldKey: 'issuingCountry', fieldType: 'country', label: 'Issuing Country', isRequired: true },
+          ],
+        },
+        {
+          key: 'transit',
+          title: 'Transit Information',
+          fields: [
+            { fieldKey: 'arrivalDate', fieldType: 'date', label: 'Arrival Date', isRequired: true, validationRulesJson: { min: 'today+1day' } },
+            { fieldKey: 'departureDate', fieldType: 'date', label: 'Departure Date', isRequired: true, helpText: 'Layover must be 4–72 hours', validationRulesJson: { min: '$arrivalDate+4hours', max: '$arrivalDate+72hours' } },
+            { fieldKey: 'finalDestination', fieldType: 'country', label: 'Final Destination', isRequired: true },
+            { fieldKey: 'layoverHours', fieldType: 'number', label: 'Layover Hours', isRequired: true, validationRulesJson: { min: 4, max: 72 } },
+          ],
+        },
+        {
+          key: 'documents',
+          title: 'Documents',
+          fields: [
+            { fieldKey: 'passportBioPage', fieldType: 'file', label: 'Passport Bio Page', isRequired: true, helpText: 'PDF / JPG / PNG, max 5 MB' },
+            { fieldKey: 'onwardFlightTicket', fieldType: 'file', label: 'Onward Flight Ticket', isRequired: true, helpText: 'PDF, max 5 MB' },
+          ],
+        },
+      ],
+    },
+  ];
+
+  let bpCreated = 0;
+  let bpPreserved = 0;
+  let bpFieldsCreated = 0;
+  for (const bp of BOILERPLATES) {
+    const existing = await prisma.template.findUnique({ where: { key: bp.key } });
+    if (existing) {
+      bpPreserved++;
+      console.log(`  ⏭️  Boilerplate exists: ${bp.key}`);
+      continue;
+    }
+    await prisma.$transaction(async (tx) => {
+      const tpl = await tx.template.create({
+        data: {
+          name: bp.name,
+          key: bp.key,
+          description: bp.description,
+          version: 1,
+          isActive: false, // not directly bindable
+          isBoilerplate: true,
+        },
+      });
+      let sectionSortOrder = 0;
+      for (const section of bp.sections) {
+        const sec = await tx.templateSection.create({
+          data: {
+            templateId: tpl.id,
+            title: section.title,
+            key: section.key,
+            description: section.description,
+            sortOrder: sectionSortOrder++,
+            isActive: true,
+          },
+        });
+        let fieldSortOrder = 0;
+        for (const f of section.fields) {
+          await tx.templateField.create({
+            data: {
+              templateSectionId: sec.id,
+              fieldKey: f.fieldKey,
+              fieldType: f.fieldType,
+              label: f.label,
+              placeholder: f.placeholder,
+              helpText: f.helpText,
+              isRequired: f.isRequired,
+              sortOrder: fieldSortOrder++,
+              isActive: true,
+              optionsJson: (f.optionsJson ?? undefined) as never,
+              validationRulesJson: (f.validationRulesJson ?? undefined) as never,
+            },
+          });
+          bpFieldsCreated++;
+        }
+      }
+    });
+    bpCreated++;
+    const totalFields = bp.sections.reduce((n, s) => n + s.fields.length, 0);
+    console.log(`  ✅ ${bp.key} — ${bp.sections.length} sections, ${totalFields} fields`);
+  }
+  console.log(`  Boilerplates: ${bpCreated} new + ${bpPreserved} preserved (${bpFieldsCreated} fields created)`);
+  console.log('─'.repeat(60));
 }
 
 main()

@@ -13,6 +13,13 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { TemplatesService } from './templates.service';
+// M11.2 — bulk-upsert lives on the templates URL space but routes
+// through the bindings service.
+import { TemplateBindingsService } from '../templateBindings/template-bindings.service';
+import {
+  BulkUpsertDestinationsDto,
+  BulkUpsertDestinationsResponseDto,
+} from '../templateBindings/dto';
 import {
   CreateTemplateDto,
   UpdateTemplateDto,
@@ -72,7 +79,39 @@ class DuplicateTemplateDto {
 @UseGuards(JwtAuthGuard)
 @Controller('admin/templates')
 export class TemplatesController {
-  constructor(private readonly templatesService: TemplatesService) {}
+  constructor(
+    private readonly templatesService: TemplatesService,
+    private readonly templateBindingsService: TemplateBindingsService,
+  ) {}
+
+  /**
+   * M11.2 — Bulk-upsert destinations for one (template, nationality,
+   * visaType) combo. Atomic — all-or-nothing. Returns counts
+   * (created/updated/deleted/skipped).
+   */
+  @Post(':templateId/destinations/bulk-upsert')
+  @RequirePermissions('templateBindings.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Bulk upsert destinations for a (template, nationality, visa type) scope',
+    description:
+      'Atomic — every binding row created/updated/deleted in a single transaction. Boilerplate templates rejected with 400.',
+  })
+  @ApiParam({ name: 'templateId', description: 'Template UUID' })
+  @ApiResponse({ status: 200, type: BulkUpsertDestinationsResponseDto })
+  @ApiResponse({ status: 400, description: 'Validation failed or boilerplate template' })
+  @ApiResponse({ status: 404, description: 'Template not found' })
+  async bulkUpsertDestinations(
+    @Param() params: TemplateIdParamDto,
+    @Body() dto: BulkUpsertDestinationsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<BulkUpsertDestinationsResponseDto> {
+    return this.templateBindingsService.bulkUpsertDestinations(
+      params.templateId,
+      dto,
+      user.id,
+    );
+  }
 
   @Get()
   @RequirePermissions('templates.read')

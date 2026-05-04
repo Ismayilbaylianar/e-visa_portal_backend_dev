@@ -183,12 +183,18 @@ export class PublicSelectionService {
       ]);
     }
 
-    // Calculate fees
+    // Calculate fees. M11.2 — base fees stay per-nationality (the
+    // government + service split varies by nationality), but
+    // expedited config now reads from the binding itself. The per-fee
+    // expedited columns remain populated for backwards compat but are
+    // no longer the source of truth on the public preview.
     const governmentFeeAmount = Number(nationalityFee.governmentFeeAmount);
     const serviceFeeAmount = Number(nationalityFee.serviceFeeAmount);
-    const expeditedFeeAmount = nationalityFee.expeditedFeeAmount
-      ? Number(nationalityFee.expeditedFeeAmount)
-      : null;
+    const expeditedEnabled = templateBinding.expeditedEnabled;
+    const expeditedFeeAmount =
+      expeditedEnabled && templateBinding.expeditedFeeAmount
+        ? Number(templateBinding.expeditedFeeAmount)
+        : null;
     const totalAmount = governmentFeeAmount + serviceFeeAmount;
 
     this.logger.log(
@@ -205,7 +211,7 @@ export class PublicSelectionService {
         expeditedFeeAmount: expeditedFeeAmount !== null ? expeditedFeeAmount.toFixed(2) : null,
         currencyCode: nationalityFee.currencyCode,
         totalAmount: totalAmount.toFixed(2),
-        expeditedEnabled: nationalityFee.expeditedEnabled,
+        expeditedEnabled,
       },
     };
   }

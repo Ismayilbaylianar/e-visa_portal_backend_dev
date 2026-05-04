@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsUUID, IsBoolean, IsOptional, IsDateString } from 'class-validator';
+import {
+  IsUUID,
+  IsBoolean,
+  IsOptional,
+  IsDateString,
+  IsNumber,
+  Min,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateTemplateBindingDto {
   @ApiProperty({
@@ -46,4 +54,20 @@ export class CreateTemplateBindingDto {
   @IsOptional()
   @IsDateString()
   validTo?: string;
+
+  /** M11.2 — per-binding expedited toggle. Canonical source for
+   *  `feePreview.fees.expeditedEnabled`. */
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  expeditedEnabled?: boolean;
+
+  /** M11.2 — per-binding expedited fee. Required when
+   *  `expeditedEnabled=true`; ignored otherwise. */
+  @ApiPropertyOptional({ example: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  expeditedFeeAmount?: number;
 }

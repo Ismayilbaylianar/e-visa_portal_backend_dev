@@ -7,8 +7,10 @@ import {
   TemplateBindingResponseDto,
   TemplateBindingListItemResponseDto,
   GetTemplateBindingsQueryDto,
+  BulkUpsertDestinationsDto,
+  BulkUpsertDestinationsResponseDto,
 } from './dto';
-import { NotFoundException, ConflictException } from '@/common/exceptions';
+import { BadRequestException, NotFoundException, ConflictException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import { PaginationMeta } from '@/common/types';
 import type { Prisma } from '@prisma/client';
@@ -233,6 +235,10 @@ export class TemplateBindingsService {
             isActive: dto.isActive ?? true,
             validFrom: dto.validFrom ? new Date(dto.validFrom) : null,
             validTo: dto.validTo ? new Date(dto.validTo) : null,
+            // M11.2 — per-binding expedited config (canonical source).
+            expeditedEnabled: dto.expeditedEnabled ?? false,
+            expeditedFeeAmount:
+              dto.expeditedFeeAmount !== undefined ? dto.expeditedFeeAmount : null,
           },
           include: includeShape,
         })
@@ -244,6 +250,9 @@ export class TemplateBindingsService {
             isActive: dto.isActive ?? true,
             validFrom: dto.validFrom ? new Date(dto.validFrom) : null,
             validTo: dto.validTo ? new Date(dto.validTo) : null,
+            // M11.2 — per-binding expedited config.
+            expeditedEnabled: dto.expeditedEnabled ?? false,
+            expeditedFeeAmount: dto.expeditedFeeAmount,
           },
           include: includeShape,
         });
@@ -335,6 +344,11 @@ export class TemplateBindingsService {
     if (dto.validFrom !== undefined)
       updateData.validFrom = dto.validFrom ? new Date(dto.validFrom) : null;
     if (dto.validTo !== undefined) updateData.validTo = dto.validTo ? new Date(dto.validTo) : null;
+    // M11.2 — per-binding expedited config.
+    if (dto.expeditedEnabled !== undefined)
+      updateData.expeditedEnabled = dto.expeditedEnabled;
+    if (dto.expeditedFeeAmount !== undefined)
+      updateData.expeditedFeeAmount = dto.expeditedFeeAmount;
 
     const updatedBinding = await this.prisma.templateBinding.update({
       where: { id },
@@ -659,5 +673,237 @@ export class TemplateBindingsService {
         updatedAt: fee.updatedAt,
       })),
     };
+  }
+
+  /**
+   * M11.2 — Bulk upsert destinations for one (template, nationality,
+   * visaType) scope.
+   *
+   * Lets the admin Destination Manager UI manage 50+ destination rows
+   * per (nationality, visaType) combo in a single round trip. Atomic
+   * via a single Prisma transaction — partial failures roll back so
+   * the admin doesn't end up with half-applied price changes.
+   *
+   * For each input row:
+   *   • If `isActive=true` and binding exists → update binding fields
+   *     + revive (`deletedAt=null`) + upsert nationality fee.
+   *   • If `isActive=true` and binding missing → create binding +
+   *     create fee.
+   *   • If `isActive=false` and binding exists → soft-delete binding
+   *     (sets `deletedAt`). Per-fee rows stay; revived bindings can
+   *     re-use them.
+   *   • If `isActive=false` and binding missing → counted as `skipped`.
+   *
+   * Boilerplate guard: throws 400 if the requested template is a
+   * boilerplate. Per the brief, boilerplates are clones-only and
+   * never directly bindable to a customer-facing combo.
+   */
+  async bulkUpsertDestinations(
+    templateId: string,
+    dto: BulkUpsertDestinationsDto,
+    actorUserId: string,
+  ): Promise<BulkUpsertDestinationsResponseDto> {
+    const template = await this.prisma.template.findFirst({
+      where: { id: templateId, deletedAt: null },
+      select: { id: true, key: true, isBoilerplate: true },
+    });
+    if (!template) {
+      throw new NotFoundException('Template not found', [
+        { reason: ErrorCodes.TEMPLATE_NOT_FOUND, message: 'Template does not exist' },
+      ]);
+    }
+    if (template.isBoilerplate) {
+      throw new BadRequestException('Cannot bind a boilerplate template', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message:
+            'Boilerplates are not directly bindable. Clone the template first via POST /admin/templates/:id/duplicate, then manage destinations on the clone.',
+        },
+      ]);
+    }
+
+    // Validate every row references a real, active country before we
+    // open the transaction — fail fast on bad input.
+    const destinationIds = dto.destinations.map((d) => d.destinationCountryId);
+    const knownDestinations = await this.prisma.country.findMany({
+      where: { id: { in: destinationIds }, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (knownDestinations.length !== destinationIds.length) {
+      const missing = destinationIds.filter(
+        (id) => !knownDestinations.some((c) => c.id === id),
+      );
+      throw new BadRequestException('Some destination countries not found', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: `Unknown or inactive destination ids: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? `, … (+${missing.length - 3})` : ''}`,
+        },
+      ]);
+    }
+    const nationality = await this.prisma.country.findFirst({
+      where: { id: dto.nationalityCountryId, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (!nationality) {
+      throw new BadRequestException('Nationality country not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Unknown or inactive nationality' },
+      ]);
+    }
+    const visaType = await this.prisma.visaType.findFirst({
+      where: { id: dto.visaTypeId, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (!visaType) {
+      throw new BadRequestException('Visa type not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Unknown or inactive visa type' },
+      ]);
+    }
+
+    // Reject same-country combos at validation time (matches the M10
+    // public same-country block at the data layer).
+    for (const row of dto.destinations) {
+      if (row.destinationCountryId === dto.nationalityCountryId) {
+        throw new BadRequestException('Cannot bind same-country combo', [
+          {
+            reason: ErrorCodes.BAD_REQUEST,
+            message: `destinationCountryId equals nationalityCountryId for at least one row`,
+          },
+        ]);
+      }
+    }
+
+    // Atomic execution — every row commits or none do.
+    let created = 0;
+    let updated = 0;
+    let deleted = 0;
+    let skipped = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const row of dto.destinations) {
+        const existing = await tx.templateBinding.findFirst({
+          where: {
+            destinationCountryId: row.destinationCountryId,
+            visaTypeId: dto.visaTypeId,
+          },
+          select: { id: true, deletedAt: true, templateId: true, isActive: true },
+        });
+
+        if (!row.isActive) {
+          // De-activation path — soft-delete if exists; otherwise no-op.
+          if (existing && existing.deletedAt === null) {
+            await tx.templateBinding.update({
+              where: { id: existing.id },
+              data: { deletedAt: new Date(), isActive: false },
+            });
+            deleted++;
+          } else {
+            skipped++;
+          }
+          continue;
+        }
+
+        // Activation / upsert path.
+        let bindingId: string;
+        if (existing) {
+          await tx.templateBinding.update({
+            where: { id: existing.id },
+            data: {
+              templateId,
+              isActive: true,
+              deletedAt: null,
+              expeditedEnabled: row.expeditedEnabled,
+              expeditedFeeAmount: row.expeditedEnabled
+                ? row.expeditedFeeAmount ?? null
+                : null,
+            },
+          });
+          bindingId = existing.id;
+          updated++;
+        } else {
+          const fresh = await tx.templateBinding.create({
+            data: {
+              destinationCountryId: row.destinationCountryId,
+              visaTypeId: dto.visaTypeId,
+              templateId,
+              isActive: true,
+              expeditedEnabled: row.expeditedEnabled,
+              expeditedFeeAmount: row.expeditedEnabled
+                ? row.expeditedFeeAmount ?? null
+                : null,
+            },
+          });
+          bindingId = fresh.id;
+          created++;
+        }
+
+        // Upsert the per-nationality fee for this binding. The fee
+        // table's unique key is (templateBindingId, nationalityCountryId)
+        // — exactly the right grain for this scope.
+        const existingFee = await tx.bindingNationalityFee.findUnique({
+          where: {
+            templateBindingId_nationalityCountryId: {
+              templateBindingId: bindingId,
+              nationalityCountryId: dto.nationalityCountryId,
+            },
+          },
+        });
+        if (existingFee) {
+          await tx.bindingNationalityFee.update({
+            where: { id: existingFee.id },
+            data: {
+              governmentFeeAmount: row.governmentFeeAmount,
+              serviceFeeAmount: row.serviceFeeAmount,
+              currencyCode: row.currencyCode,
+              // Keep per-fee expedited columns in sync with binding-level
+              // for backwards-compat readers, but binding remains canonical.
+              expeditedEnabled: row.expeditedEnabled,
+              expeditedFeeAmount: row.expeditedEnabled
+                ? row.expeditedFeeAmount ?? null
+                : null,
+              isActive: true,
+              deletedAt: null,
+            },
+          });
+        } else {
+          await tx.bindingNationalityFee.create({
+            data: {
+              templateBindingId: bindingId,
+              nationalityCountryId: dto.nationalityCountryId,
+              governmentFeeAmount: row.governmentFeeAmount,
+              serviceFeeAmount: row.serviceFeeAmount,
+              currencyCode: row.currencyCode,
+              expeditedEnabled: row.expeditedEnabled,
+              expeditedFeeAmount: row.expeditedEnabled
+                ? row.expeditedFeeAmount ?? null
+                : null,
+              isActive: true,
+            },
+          });
+        }
+      }
+    });
+
+    await this.auditLogsService.logAdminAction(
+      actorUserId,
+      'templateBinding.bulk_upsert',
+      'Template',
+      templateId,
+      undefined,
+      {
+        templateId,
+        nationalityCountryId: dto.nationalityCountryId,
+        visaTypeId: dto.visaTypeId,
+        rowCount: dto.destinations.length,
+        created,
+        updated,
+        deleted,
+        skipped,
+      },
+    );
+
+    this.logger.log(
+      `bulk_upsert template=${templateId} nationality=${dto.nationalityCountryId} visa=${dto.visaTypeId} → +${created} ~${updated} -${deleted} (${skipped} skipped)`,
+    );
+
+    return { created, updated, deleted, skipped };
   }
 }
