@@ -184,6 +184,14 @@ export class TemplateBindingResponseDto {
   })
   expeditedFeeAmount?: string | null;
 
+  @ApiProperty({
+    description:
+      'M11.3 — minimum advance days for arrival date on this destination. Customer-side renderer applies this to the native date picker `min` attribute and to the `$bindingMinArrivalDays` cross-field validator token.',
+    example: 3,
+    default: 3,
+  })
+  minArrivalDaysAdvance: number;
+
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
 
@@ -254,6 +262,13 @@ export class TemplateBindingListItemResponseDto {
     example: '50.00',
   })
   expeditedFeeAmount?: string | null;
+
+  @ApiProperty({
+    description: 'M11.3 — minimum advance days for arrival date on this destination.',
+    example: 3,
+    default: 3,
+  })
+  minArrivalDaysAdvance: number;
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;

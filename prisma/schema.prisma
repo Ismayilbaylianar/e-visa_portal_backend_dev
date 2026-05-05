@@ -499,6 +499,15 @@ model TemplateField {
   optionsJson         Json?     @map("options_json")
   validationRulesJson Json?     @map("validation_rules_json")
   visibilityRulesJson Json?     @map("visibility_rules_json")
+  // M11.3 — locked system fields. `isSystem=true` means the field was
+  // auto-provisioned (not authored by an admin); it is editable in the
+  // limited ways the brief specifies (label/placeholder/helpText/sort/
+  // visibility) but the admin cannot delete it, change its type, or
+  // modify its validation. `systemKey` is the stable token used by
+  // cross-field validators (e.g. "$passportExpiryDate") so admins can
+  // safely rename labels without breaking date-keyword references.
+  isSystem            Boolean   @default(false) @map("is_system")
+  systemKey           String?   @map("system_key")
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
   deletedAt           DateTime? @map("deleted_at")
@@ -511,6 +520,8 @@ model TemplateField {
   @@index([sortOrder])
   @@index([isActive])
   @@index([deletedAt])
+  @@index([isSystem])
+  @@index([systemKey])
   @@map("template_fields")
 }
 
@@ -531,6 +542,13 @@ model TemplateBinding {
   // BindingNationalityFee that had expeditedEnabled=true.
   expeditedEnabled     Boolean   @default(false) @map("expedited_enabled")
   expeditedFeeAmount   Decimal?  @map("expedited_fee_amount") @db.Decimal(10, 2)
+  // M11.3 — minimum number of days between today and the earliest
+  // arrival date a customer is allowed to pick. Per-destination
+  // business rule (Türkiye 3, USA 14, Egypt 1, etc.). The dynamic
+  // form renderer reads this off the public preview response and
+  // applies it as the native `min` attribute on the arrival date
+  // input + the `$bindingMinArrivalDays` cross-field validator token.
+  minArrivalDaysAdvance Int      @default(3) @map("min_arrival_days_advance")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   deletedAt            DateTime? @map("deleted_at")

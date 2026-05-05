@@ -98,6 +98,22 @@ export class SelectionPreviewSuccessDto {
 }
 
 /**
+ * M11.3 — per-binding context surfaced on the preview so the
+ * dynamic-form renderer can hydrate cross-field validators
+ * (`$bindingMinArrivalDays`) and the native arrival date input's
+ * `min` attribute without an extra round-trip to /admin/template-bindings.
+ */
+export class PreviewBindingContextDto {
+  @ApiProperty({
+    description:
+      'Minimum advance days for arrival date on this destination (today + N).',
+    example: 3,
+    default: 3,
+  })
+  minArrivalDaysAdvance: number;
+}
+
+/**
  * Selection preview response (can be success or not eligible)
  */
 export class SelectionPreviewResponseDto {
@@ -124,4 +140,11 @@ export class SelectionPreviewResponseDto {
     type: FeePreviewDto,
   })
   fees?: FeePreviewDto;
+
+  @ApiPropertyOptional({
+    description:
+      'M11.3 — per-binding context for the customer-facing form renderer.',
+    type: PreviewBindingContextDto,
+  })
+  binding?: PreviewBindingContextDto;
 }

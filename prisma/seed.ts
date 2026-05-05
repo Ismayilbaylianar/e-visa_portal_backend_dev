@@ -2420,6 +2420,163 @@ async function main() {
   }
   console.log(`  Boilerplates: ${bpCreated} new + ${bpPreserved} preserved (${bpFieldsCreated} fields created)`);
   console.log('─'.repeat(60));
+
+  // ─── M11.3 — backfill system fields onto existing non-boilerplate
+  // templates. Boilerplates explicitly excluded (curated above).
+  // Idempotent: skips templates that already have all 8 system fields,
+  // and partial templates only get the missing system fields appended.
+  console.log('🔧 M11.3 — system fields backfill:');
+  await backfillSystemFieldsForExistingTemplates();
+  console.log('─'.repeat(60));
+}
+
+/**
+ * M11.3 — slugify a section title into the canonical section.key.
+ * Mirrors `sectionKeyFor` in src/modules/templates/templates.service.ts
+ * so the backfill lands on the same section keys as the live service.
+ */
+function sectionKeyForSeed(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+/**
+ * M11.3 — system field defaults inlined here (duplicated from
+ * src/modules/templates/system-default-fields.ts) so the seed has no
+ * runtime dependency on the Nest module graph. If the service-side
+ * constant changes, update this mirror too — or refactor both to
+ * share a plain TS module under prisma/.
+ *
+ * Keep in sync with src/modules/templates/system-default-fields.ts.
+ */
+const SEED_SYSTEM_DEFAULT_FIELDS: Array<{
+  sectionTitle: string;
+  sectionDescription?: string;
+  sectionOrder: number;
+  field: {
+    systemKey: string;
+    label: string;
+    fieldType: string;
+    placeholder?: string;
+    helpText?: string;
+    isRequired: boolean;
+    validationRulesJson: Record<string, unknown>;
+    sortOrder: number;
+  };
+}> = [
+  { sectionTitle: 'Personal Information', sectionDescription: 'Please provide your personal details', sectionOrder: 1,
+    field: { systemKey: 'firstName', label: 'First Name', fieldType: 'text', placeholder: 'Enter your first name', isRequired: true,
+      validationRulesJson: { minLength: 2, maxLength: 50, errorMessages: { required: 'First name is required', minLength: 'First name must be at least 2 characters', maxLength: 'First name must be 50 characters or fewer' } }, sortOrder: 1 } },
+  { sectionTitle: 'Personal Information', sectionOrder: 1,
+    field: { systemKey: 'lastName', label: 'Last Name', fieldType: 'text', placeholder: 'Enter your last name', isRequired: true,
+      validationRulesJson: { minLength: 2, maxLength: 50, errorMessages: { required: 'Last name is required', minLength: 'Last name must be at least 2 characters', maxLength: 'Last name must be 50 characters or fewer' } }, sortOrder: 2 } },
+  { sectionTitle: 'Personal Information', sectionOrder: 1,
+    field: { systemKey: 'dateOfBirth', label: 'Date of Birth', fieldType: 'date', isRequired: true, helpText: 'You must be at least 18 years old',
+      validationRulesJson: { max: 'today-18years', errorMessages: { required: 'Date of birth is required', max: 'You must be at least 18 years old' } }, sortOrder: 3 } },
+  { sectionTitle: 'Passport Information', sectionDescription: 'Enter your passport details', sectionOrder: 2,
+    field: { systemKey: 'passportNumber', label: 'Passport Number', fieldType: 'text', placeholder: 'Enter passport number', isRequired: true,
+      validationRulesJson: { pattern: '^[A-Z0-9]{6,15}$', errorMessages: { required: 'Passport number is required', pattern: 'Passport number must be 6–15 uppercase letters or digits' } }, sortOrder: 1 } },
+  { sectionTitle: 'Passport Information', sectionOrder: 2,
+    field: { systemKey: 'passportIssueDate', label: 'Issue Date', fieldType: 'date', isRequired: true,
+      validationRulesJson: { max: 'today', errorMessages: { required: 'Issue date is required', max: 'Issue date cannot be in the future' } }, sortOrder: 2 } },
+  { sectionTitle: 'Passport Information', sectionOrder: 2,
+    field: { systemKey: 'passportExpiryDate', label: 'Expiry Date', fieldType: 'date', isRequired: true, helpText: 'Must be valid for at least 6 months from travel date',
+      validationRulesJson: { min: 'today+6months', errorMessages: { required: 'Expiry date is required', min: 'Passport must be valid for at least 6 months from today' } }, sortOrder: 3 } },
+  { sectionTitle: 'Travel Details', sectionDescription: 'Tell us about your trip', sectionOrder: 3,
+    field: { systemKey: 'plannedArrivalDate', label: 'Planned Arrival Date', fieldType: 'date', isRequired: true, helpText: 'Earliest date you can arrive at destination',
+      validationRulesJson: { min: '$bindingMinArrivalDays', max: '$passportExpiryDate', errorMessages: { required: 'Arrival date is required', min: 'Arrival date must be at least {bindingMinArrivalDays} days from today', max: 'Arrival date cannot be after your passport expires' } }, sortOrder: 1 } },
+  { sectionTitle: 'Travel Details', sectionOrder: 3,
+    field: { systemKey: 'plannedDepartureDate', label: 'Planned Departure Date', fieldType: 'date', isRequired: true,
+      validationRulesJson: { min: '$plannedArrivalDate+1day', max: '$passportExpiryDate', errorMessages: { required: 'Departure date is required', min: 'Departure date must be after arrival date', max: 'Departure date cannot be after your passport expires' } }, sortOrder: 2 } },
+];
+
+async function backfillSystemFieldsForExistingTemplates() {
+  const templates = await prisma.template.findMany({
+    where: { isBoilerplate: false, deletedAt: null },
+    select: { id: true, key: true, name: true },
+  });
+
+  let backfilled = 0;
+  let skipped = 0;
+  let totalFieldsAdded = 0;
+
+  for (const template of templates) {
+    // Group specs by section.
+    const groups = new Map<string, { sectionKey: string; title: string; description?: string; sortOrder: number; specs: typeof SEED_SYSTEM_DEFAULT_FIELDS }>();
+    for (const spec of SEED_SYSTEM_DEFAULT_FIELDS) {
+      const sectionKey = sectionKeyForSeed(spec.sectionTitle);
+      const groupKey = `${spec.sectionOrder}_${sectionKey}`;
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, { sectionKey, title: spec.sectionTitle, description: spec.sectionDescription, sortOrder: spec.sectionOrder, specs: [] });
+      }
+      groups.get(groupKey)!.specs.push(spec);
+    }
+
+    let fieldsAddedToThisTemplate = 0;
+    for (const group of groups.values()) {
+      let section = await prisma.templateSection.findFirst({
+        where: { templateId: template.id, key: group.sectionKey, deletedAt: null },
+        select: { id: true },
+      });
+      if (!section) {
+        section = await prisma.templateSection.create({
+          data: {
+            templateId: template.id,
+            title: group.title,
+            key: group.sectionKey,
+            description: group.description,
+            sortOrder: group.sortOrder,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+      }
+
+      for (const spec of group.specs) {
+        const existing = await prisma.templateField.findFirst({
+          where: {
+            systemKey: spec.field.systemKey,
+            templateSection: { templateId: template.id, deletedAt: null },
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (existing) continue;
+
+        await prisma.templateField.create({
+          data: {
+            templateSectionId: section.id,
+            fieldKey: spec.field.systemKey,
+            systemKey: spec.field.systemKey,
+            isSystem: true,
+            fieldType: spec.field.fieldType,
+            label: spec.field.label,
+            placeholder: spec.field.placeholder ?? null,
+            helpText: spec.field.helpText ?? null,
+            isRequired: spec.field.isRequired,
+            sortOrder: spec.field.sortOrder,
+            isActive: true,
+            optionsJson: [],
+            validationRulesJson: spec.field.validationRulesJson as never,
+            visibilityRulesJson: [],
+          },
+        });
+        fieldsAddedToThisTemplate++;
+      }
+    }
+
+    if (fieldsAddedToThisTemplate === 0) {
+      skipped++;
+    } else {
+      backfilled++;
+      totalFieldsAdded += fieldsAddedToThisTemplate;
+      console.log(`  ✅ ${template.key}: +${fieldsAddedToThisTemplate} fields`);
+    }
+  }
+  console.log(`  Templates: ${backfilled} backfilled (+${totalFieldsAdded} fields), ${skipped} already complete`);
 }
 
 main()

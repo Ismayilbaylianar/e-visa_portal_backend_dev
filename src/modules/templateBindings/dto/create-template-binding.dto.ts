@@ -5,7 +5,9 @@ import {
   IsOptional,
   IsDateString,
   IsNumber,
+  IsInt,
   Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -70,4 +72,22 @@ export class CreateTemplateBindingDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   expeditedFeeAmount?: number;
+
+  /**
+   * M11.3 — minimum number of days between today and the earliest
+   * arrival date a customer is allowed to pick. Per-destination
+   * business rule (Türkiye 3, USA 14, Egypt 1, etc.). Default 3.
+   */
+  @ApiPropertyOptional({
+    description:
+      'Minimum advance days required for arrival date (today + N). Default 3.',
+    example: 3,
+    default: 3,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  minArrivalDaysAdvance?: number;
 }

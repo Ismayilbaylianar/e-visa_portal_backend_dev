@@ -5,10 +5,12 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -60,6 +62,19 @@ export class BulkUpsertDestinationItem {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   expeditedFeeAmount?: number;
+
+  /**
+   * M11.3 — minimum advance days for arrival date on this binding.
+   * Optional in the bulk-upsert payload; when omitted, existing rows
+   * keep their value and new rows default to 3.
+   */
+  @ApiPropertyOptional({ example: 3, default: 3 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  minArrivalDaysAdvance?: number;
 }
 
 export class BulkUpsertDestinationsDto {

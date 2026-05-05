@@ -60,4 +60,13 @@ export class CreateTemplateDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'M11.3 — when true, skips auto-provisioning of system default fields. Used when seeding boilerplate blueprints (M11.2). Customer-facing templates leave this off so the 8 system fields (Personal/Passport/Travel) are auto-created.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isBoilerplate?: boolean;
 }

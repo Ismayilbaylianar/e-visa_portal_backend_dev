@@ -11,6 +11,11 @@ import {
 import { NotFoundException, ConflictException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import { PaginationMeta } from '@/common/types';
+import { Prisma } from '@prisma/client';
+import {
+  SYSTEM_DEFAULT_FIELDS,
+  SystemFieldSpec,
+} from './system-default-fields';
 
 /**
  * Template Builder service.
@@ -120,7 +125,13 @@ export class TemplatesService {
   }
 
   /**
-   * Create a new template
+   * Create a new template.
+   *
+   * M11.3 — blank new templates auto-provision the 8 SYSTEM_DEFAULT_FIELDS
+   * (Personal · Passport · Travel) so admins don't ship empty forms.
+   * Boilerplates skip this — they have curated fields from M11.2.
+   * Cloning skips it too (the duplicate path copies the source's
+   * existing fields verbatim, which already include any system fields).
    */
   async create(dto: CreateTemplateDto, actorUserId?: string): Promise<TemplateResponseDto> {
     const existingByKey = await this.prisma.template.findUnique({
@@ -137,14 +148,31 @@ export class TemplatesService {
       ]);
     }
 
-    const template = await this.prisma.template.create({
-      data: {
-        name: dto.name,
-        key: dto.key,
-        description: dto.description,
-        version: 1,
-        isActive: dto.isActive ?? true,
-      },
+    const isBoilerplate = (dto as { isBoilerplate?: boolean }).isBoilerplate ?? false;
+    const shouldAutoProvisionSystemFields = !isBoilerplate;
+
+    // Wrap create + system-field provisioning in a single transaction
+    // so a partial failure (e.g. duplicate fieldKey collision) rolls
+    // back the empty template too — admin retries from a clean slate.
+    const templateId = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.template.create({
+        data: {
+          name: dto.name,
+          key: dto.key,
+          description: dto.description,
+          version: 1,
+          isActive: dto.isActive ?? true,
+          isBoilerplate,
+        },
+      });
+      if (shouldAutoProvisionSystemFields) {
+        await this.initializeSystemFields(tx, created.id);
+      }
+      return created.id;
+    });
+
+    const template = await this.prisma.template.findFirstOrThrow({
+      where: { id: templateId },
       include: {
         sections: {
           where: { deletedAt: null },
@@ -166,12 +194,160 @@ export class TemplatesService {
         'Template',
         template.id,
         undefined,
-        { key: template.key, name: template.name, version: template.version, isActive: template.isActive },
+        {
+          key: template.key,
+          name: template.name,
+          version: template.version,
+          isActive: template.isActive,
+          isBoilerplate,
+          systemFieldsAdded: shouldAutoProvisionSystemFields
+            ? SYSTEM_DEFAULT_FIELDS.length
+            : 0,
+        },
       );
     }
 
-    this.logger.log(`Template created: ${template.id} (${template.key})`);
+    this.logger.log(
+      `Template created: ${template.id} (${template.key})${shouldAutoProvisionSystemFields ? ` + ${SYSTEM_DEFAULT_FIELDS.length} system fields` : ''}`,
+    );
     return this.mapToResponse(template);
+  }
+
+  /**
+   * Provision SYSTEM_DEFAULT_FIELDS into a template within an existing
+   * transaction. Idempotent: skips sections + fields that already
+   * exist (matched by section.key for sections and field.systemKey
+   * for fields). Reused by both `create()` (blank new template) and
+   * the M11.3 backfill (`backfillSystemFieldsIntoExistingTemplate`).
+   */
+  async initializeSystemFields(
+    tx: Prisma.TransactionClient,
+    templateId: string,
+  ): Promise<{ sectionsCreated: number; fieldsCreated: number }> {
+    // Group specs by section identity. We use sortOrder + slugified
+    // title as the section key so re-running on a partially-seeded
+    // template lands on the same sections rather than spawning
+    // duplicates.
+    type SectionGroup = {
+      sectionKey: string;
+      title: string;
+      description?: string;
+      sortOrder: number;
+      fields: SystemFieldSpec['field'][];
+    };
+    const groups = new Map<string, SectionGroup>();
+    for (const spec of SYSTEM_DEFAULT_FIELDS) {
+      const sectionKey = sectionKeyFor(spec.sectionTitle);
+      const groupKey = `${spec.sectionOrder}_${sectionKey}`;
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          sectionKey,
+          title: spec.sectionTitle,
+          description: spec.sectionDescription,
+          sortOrder: spec.sectionOrder,
+          fields: [],
+        });
+      }
+      groups.get(groupKey)!.fields.push(spec.field);
+    }
+
+    let sectionsCreated = 0;
+    let fieldsCreated = 0;
+
+    for (const group of groups.values()) {
+      // Look up by (templateId, sectionKey) — the unique index there
+      // means we either find the existing section or create a fresh
+      // one. We never overwrite an existing section's metadata so
+      // admin renames survive a re-run.
+      let section = await tx.templateSection.findFirst({
+        where: {
+          templateId,
+          key: group.sectionKey,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!section) {
+        const fresh = await tx.templateSection.create({
+          data: {
+            templateId,
+            title: group.title,
+            key: group.sectionKey,
+            description: group.description,
+            sortOrder: group.sortOrder,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        section = fresh;
+        sectionsCreated++;
+      }
+
+      for (const fieldSpec of group.fields) {
+        // Skip if this systemKey already exists anywhere on the
+        // template (idempotent backfill path).
+        const existing = await tx.templateField.findFirst({
+          where: {
+            systemKey: fieldSpec.systemKey,
+            templateSection: { templateId, deletedAt: null },
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (existing) continue;
+
+        await tx.templateField.create({
+          data: {
+            templateSectionId: section.id,
+            // fieldKey mirrors systemKey on system fields so legacy
+            // consumers that read fieldKey keep working.
+            fieldKey: fieldSpec.systemKey,
+            systemKey: fieldSpec.systemKey,
+            isSystem: true,
+            fieldType: fieldSpec.fieldType,
+            label: fieldSpec.label,
+            placeholder: fieldSpec.placeholder ?? null,
+            helpText: fieldSpec.helpText ?? null,
+            isRequired: fieldSpec.isRequired,
+            sortOrder: fieldSpec.sortOrder,
+            isActive: true,
+            optionsJson: [],
+            validationRulesJson: fieldSpec.validationRulesJson as Prisma.InputJsonValue,
+            visibilityRulesJson: [],
+          },
+        });
+        fieldsCreated++;
+      }
+    }
+
+    return { sectionsCreated, fieldsCreated };
+  }
+
+  /**
+   * M11.3 — backfill helper. Public wrapper around
+   * `initializeSystemFields` so the seed (or a one-off admin task)
+   * can backfill an existing non-boilerplate template without going
+   * through the create flow. Skips boilerplates by default.
+   */
+  async backfillSystemFieldsIntoExistingTemplate(
+    templateId: string,
+  ): Promise<{ sectionsCreated: number; fieldsCreated: number; skipped: boolean }> {
+    const template = await this.prisma.template.findFirst({
+      where: { id: templateId, deletedAt: null },
+      select: { id: true, isBoilerplate: true },
+    });
+    if (!template) {
+      throw new NotFoundException('Template not found', [
+        { reason: ErrorCodes.TEMPLATE_NOT_FOUND, message: 'Template not found' },
+      ]);
+    }
+    if (template.isBoilerplate) {
+      return { sectionsCreated: 0, fieldsCreated: 0, skipped: true };
+    }
+    const result = await this.prisma.$transaction((tx) =>
+      this.initializeSystemFields(tx, templateId),
+    );
+    return { ...result, skipped: false };
   }
 
   /**
@@ -552,6 +728,9 @@ export class TemplatesService {
           optionsJson: field.optionsJson ?? [],
           validationRulesJson: field.validationRulesJson ?? null,
           visibilityRulesJson: field.visibilityRulesJson ?? [],
+          // M11.3 — surface lock state to admin UIs.
+          isSystem: field.isSystem ?? false,
+          systemKey: field.systemKey ?? null,
           createdAt: field.createdAt,
           updatedAt: field.updatedAt,
         })),
@@ -562,4 +741,18 @@ export class TemplatesService {
       updatedAt: template.updatedAt,
     };
   }
+}
+
+/**
+ * M11.3 — slugify a section title into the canonical section.key
+ * used by SYSTEM_DEFAULT_FIELDS provisioning. Lowercase, spaces +
+ * non-alnum collapse to underscores. Stable across re-runs so the
+ * idempotent backfill matches existing seeded sections.
+ */
+function sectionKeyFor(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 }

@@ -65,6 +65,20 @@ export class TemplateFieldResponseDto {
   })
   visibilityRulesJson: any[];
 
+  @ApiProperty({
+    description:
+      'M11.3 — auto-provisioned system field. Locked attributes: fieldType, validationRulesJson, isRequired (cannot be turned off), optionsJson, fieldKey, systemKey. Editable: label, placeholder, helpText, sortOrder, visibilityRulesJson.',
+    example: false,
+  })
+  isSystem: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'M11.3 — stable cross-field reference token. Used by date keywords like `$passportExpiryDate`. Survives label rename. Always set for system fields, null for admin-authored fields.',
+    example: 'firstName',
+  })
+  systemKey?: string | null;
+
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
 

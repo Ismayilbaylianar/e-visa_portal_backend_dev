@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { CreateTemplateFieldDto, UpdateTemplateFieldDto, TemplateFieldResponseDto } from './dto';
-import { NotFoundException, ConflictException } from '@/common/exceptions';
+import { NotFoundException, ConflictException, BadRequestException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 
 @Injectable()
@@ -128,6 +128,45 @@ export class TemplateFieldsService {
       ]);
     }
 
+    // M11.3 — system fields are auto-provisioned + locked. Admins can
+    // edit cosmetic + organizational properties (label, placeholder,
+    // helpText, sortOrder, visibilityRulesJson) but cannot change the
+    // field's identity (fieldKey/systemKey), shape (fieldType/options),
+    // or contract (validationRulesJson, isRequired→false). Returning
+    // 400 instead of silently dropping these keeps the audit trail
+    // honest and surfaces the constraint to the admin UI.
+    if (field.isSystem) {
+      const lockedAttempts: string[] = [];
+      if (dto.fieldKey !== undefined && dto.fieldKey !== field.fieldKey) {
+        lockedAttempts.push('fieldKey');
+      }
+      if (dto.fieldType !== undefined && dto.fieldType !== field.fieldType) {
+        lockedAttempts.push('fieldType');
+      }
+      if (dto.validationRulesJson !== undefined) {
+        lockedAttempts.push('validationRulesJson');
+      }
+      if (dto.isRequired !== undefined && dto.isRequired === false) {
+        lockedAttempts.push('isRequired (cannot be disabled)');
+      }
+      if (
+        dto.optionsJson !== undefined &&
+        JSON.stringify(dto.optionsJson) !== JSON.stringify(field.optionsJson ?? [])
+      ) {
+        lockedAttempts.push('optionsJson');
+      }
+      if (lockedAttempts.length > 0) {
+        throw new BadRequestException(
+          'System fields have locked attributes',
+          lockedAttempts.map((attr) => ({
+            field: attr,
+            reason: ErrorCodes.BAD_REQUEST,
+            message: `'${attr}' cannot be modified on a system field. Editable: label, placeholder, helpText, sortOrder, visibilityRulesJson.`,
+          })),
+        );
+      }
+    }
+
     // Check fieldKey uniqueness at TEMPLATE level if changing
     if (dto.fieldKey && dto.fieldKey !== field.fieldKey) {
       const existingField = await this.prisma.templateField.findFirst({
@@ -202,6 +241,12 @@ export class TemplateFieldsService {
 
   /**
    * Soft delete template field
+   *
+   * M11.3 — system fields cannot be deleted. Admin should hide via
+   * visibility rules (set `visibilityRulesJson` to a never-true
+   * predicate) instead. Returning 400 makes the constraint explicit
+   * and prevents the dynamic-form renderer from breaking when a
+   * cross-field validator references a missing systemKey.
    */
   async delete(fieldId: string, actorUserId?: string): Promise<void> {
     const field = await this.prisma.templateField.findFirst({
@@ -213,6 +258,17 @@ export class TemplateFieldsService {
         {
           reason: ErrorCodes.NOT_FOUND,
           message: 'Template field does not exist or has been deleted',
+        },
+      ]);
+    }
+
+    if (field.isSystem) {
+      throw new BadRequestException('System fields cannot be deleted', [
+        {
+          field: 'isSystem',
+          reason: ErrorCodes.BAD_REQUEST,
+          message:
+            'System fields cannot be deleted. To remove from view, set visibilityRulesJson to hide the field instead.',
         },
       ]);
     }
@@ -344,6 +400,9 @@ export class TemplateFieldsService {
       optionsJson: field.optionsJson ?? [],
       validationRulesJson: field.validationRulesJson ?? null,
       visibilityRulesJson: field.visibilityRulesJson ?? [],
+      // M11.3 — surface lock state to admin UIs.
+      isSystem: field.isSystem ?? false,
+      systemKey: field.systemKey ?? null,
       createdAt: field.createdAt,
       updatedAt: field.updatedAt,
     };

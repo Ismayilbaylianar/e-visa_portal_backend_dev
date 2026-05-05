@@ -79,6 +79,19 @@ export class TemplateFieldResponseDto {
   })
   visibilityRulesJson: any[];
 
+  @ApiProperty({
+    description:
+      'M11.3 — auto-provisioned system field. Locked attributes apply (see TemplateFieldResponseDto in templateFields module).',
+    example: false,
+  })
+  isSystem: boolean;
+
+  @ApiPropertyOptional({
+    description: 'M11.3 — stable cross-field reference token; null for admin-authored fields.',
+    example: 'firstName',
+  })
+  systemKey?: string | null;
+
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
 

@@ -239,6 +239,8 @@ export class TemplateBindingsService {
             expeditedEnabled: dto.expeditedEnabled ?? false,
             expeditedFeeAmount:
               dto.expeditedFeeAmount !== undefined ? dto.expeditedFeeAmount : null,
+            // M11.3 — per-binding arrival lead time. Default 3.
+            minArrivalDaysAdvance: dto.minArrivalDaysAdvance ?? 3,
           },
           include: includeShape,
         })
@@ -253,6 +255,8 @@ export class TemplateBindingsService {
             // M11.2 — per-binding expedited config.
             expeditedEnabled: dto.expeditedEnabled ?? false,
             expeditedFeeAmount: dto.expeditedFeeAmount,
+            // M11.3 — per-binding arrival lead time. Default 3.
+            minArrivalDaysAdvance: dto.minArrivalDaysAdvance ?? 3,
           },
           include: includeShape,
         });
@@ -349,6 +353,8 @@ export class TemplateBindingsService {
       updateData.expeditedEnabled = dto.expeditedEnabled;
     if (dto.expeditedFeeAmount !== undefined)
       updateData.expeditedFeeAmount = dto.expeditedFeeAmount;
+    if (dto.minArrivalDaysAdvance !== undefined)
+      updateData.minArrivalDaysAdvance = dto.minArrivalDaysAdvance;
 
     const updatedBinding = await this.prisma.templateBinding.update({
       where: { id },
@@ -597,6 +603,8 @@ export class TemplateBindingsService {
       nationalityFeesCount: binding._count?.nationalityFees ?? 0,
       expeditedEnabled: binding.expeditedEnabled ?? false,
       expeditedFeeAmount: binding.expeditedFeeAmount?.toString() ?? null,
+      // M11.3 — per-destination minimum arrival lead time.
+      minArrivalDaysAdvance: binding.minArrivalDaysAdvance ?? 3,
       createdAt: binding.createdAt,
       updatedAt: binding.updatedAt,
       destinationCountry: binding.destinationCountry
@@ -636,6 +644,8 @@ export class TemplateBindingsService {
       // preview reads availability + headline fee from these.
       expeditedEnabled: binding.expeditedEnabled ?? false,
       expeditedFeeAmount: binding.expeditedFeeAmount?.toString() ?? null,
+      // M11.3 — per-destination minimum arrival lead time.
+      minArrivalDaysAdvance: binding.minArrivalDaysAdvance ?? 3,
       createdAt: binding.createdAt,
       updatedAt: binding.updatedAt,
       destinationCountry: binding.destinationCountry
@@ -820,6 +830,11 @@ export class TemplateBindingsService {
               expeditedFeeAmount: row.expeditedEnabled
                 ? row.expeditedFeeAmount ?? null
                 : null,
+              // M11.3 — only patch when caller actually sent a value;
+              // omitting it preserves whatever the admin had configured.
+              ...(row.minArrivalDaysAdvance !== undefined
+                ? { minArrivalDaysAdvance: row.minArrivalDaysAdvance }
+                : {}),
             },
           });
           bindingId = existing.id;
@@ -835,6 +850,8 @@ export class TemplateBindingsService {
               expeditedFeeAmount: row.expeditedEnabled
                 ? row.expeditedFeeAmount ?? null
                 : null,
+              // M11.3 — fresh row falls back to schema default 3.
+              minArrivalDaysAdvance: row.minArrivalDaysAdvance ?? 3,
             },
           });
           bindingId = fresh.id;

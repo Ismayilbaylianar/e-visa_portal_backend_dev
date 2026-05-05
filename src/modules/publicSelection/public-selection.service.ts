@@ -213,6 +213,12 @@ export class PublicSelectionService {
         totalAmount: totalAmount.toFixed(2),
         expeditedEnabled,
       },
+      // M11.3 — surface per-binding context the dynamic-form renderer
+      // needs for cross-field date validation (`$bindingMinArrivalDays`)
+      // and the native picker `min` attribute on the arrival date input.
+      binding: {
+        minArrivalDaysAdvance: templateBinding.minArrivalDaysAdvance ?? 3,
+      },
     };
   }
 

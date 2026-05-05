@@ -6,7 +6,7 @@ import {
   UpdateTemplateSectionDto,
   TemplateSectionResponseDto,
 } from './dto';
-import { NotFoundException, ConflictException } from '@/common/exceptions';
+import { NotFoundException, ConflictException, BadRequestException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 
 @Injectable()
@@ -191,6 +191,35 @@ export class TemplateSectionsService {
           message: 'Template section does not exist or has been deleted',
         },
       ]);
+    }
+
+    // M11.3 — refuse to delete a section that contains system fields.
+    // The cascade soft-delete inside this transaction would otherwise
+    // wipe out auto-provisioned + cross-field-referenced inputs and
+    // leave the renderer pointing at orphaned `$systemKey` references.
+    // Admin should move/hide system fields explicitly before deleting.
+    const systemFields = await this.prisma.templateField.findMany({
+      where: {
+        templateSectionId: sectionId,
+        deletedAt: null,
+        isSystem: true,
+      },
+      select: { id: true, systemKey: true, label: true },
+    });
+    if (systemFields.length > 0) {
+      throw new BadRequestException(
+        `Cannot delete a section containing ${systemFields.length} system field${systemFields.length === 1 ? '' : 's'}`,
+        [
+          {
+            field: 'sectionId',
+            reason: ErrorCodes.BAD_REQUEST,
+            message: `Move or hide the system field${systemFields.length === 1 ? '' : 's'} (${systemFields
+              .map((f) => f.systemKey ?? f.label)
+              .slice(0, 5)
+              .join(', ')}) before deleting this section.`,
+          },
+        ],
+      );
     }
 
     const now = new Date();
