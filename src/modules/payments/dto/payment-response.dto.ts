@@ -24,6 +24,14 @@ export class PaymentReconciliationDto {
   note?: string;
 }
 
+export class PaymentPortalIdentityDto {
+  @ApiProperty({ description: 'Portal identity ID' })
+  id: string;
+
+  @ApiProperty({ description: 'Buyer email used to log in to the portal' })
+  email: string;
+}
+
 export class PaymentApplicationDto {
   @ApiProperty({ description: 'Application ID' })
   id: string;
@@ -42,6 +50,13 @@ export class PaymentApplicationDto {
 
   @ApiProperty({ description: 'Currency code' })
   currencyCode: string;
+
+  @ApiPropertyOptional({
+    description:
+      'M11.3 — buyer portal identity (email) eager-loaded on the admin payment list/detail responses. Omitted on portal-facing endpoints where the user already knows their own email.',
+    type: () => PaymentPortalIdentityDto,
+  })
+  portalIdentity?: PaymentPortalIdentityDto;
 }
 
 export class PaymentTransactionDto {

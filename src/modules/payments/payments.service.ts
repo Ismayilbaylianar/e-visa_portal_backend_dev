@@ -128,6 +128,11 @@ export class PaymentsService {
               paymentStatus: true,
               totalFeeAmount: true,
               currencyCode: true,
+              // M11.3 — admin Transactions page renders the buyer
+              // email. Including the portal identity here keeps the
+              // list/detail responses self-sufficient (no per-row
+              // hydration round-trips on the frontend).
+              portalIdentity: { select: { id: true, email: true } },
             },
           },
         },
@@ -638,6 +643,11 @@ export class PaymentsService {
               paymentStatus: true,
               totalFeeAmount: true,
               currencyCode: true,
+              // M11.3 — admin Transactions page renders the buyer
+              // email. Including the portal identity here keeps the
+              // list/detail responses self-sufficient (no per-row
+              // hydration round-trips on the frontend).
+              portalIdentity: { select: { id: true, email: true } },
             },
           },
         },
@@ -1143,6 +1153,15 @@ export class PaymentsService {
             paymentStatus: payment.application.paymentStatus,
             totalFeeAmount: payment.application.totalFeeAmount.toString(),
             currencyCode: payment.application.currencyCode,
+            // M11.3 — surface the buyer email so admin Transactions
+            // can render it without an extra round-trip. Only present
+            // when the include path eager-loaded portalIdentity.
+            portalIdentity: payment.application.portalIdentity
+              ? {
+                  id: payment.application.portalIdentity.id,
+                  email: payment.application.portalIdentity.email,
+                }
+              : undefined,
           }
         : undefined,
       transactions: payment.transactions?.map((txn: any) => ({

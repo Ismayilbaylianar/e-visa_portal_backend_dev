@@ -304,6 +304,43 @@ async function main() {
       },
     });
 
+    // M11.3 — when the application is seeded as PAID, also create the
+    // matching Payment row. The earlier path flipped
+    // `application.payment_status` but never inserted a payments row,
+    // which broke the admin Transactions page and zeroed the
+    // dashboard's `totalRevenue` aggregate. Idempotent on re-runs:
+    // skip if a non-deleted payment already exists for this app.
+    if (
+      spec.status !== ApplicationStatus.DRAFT &&
+      spec.status !== ApplicationStatus.UNPAID
+    ) {
+      const existingPayment = await prisma.payment.findFirst({
+        where: { applicationId: app.id, deletedAt: null },
+        select: { id: true },
+      });
+      if (!existingPayment) {
+        // totalFee above is a `.toFixed(2)` string for the application
+        // row; coerce back to Number for the math + Decimal columns.
+        const totalNumber = Number(totalFee);
+        const govPortion = Math.round(totalNumber * 0.6 * 100) / 100;
+        const servicePortion = Math.round(totalNumber * 0.4 * 100) / 100;
+        await prisma.payment.create({
+          data: {
+            applicationId: app.id,
+            paymentReference: `DEMO-${applicationCode}`,
+            paymentProviderKey: 'mock_demo_seed',
+            currencyCode: combo.fee.currencyCode,
+            governmentFeeAmount: govPortion,
+            serviceFeeAmount: servicePortion,
+            totalAmount: totalNumber,
+            payableAmount: totalNumber,
+            paymentStatus: PaymentStatus.PAID,
+            paidAt: new Date(),
+          },
+        });
+      }
+    }
+
     // Optional: stub an issued_visa Document so the download button
     // renders. Per the brief: "fake storageKey is fine — the download
     // will 404 but the UI state is what we're demoing."
