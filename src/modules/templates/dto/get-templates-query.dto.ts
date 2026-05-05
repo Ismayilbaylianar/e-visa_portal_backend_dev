@@ -28,7 +28,13 @@ export class GetTemplatesQueryDto extends SearchQueryDto {
     description: 'Filter by active status',
   })
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
+  // Nest's global ValidationPipe runs with `enableImplicitConversion:
+  // true`, which uses `Boolean(value)` to coerce strings BEFORE this
+  // @Transform fires. That would turn the string "false" into the
+  // boolean `true` (any non-empty string is truthy). To recover the
+  // user's actual intent we re-read the raw value from `obj[key]`,
+  // which class-transformer leaves as the original query-string value.
+  @Transform(({ value, obj, key }) => coerceBoolean(obj?.[key] ?? value))
   @IsBoolean()
   isActive?: boolean;
 
@@ -37,7 +43,22 @@ export class GetTemplatesQueryDto extends SearchQueryDto {
       'M11.2 — filter by boilerplate flag. Pass `true` from the admin "Create from boilerplate" picker to show only blueprint templates; pass `false` to hide them from the regular admin list.',
   })
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
+  @Transform(({ value, obj, key }) => coerceBoolean(obj?.[key] ?? value))
   @IsBoolean()
   isBoilerplate?: boolean;
+}
+
+/**
+ * Robust string→boolean for query params. Returns undefined for
+ * unrecognized input so @IsOptional + @IsBoolean catches typos
+ * instead of silently filtering by `false`.
+ */
+function coerceBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const v = value.toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes') return true;
+    if (v === 'false' || v === '0' || v === 'no') return false;
+  }
+  return undefined;
 }
