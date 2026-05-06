@@ -21,6 +21,8 @@ export const SYSTEM_TEMPLATE_KEYS = [
   'generic_notification',
   'payment_confirmation',
   'raw_email',
+  // M11.4 — admin forgot-password flow.
+  'admin_password_reset',
 ] as const;
 
 export type SystemTemplateKey = (typeof SYSTEM_TEMPLATE_KEYS)[number];

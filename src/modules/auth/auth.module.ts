@@ -5,6 +5,8 @@ import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { AuditLogsModule } from '../auditLogs/audit-logs.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
@@ -18,6 +20,10 @@ import { JwtStrategy } from './strategies/jwt.strategy';
         },
       }),
     }),
+    // M11.4 — change-password / forgot-password emit audit entries
+    // and use the existing Resend SMTP wiring (Module 4).
+    AuditLogsModule,
+    EmailModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

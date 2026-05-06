@@ -36,6 +36,8 @@ const TEMPLATE_REQUIRED_VARIABLES: Record<string, string[]> = {
   application_status_update: ['applicationRef', 'status'],
   invite_email: ['recipientName', 'inviterName', 'inviteLink', 'expiryDays'],
   payment_confirmation: ['paymentRef', 'amount', 'currency', 'applicationRef'],
+  // M11.4 — admin forgot-password reset email.
+  admin_password_reset: ['fullName', 'email', 'resetUrl', 'expiresInMinutes'],
 };
 
 /**

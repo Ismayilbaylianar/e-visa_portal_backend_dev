@@ -160,12 +160,18 @@ model User {
   roleId       String?   @map("role_id")
   isActive     Boolean   @default(true) @map("is_active")
   lastLoginAt  DateTime? @map("last_login_at")
+  // M11.4 — first-login forced password change. Seeded super admins
+  // start with this flag true; the change-password endpoint flips it
+  // false and stamps `lastPasswordChangedAt`.
+  mustChangePassword     Boolean   @default(false) @map("must_change_password")
+  lastPasswordChangedAt  DateTime? @map("last_password_changed_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
   deletedAt    DateTime? @map("deleted_at")
 
   role                      Role?                            @relation(fields: [roleId], references: [id])
   sessions                  Session[]
+  passwordResetTokens       PasswordResetToken[]
   userPermissions           UserPermission[]
   applicationStatusHistory  ApplicationStatusHistory[]       @relation("ChangedByUser")
   applicantStatusHistory    ApplicantStatusHistory[]         @relation("ChangedByUser")
@@ -267,6 +273,28 @@ model Session {
   @@index([expiresAt])
   @@index([revokedAt])
   @@map("sessions")
+}
+
+/// M11.4 — admin forgot-password flow.
+/// Plain token only ever lives in the URL emailed to the user;
+/// `tokenHash` is sha256(plainToken) so a leaked DB dump cannot be
+/// replayed. `usedAt` flips on consumption so a token is single-use.
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  usedAt     DateTime? @map("used_at")
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([usedAt])
+  @@map("password_reset_tokens")
 }
 
 // ===========================================

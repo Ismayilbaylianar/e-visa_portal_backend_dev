@@ -1,15 +1,24 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 import { UserInfoDto } from './login.dto';
 
 export class RefreshTokenDto {
-  @ApiProperty({
-    description: 'Refresh token',
+  /**
+   * M11.4 — refresh token now arrives via the httpOnly cookie set
+   * on login. The body field is kept optional for backwards
+   * compatibility (older mobile clients, the existing demo curl
+   * traces) but the controller prefers the cookie when both are
+   * present, and the validator no longer rejects requests that send
+   * neither (the controller does that with a friendlier message).
+   */
+  @ApiPropertyOptional({
+    description:
+      'Refresh token. Optional — preferred path is the httpOnly `evisa_admin_refresh` cookie set on login.',
     example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
   })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'Refresh token is required' })
-  refreshToken: string;
+  refreshToken?: string;
 }
 
 export class RefreshTokenResponseDto {

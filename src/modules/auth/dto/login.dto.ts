@@ -45,6 +45,13 @@ export class UserInfoDto {
     example: ['countries.read', 'countries.create', 'countries.update'],
   })
   permissions: string[];
+
+  @ApiProperty({
+    description:
+      'M11.4 — true when the user must change their password before continuing. The admin SPA shows the force-change modal and blocks all routes until the user PATCHes a new password via /admin/auth/change-password.',
+    example: false,
+  })
+  mustChangePassword: boolean;
 }
 
 export class LoginResponseDto {

@@ -355,6 +355,13 @@ async function main() {
     console.log(`  ✅ Created user: ${userData.email} (${userData.roleKey})`);
   }
 
+  // ─── M11.4 — production super admins (always seeded, idempotent) ───
+  // Real customer-facing accounts. Seeded once with a strong random
+  // password; the user must change it on first login (via the
+  // forced-change modal). Demo creds above stay around for
+  // development convenience but production logs in with these.
+  await seedProductionSuperAdmins(roleMap);
+
   console.log('\n✨ Seed completed successfully!\n');
 
   // Print summary
@@ -1064,6 +1071,28 @@ async function main() {
         <p style="font-size:13px;color:#6b7280;">{{amount}} {{currency}} ödənişiniz qəbul olundu. Müraciətiniz indi nəzərdən keçirilir.</p>`,
       ),
       bodyText: `Hello {{userName}},\n\nWe've received your payment of {{amount}} {{currency}} for application {{applicationCode}}.\n\nYour application is now submitted for review.\n\n— E-Visa Global team`,
+    },
+    // M11.4 — admin forgot-password reset email.
+    {
+      templateKey: 'admin_password_reset',
+      subject: 'Password Reset Request — E-Visa Global',
+      description:
+        'Sent when an admin requests a password reset via /admin/forgot-password. The link expires in 60 minutes and is single-use.',
+      variables: ['fullName', 'email', 'resetUrl', 'expiresInMinutes'],
+      bodyHtml: wrap(
+        'Password reset',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">Password reset requested</h1>
+        <p>Hi {{fullName}},</p>
+        <p>We received a request to reset the password for the E-Visa Global admin panel account associated with <strong>{{email}}</strong>.</p>
+        <p>Click the button below to choose a new password. This link expires in <strong>{{expiresInMinutes}} minutes</strong> and can only be used once.</p>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="{{resetUrl}}" style="display:inline-block;background-color:#1e40af;color:#ffffff;font-weight:600;padding:12px 24px;border-radius:6px;text-decoration:none;">Reset password</a>
+        </p>
+        <p style="font-size:13px;color:#6b7280;">If the button does not work, paste this URL into your browser:<br><span style="font-family:monospace;color:#0f172a;">{{resetUrl}}</span></p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="font-size:13px;color:#6b7280;">If you did not request this, you can safely ignore this email — your password will remain unchanged. For security: the link works only once, expires in {{expiresInMinutes}} minutes, and you'll set a new password after clicking.</p>`,
+      ),
+      bodyText: `Hi {{fullName}},\n\nWe received a request to reset the password for the E-Visa Global admin account associated with {{email}}.\n\nReset your password here (link expires in {{expiresInMinutes}} minutes, single-use):\n\n{{resetUrl}}\n\nIf you did not request this, you can safely ignore this email.\n\n— E-Visa Global Security`,
     },
   ];
 
@@ -2577,6 +2606,88 @@ async function backfillSystemFieldsForExistingTemplates() {
     }
   }
   console.log(`  Templates: ${backfilled} backfilled (+${totalFieldsAdded} fields), ${skipped} already complete`);
+}
+
+// ════════════════════════════════════════════════════════════════
+// M11.4 — production super admin provisioning
+// ════════════════════════════════════════════════════════════════
+
+/** Customer-facing super admin emails. Stays in source so the seed
+ *  script always re-asserts both rows exist. Adding/removing names
+ *  here is the supported path — please don't edit the DB directly. */
+const PRODUCTION_SUPER_ADMINS: Array<{ email: string; fullName: string }> = [
+  { email: 'abdulazimov@gmail.com',          fullName: 'Anar Ismayilbayli' },
+  { email: 'ismayilbeylianar@gmail.com',     fullName: 'Anar Ismayilbeyli' },
+];
+
+/** Random initial password. Crypto-strong, 16 chars from a
+ *  human-readable alphabet (no I/O/L/0/1 confusion). */
+function generateInitialPassword(length = 16): string {
+  const ALPHABET =
+    'ABCDEFGHJKMNPQRSTUVWXYZ' + // no I, O, L
+    'abcdefghijkmnpqrstuvwxyz' + // no l, o
+    '23456789' +                  // no 0, 1
+    '!@#$%^&*';
+  const buf = require('crypto').randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i++) {
+    out += ALPHABET[buf[i] % ALPHABET.length];
+  }
+  // Force at least one of each character class so the rule
+  // (letter+number+symbol) never trips on a randomly-bad draw.
+  if (!/[A-Za-z]/.test(out)) out = 'A' + out.slice(1);
+  if (!/\d/.test(out))       out = out.slice(0, 1) + '7' + out.slice(2);
+  if (!/[^A-Za-z0-9]/.test(out)) out = out.slice(0, 2) + '!' + out.slice(3);
+  return out;
+}
+
+async function seedProductionSuperAdmins(roleMap: Map<string, string>): Promise<void> {
+  console.log('\n═══════════════════════════════════════════');
+  console.log('M11.4 — PRODUCTION SUPER ADMIN PROVISIONING');
+  console.log('═══════════════════════════════════════════');
+
+  const roleId = roleMap.get('superAdmin');
+  if (!roleId) {
+    console.warn('  ⚠️  superAdmin role missing — production super admins skipped.');
+    return;
+  }
+
+  for (const admin of PRODUCTION_SUPER_ADMINS) {
+    const existing = await prisma.user.findUnique({ where: { email: admin.email } });
+    if (existing) {
+      console.log(`  ✓ already exists: ${admin.email}`);
+      continue;
+    }
+
+    const initialPassword = generateInitialPassword();
+    const passwordHash = await bcrypt.hash(initialPassword, 12);
+
+    await prisma.user.create({
+      data: {
+        fullName: admin.fullName,
+        email: admin.email,
+        passwordHash,
+        roleId,
+        isActive: true,
+        mustChangePassword: true,
+        lastPasswordChangedAt: null,
+      },
+    });
+
+    console.log('');
+    console.log('  ┌──────────────────────────────────────────────────┐');
+    console.log('  │  NEW SUPER ADMIN CREATED                         │');
+    console.log('  ├──────────────────────────────────────────────────┤');
+    console.log(`  │  Email:    ${admin.email.padEnd(38)}│`);
+    console.log(`  │  Password: ${initialPassword.padEnd(38)}│`);
+    console.log('  │  Login:    https://evisaglobal.com/admin/login   │');
+    console.log('  │  ⚠️  This password is shown once — capture now.  │');
+    console.log('  │     The user will be forced to change it on      │');
+    console.log('  │     first login.                                 │');
+    console.log('  └──────────────────────────────────────────────────┘');
+    console.log('');
+  }
+  console.log('═══════════════════════════════════════════\n');
 }
 
 main()
