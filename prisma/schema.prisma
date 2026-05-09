@@ -1287,10 +1287,33 @@ model ContactInfo {
   @@map("contact_info")
 }
 
-/// One Q+A on the public /faq page. `category` lets the public view
-/// group items (general / application / payment / visa / etc.).
-/// `displayOrder` is the per-category sort key used by the admin
-/// drag-drop reorder endpoint.
+/// M11.7 (C1) — FAQ category lookup. `key` is the slug stored on
+/// `FaqItem.category` (soft FK by string — no UUID join needed, and
+/// existing rows keep working). Admin can rename `displayName` and
+/// reorder via `displayOrder` without touching items. Categories not
+/// referenced by any item still appear in the admin Categories tab,
+/// but the public endpoint only emits groups that have at least one
+/// published item.
+model FaqCategory {
+  id           String    @id @default(uuid())
+  key          String    @unique
+  displayName  String    @map("display_name")
+  displayOrder Int       @default(0) @map("display_order")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  @@index([displayOrder])
+  @@index([isActive, deletedAt])
+  @@map("faq_categories")
+}
+
+/// One Q+A on the public /faq page. `category` is a soft FK to
+/// `FaqCategory.key` (kept as a string so legacy items survive any
+/// future rename/migrate without data loss). `displayOrder` is the
+/// per-category sort key used by the admin drag-drop reorder
+/// endpoint.
 model FaqItem {
   id              String    @id @default(uuid())
   question        String

@@ -8,9 +8,11 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  Res,
   UseGuards,
   Headers,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import {
@@ -50,6 +52,31 @@ export class PaymentsAdminController {
   @ApiPaginatedResponse(PaymentResponseDto)
   async findAll(@Query() query: GetPaymentsQueryDto) {
     return this.paymentsService.findAll(query);
+  }
+
+  /**
+   * M11.7 (B1) — CSV export. Streams a CSV of every payment matching
+   * the same filters as the list endpoint, capped at the configured
+   * EXPORT_LIMIT so an admin can't trigger an unbounded scan. The
+   * `payments.export` permission gates this separately from the
+   * read endpoint so an audit-only role can be granted list access
+   * without bulk export.
+   */
+  @Get('export')
+  @RequirePermissions('payments.export')
+  @ApiOperation({
+    summary: 'Export payments as CSV',
+    description: 'Returns text/csv with the same filter set as the list endpoint.',
+  })
+  async exportCsv(
+    @Query() query: GetPaymentsQueryDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const csv = await this.paymentsService.exportCsv(query);
+    const filename = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
   }
 
   @Get(':paymentId')

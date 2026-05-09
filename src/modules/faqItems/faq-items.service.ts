@@ -6,10 +6,13 @@ import { NotFoundException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import {
   CreateFaqItemDto,
+  FaqCategoryListResponseDto,
+  FaqCategoryResponseDto,
   FaqGroupedResponseDto,
   FaqItemListResponseDto,
   FaqItemResponseDto,
   ReorderFaqItemsDto,
+  UpdateFaqCategoryDto,
   UpdateFaqItemDto,
 } from './dto';
 
@@ -244,17 +247,36 @@ export class FaqItemsService {
   // =========================================================
 
   async listPublishedGrouped(): Promise<FaqGroupedResponseDto> {
-    const items = await this.prisma.faqItem.findMany({
-      where: { deletedAt: null, isPublished: true },
-      orderBy: [{ category: 'asc' }, { displayOrder: 'asc' }],
-    });
+    // M11.7 (C1) — Items + categories load in parallel. We sort the
+    // resulting groups by FaqCategory.displayOrder so the admin can
+    // reorder the homepage FAQ without re-publishing every item, and
+    // we use FaqCategory.displayName for the section header.
+    const [items, categories] = await Promise.all([
+      this.prisma.faqItem.findMany({
+        where: { deletedAt: null, isPublished: true },
+        orderBy: [{ category: 'asc' }, { displayOrder: 'asc' }],
+      }),
+      this.prisma.faqCategory.findMany({
+        where: { deletedAt: null, isActive: true },
+        orderBy: { displayOrder: 'asc' },
+      }),
+    ]);
 
-    // Bucket by category, preserving first-seen category order.
+    const categoryByKey = new Map(categories.map((c) => [c.key, c]));
+
+    // Bucket by category. Items reference categories by key; unknown
+    // keys still render under their raw value so we never silently
+    // drop items if an admin removes a category that had stragglers.
     const buckets = new Map<string, FaqGroupedResponseDto['groups'][number]>();
     for (const item of items) {
       const cat = item.category ?? 'other';
       if (!buckets.has(cat)) {
-        buckets.set(cat, { category: cat, items: [] });
+        const meta = categoryByKey.get(cat);
+        buckets.set(cat, {
+          category: cat,
+          displayName: meta?.displayName,
+          items: [],
+        });
       }
       buckets.get(cat)!.items.push({
         id: item.id,
@@ -263,7 +285,101 @@ export class FaqItemsService {
         displayOrder: item.displayOrder,
       });
     }
-    return { groups: Array.from(buckets.values()) };
+
+    // Order groups by FaqCategory.displayOrder; unknown keys go to
+    // the end (Number.MAX_SAFE_INTEGER) so legacy items never push
+    // ahead of admin-curated categories.
+    const ordered = Array.from(buckets.values()).sort((a, b) => {
+      const ao = categoryByKey.get(a.category)?.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      const bo = categoryByKey.get(b.category)?.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      return ao - bo;
+    });
+    return { groups: ordered };
+  }
+
+  // =========================================================
+  // M11.7 (C1) — Categories: admin CRUD-lite (rename / reorder /
+  // toggle active). We don't expose create/delete for now: the
+  // migration seeds the canonical set, and renaming an existing
+  // category is the common case. If the admin needs a brand-new
+  // category they can edit one of the seeded slots.
+  // =========================================================
+
+  async listCategories(): Promise<FaqCategoryListResponseDto> {
+    const items = await this.prisma.faqCategory.findMany({
+      where: { deletedAt: null },
+      orderBy: { displayOrder: 'asc' },
+    });
+    return {
+      items: items.map((row) => this.toCategoryResponse(row)),
+      total: items.length,
+    };
+  }
+
+  async updateCategory(
+    id: string,
+    dto: UpdateFaqCategoryDto,
+    adminUserId: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<FaqCategoryResponseDto> {
+    const existing = await this.prisma.faqCategory.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!existing) {
+      throw new NotFoundException('FAQ category not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: `No FAQ category with id "${id}"` },
+      ]);
+    }
+    const before = {
+      displayName: existing.displayName,
+      displayOrder: existing.displayOrder,
+      isActive: existing.isActive,
+    };
+    const updated = await this.prisma.faqCategory.update({
+      where: { id },
+      data: {
+        displayName: dto.displayName ?? undefined,
+        displayOrder: dto.displayOrder ?? undefined,
+        isActive: dto.isActive ?? undefined,
+      },
+    });
+    await this.auditLogsService.create({
+      actorUserId: adminUserId,
+      actorType: ActorType.USER,
+      actionKey: 'faqCategory.update',
+      entityType: 'FaqCategory',
+      entityId: updated.id,
+      oldValue: before,
+      newValue: {
+        displayName: updated.displayName,
+        displayOrder: updated.displayOrder,
+        isActive: updated.isActive,
+      },
+      ipAddress: ip,
+      userAgent,
+    });
+    return this.toCategoryResponse(updated);
+  }
+
+  private toCategoryResponse(row: {
+    id: string;
+    key: string;
+    displayName: string;
+    displayOrder: number;
+    isActive: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  }): FaqCategoryResponseDto {
+    return {
+      id: row.id,
+      key: row.key,
+      displayName: row.displayName,
+      displayOrder: row.displayOrder,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
   }
 
   // =========================================================

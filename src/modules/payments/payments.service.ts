@@ -158,6 +158,95 @@ export class PaymentsService {
     };
   }
 
+  /**
+   * M11.7 (B1) — Build a CSV body for the admin Transactions Export
+   * button. Honours the same filter set as `findAll` but ignores the
+   * `page`/`limit` so a single download covers everything matching.
+   * Hard-capped at EXPORT_HARD_LIMIT rows to keep memory bounded.
+   */
+  async exportCsv(query: GetPaymentsQueryDto): Promise<string> {
+    const EXPORT_HARD_LIMIT = 10000;
+    const { status, applicationId, providerKey, dateFrom, dateTo } = query;
+    const where = {
+      deletedAt: null,
+      ...(status && { paymentStatus: status }),
+      ...(applicationId && { applicationId }),
+      ...(providerKey && { paymentProviderKey: providerKey }),
+      ...(dateFrom || dateTo
+        ? {
+            createdAt: {
+              ...(dateFrom && { gte: new Date(dateFrom) }),
+              ...(dateTo && { lte: new Date(dateTo) }),
+            },
+          }
+        : {}),
+    };
+    const payments = await this.prisma.payment.findMany({
+      where,
+      include: {
+        application: {
+          select: {
+            id: true,
+            currentStatus: true,
+            portalIdentity: { select: { email: true } },
+            destinationCountry: { select: { isoCode: true, name: true } },
+            visaType: { select: { label: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: EXPORT_HARD_LIMIT,
+    });
+
+    const headers = [
+      'Payment Reference',
+      'Application Code',
+      'Buyer Email',
+      'Destination',
+      'Visa Type',
+      'Application Status',
+      'Payment Status',
+      'Provider',
+      'Currency',
+      'Total Amount',
+      'Government Fee',
+      'Service Fee',
+      'Expedited Fee',
+      'Created At',
+      'Paid At',
+    ];
+    const lines = [headers.map(csvEscape).join(',')];
+    for (const p of payments) {
+      lines.push(
+        [
+          p.paymentReference ?? '',
+          // Application code lives on ApplicationApplicant, not on
+          // Payment. The export uses applicationId as the join surface
+          // since that's what the page/back-link uses too.
+          p.applicationId,
+          p.application?.portalIdentity?.email ?? '',
+          p.application?.destinationCountry
+            ? `${p.application.destinationCountry.isoCode} ${p.application.destinationCountry.name}`
+            : '',
+          p.application?.visaType?.label ?? '',
+          p.application?.currentStatus ?? '',
+          p.paymentStatus ?? '',
+          p.paymentProviderKey ?? '',
+          p.currencyCode ?? '',
+          p.totalAmount?.toString() ?? '',
+          p.governmentFeeAmount?.toString() ?? '',
+          p.serviceFeeAmount?.toString() ?? '',
+          p.expeditedFeeAmount?.toString() ?? '',
+          p.createdAt?.toISOString() ?? '',
+          p.paidAt?.toISOString() ?? '',
+        ]
+          .map(csvEscape)
+          .join(','),
+      );
+    }
+    return lines.join('\n');
+  }
+
   async findById(id: string): Promise<PaymentResponseDto> {
     const payment = await this.prisma.payment.findFirst({
       where: { id, deletedAt: null },
@@ -1235,4 +1324,19 @@ export class PaymentsService {
       updatedAt: payment.updatedAt,
     };
   }
+}
+
+/**
+ * M11.7 (B1) — RFC 4180-style CSV escape: wrap any cell containing a
+ * comma, double-quote, or newline in quotes, and double up any inner
+ * double-quotes. Numbers are coerced to string upstream so this only
+ * has to deal with strings.
+ */
+function csvEscape(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
 }

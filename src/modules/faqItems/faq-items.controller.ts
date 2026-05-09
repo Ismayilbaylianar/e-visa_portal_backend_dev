@@ -24,11 +24,14 @@ import type { Request } from 'express';
 import { FaqItemsService } from './faq-items.service';
 import {
   CreateFaqItemDto,
+  FaqCategoryListResponseDto,
+  FaqCategoryResponseDto,
   FaqGroupedResponseDto,
   FaqItemListResponseDto,
   FaqItemResponseDto,
   GetFaqItemsQueryDto,
   ReorderFaqItemsDto,
+  UpdateFaqCategoryDto,
   UpdateFaqItemDto,
 } from './dto';
 import { CurrentUser, Public, RequirePermissions } from '@/common/decorators';
@@ -130,5 +133,47 @@ export class FaqItemsPublicController {
   @ApiResponse({ status: 200, type: FaqGroupedResponseDto })
   async listGrouped(): Promise<FaqGroupedResponseDto> {
     return this.service.listPublishedGrouped();
+  }
+}
+
+/**
+ * M11.7 (C1) — Admin endpoints for the FAQ category lookup table.
+ * Sits beside the items controller above so the existing
+ * `content.read` / `content.update` permissions cover both surfaces
+ * without a permission migration.
+ */
+@ApiTags('FAQ Categories')
+@ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
+@Controller('admin/faq-categories')
+export class FaqCategoriesAdminController {
+  constructor(private readonly service: FaqItemsService) {}
+
+  @Get()
+  @RequirePermissions('content.read')
+  @ApiOperation({ summary: 'List FAQ categories (rename / reorder targets)' })
+  @ApiResponse({ status: 200, type: FaqCategoryListResponseDto })
+  async list(): Promise<FaqCategoryListResponseDto> {
+    return this.service.listCategories();
+  }
+
+  @Patch(':id')
+  @RequirePermissions('content.update')
+  @ApiOperation({ summary: 'Rename / reorder / hide a FAQ category' })
+  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, type: FaqCategoryResponseDto })
+  async update(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: UpdateFaqCategoryDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<FaqCategoryResponseDto> {
+    return this.service.updateCategory(
+      id,
+      dto,
+      user.id,
+      req.ip,
+      req.get('user-agent') ?? undefined,
+    );
   }
 }

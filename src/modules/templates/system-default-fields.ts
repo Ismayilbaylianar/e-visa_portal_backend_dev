@@ -50,9 +50,31 @@ export interface SystemFieldSpec {
 
 export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
   // ─── Section 1: Personal Information ───
+  // M11.7 (A1): Nationality renders as a country dropdown and gets
+  // pre-filled from the IP-detected country at the start of the apply
+  // flow. Subsequent applicants in the same application inherit this
+  // value from applicant 1 (frontend-side propagation).
   {
     sectionTitle: 'Personal Information',
     sectionDescription: 'Please provide your personal details',
+    sectionOrder: 1,
+    field: {
+      systemKey: 'nationality',
+      label: 'Nationality',
+      fieldType: 'country',
+      placeholder: 'Select your nationality',
+      helpText: 'The country shown on your passport',
+      isRequired: true,
+      validationRulesJson: {
+        errorMessages: {
+          required: 'Nationality is required',
+        },
+      },
+      sortOrder: 1,
+    },
+  },
+  {
+    sectionTitle: 'Personal Information',
     sectionOrder: 1,
     field: {
       systemKey: 'firstName',
@@ -69,7 +91,7 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
           maxLength: 'First name must be 50 characters or fewer',
         },
       },
-      sortOrder: 1,
+      sortOrder: 2,
     },
   },
   {
@@ -90,7 +112,7 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
           maxLength: 'Last name must be 50 characters or fewer',
         },
       },
-      sortOrder: 2,
+      sortOrder: 3,
     },
   },
   {
@@ -109,14 +131,36 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
           max: 'You must be at least 18 years old',
         },
       },
-      sortOrder: 3,
+      sortOrder: 4,
     },
   },
 
   // ─── Section 2: Passport Information ───
+  // M11.7 (A2): Passport-issuing country mirrors the nationality
+  // dropdown (same source list, same per-applicant inheritance) but
+  // is logically separate so a passenger holding a passport from a
+  // different country than their nationality can still be captured.
   {
     sectionTitle: 'Passport Information',
     sectionDescription: 'Enter your passport details',
+    sectionOrder: 2,
+    field: {
+      systemKey: 'passportIssuingCountry',
+      label: 'Issuing Country',
+      fieldType: 'country',
+      placeholder: 'Select issuing country',
+      helpText: 'The country that issued your passport',
+      isRequired: true,
+      validationRulesJson: {
+        errorMessages: {
+          required: 'Issuing country is required',
+        },
+      },
+      sortOrder: 1,
+    },
+  },
+  {
+    sectionTitle: 'Passport Information',
     sectionOrder: 2,
     field: {
       systemKey: 'passportNumber',
@@ -131,7 +175,7 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
           pattern: 'Passport number must be 6–15 uppercase letters or digits',
         },
       },
-      sortOrder: 1,
+      sortOrder: 2,
     },
   },
   {
@@ -149,7 +193,7 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
           max: 'Issue date cannot be in the future',
         },
       },
-      sortOrder: 2,
+      sortOrder: 3,
     },
   },
   {
@@ -168,7 +212,7 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
           min: 'Passport must be valid for at least 6 months from today',
         },
       },
-      sortOrder: 3,
+      sortOrder: 4,
     },
   },
 

@@ -53,6 +53,14 @@ export class FaqGroupDto {
   @ApiProperty({ description: '"general" / "application" / etc. — null group is "Other".' })
   category: string;
 
+  /**
+   * M11.7 (C1) — Optional human-readable label resolved from the
+   * `faq_categories` lookup. Falls back client-side when missing so
+   * legacy items without a registered category still render.
+   */
+  @ApiPropertyOptional({ description: 'Display name from faq_categories.display_name' })
+  displayName?: string;
+
   @ApiProperty({ type: [FaqGroupedItemDto] })
   items: FaqGroupedItemDto[];
 }
@@ -60,4 +68,23 @@ export class FaqGroupDto {
 export class FaqGroupedResponseDto {
   @ApiProperty({ type: [FaqGroupDto] })
   groups: FaqGroupDto[];
+}
+
+/** M11.7 (C1) — Admin response shape for /admin/faq-categories. */
+export class FaqCategoryResponseDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ example: 'general' }) key: string;
+  @ApiProperty({ example: 'General Questions' }) displayName: string;
+  @ApiProperty() displayOrder: number;
+  @ApiProperty() isActive: boolean;
+  @ApiProperty() createdAt: Date;
+  @ApiProperty() updatedAt: Date;
+}
+
+export class FaqCategoryListResponseDto {
+  @ApiProperty({ type: [FaqCategoryResponseDto] })
+  items: FaqCategoryResponseDto[];
+
+  @ApiProperty()
+  total: number;
 }

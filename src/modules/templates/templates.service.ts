@@ -284,11 +284,17 @@ export class TemplatesService {
       }
 
       for (const fieldSpec of group.fields) {
-        // Skip if this systemKey already exists anywhere on the
-        // template (idempotent backfill path).
+        // Skip if this systemKey OR a manually-created field with the
+        // same fieldKey already exists anywhere on the template.
+        // M11.7 (D3): the original lookup only matched on systemKey,
+        // which left a P2002 surface when an admin had manually added
+        // a field with `fieldKey === systemKey` before this template
+        // was backfilled. We now check both columns and absorb the
+        // unique violation as a final safety net so the whole backfill
+        // never aborts mid-run on a single template.
         const existing = await tx.templateField.findFirst({
           where: {
-            systemKey: fieldSpec.systemKey,
+            OR: [{ systemKey: fieldSpec.systemKey }, { fieldKey: fieldSpec.systemKey }],
             templateSection: { templateId, deletedAt: null },
             deletedAt: null,
           },
@@ -296,27 +302,39 @@ export class TemplatesService {
         });
         if (existing) continue;
 
-        await tx.templateField.create({
-          data: {
-            templateSectionId: section.id,
-            // fieldKey mirrors systemKey on system fields so legacy
-            // consumers that read fieldKey keep working.
-            fieldKey: fieldSpec.systemKey,
-            systemKey: fieldSpec.systemKey,
-            isSystem: true,
-            fieldType: fieldSpec.fieldType,
-            label: fieldSpec.label,
-            placeholder: fieldSpec.placeholder ?? null,
-            helpText: fieldSpec.helpText ?? null,
-            isRequired: fieldSpec.isRequired,
-            sortOrder: fieldSpec.sortOrder,
-            isActive: true,
-            optionsJson: [],
-            validationRulesJson: fieldSpec.validationRulesJson as Prisma.InputJsonValue,
-            visibilityRulesJson: [],
-          },
-        });
-        fieldsCreated++;
+        try {
+          await tx.templateField.create({
+            data: {
+              templateSectionId: section.id,
+              // fieldKey mirrors systemKey on system fields so legacy
+              // consumers that read fieldKey keep working.
+              fieldKey: fieldSpec.systemKey,
+              systemKey: fieldSpec.systemKey,
+              isSystem: true,
+              fieldType: fieldSpec.fieldType,
+              label: fieldSpec.label,
+              placeholder: fieldSpec.placeholder ?? null,
+              helpText: fieldSpec.helpText ?? null,
+              isRequired: fieldSpec.isRequired,
+              sortOrder: fieldSpec.sortOrder,
+              isActive: true,
+              optionsJson: [],
+              validationRulesJson: fieldSpec.validationRulesJson as Prisma.InputJsonValue,
+              visibilityRulesJson: [],
+            },
+          });
+          fieldsCreated++;
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+            // Race or stale index hit — log and continue so a single
+            // duplicate doesn't take the whole backfill down.
+            console.warn(
+              `[backfill] Skipping system field '${fieldSpec.systemKey}' on template ${templateId}: P2002 unique violation (already exists)`,
+            );
+            continue;
+          }
+          throw err;
+        }
       }
     }
 

@@ -219,9 +219,15 @@ async function main() {
   });
   if (priorDemo.length > 0) {
     const ids = priorDemo.map((a) => a.id);
-    // ApplicationApplicant cascades from Application; Document cascades from
-    // ApplicationApplicant. ApplicationStatusHistory has no cascade — clear
-    // it explicitly so the next FK insert doesn't see orphan rows.
+    // M11.7 (D2) — explicit cascade order. Payment has no FK cascade
+    // from Application, so a stale demo Payment will block the
+    // application.deleteMany below with a Restrict violation. We
+    // delete payments first, then status history (also no cascade),
+    // then the applications themselves (which cascade-delete
+    // ApplicationApplicant → Document).
+    await prisma.payment.deleteMany({
+      where: { applicationId: { in: ids } },
+    });
     await prisma.applicationStatusHistory.deleteMany({
       where: { applicationId: { in: ids } },
     });
