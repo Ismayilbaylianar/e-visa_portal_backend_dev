@@ -61,22 +61,42 @@ export const appConfig = registerAs('app', () => ({
     },
   },
 
-  // M11.5 — Telegram notifications.
-  // - `botToken` is sensitive and supplied via .env at runtime
-  //   (Anar adds it on the prod box after this module deploys).
-  // - The two chat IDs ARE the real production routing identifiers
-  //   for the private Alerts + Activity channels; safe to commit.
-  // - `enabled` is the master kill-switch — when false, every event
-  //   still records a `status='skipped'` row so the admin /notifications
-  //   feed continues working (Telegram is just suppressed).
-  // - `adminBaseUrl` is the public-facing admin URL we link to in
-  //   notifications. Kept here so the Telegram service can construct
-  //   "open in admin" deep-links.
+  // M11.5 / M11.5.1 — Twin-bot Telegram notifications.
+  //
+  // Each channel has its own bot; a bot is admin in only ONE channel
+  // (cross-posting returns 403 because the bot isn't a member of the
+  // other channel). So we keep two independent tokens:
+  //   - alertsBotToken   → posts to alertsChatId   ("E-Visa Global Support")
+  //   - activityBotToken → posts to activityChatId ("E-Visa Global Activity")
+  //
+  // Chat IDs are routing identifiers (not secrets) — safe to commit
+  // as defaults. Tokens are sensitive — set via .env at runtime.
+  //
+  // `enabled` is the master kill-switch — when false every event
+  // still records a `status='skipped'` row so the admin /notifications
+  // feed continues working (Telegram is just suppressed).
+  //
+  // Pre-M11.5.1 used a single TELEGRAM_BOT_TOKEN. The fallback below
+  // emits a warning if that legacy var is set without the new ones —
+  // operator must explicitly opt in to the split scheme.
   telegram: {
     enabled: (process.env.TELEGRAM_ENABLED ?? 'false').toLowerCase() === 'true',
-    botToken: process.env.TELEGRAM_BOT_TOKEN || '',
-    alertsChatId:   process.env.TELEGRAM_ALERTS_CHAT_ID   || '-1003745374795',
-    activityChatId: process.env.TELEGRAM_ACTIVITY_CHAT_ID || '-1003907564535',
-    adminBaseUrl:   process.env.ADMIN_BASE_URL || 'https://evisaglobal.com',
+
+    alertsBotToken:   process.env.TELEGRAM_ALERTS_BOT_TOKEN   || '',
+    alertsChatId:     process.env.TELEGRAM_ALERTS_CHAT_ID     || '-1003745374795',
+
+    activityBotToken: process.env.TELEGRAM_ACTIVITY_BOT_TOKEN || '',
+    activityChatId:   process.env.TELEGRAM_ACTIVITY_CHAT_ID   || '-1003907564535',
+
+    /**
+     * M11.5 legacy single token. Only present so the service can
+     * detect + warn that the operator must migrate to the split
+     * keys. Never used as a fallback — explicit opt-in only, so a
+     * misconfigured deploy doesn't quietly post Activity events
+     * via the Alerts bot (which would 403).
+     */
+    legacyBotToken:   process.env.TELEGRAM_BOT_TOKEN          || '',
+
+    adminBaseUrl:     process.env.ADMIN_BASE_URL              || 'https://evisaglobal.com',
   },
 }));

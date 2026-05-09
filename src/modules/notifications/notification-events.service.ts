@@ -91,13 +91,18 @@ export class NotificationEventsService {
         take: 10,
       }),
     ]);
+    // M11.5.1 — Twin-bot status. Read via the service so we don't
+    // duplicate the env-key strings here; stays in sync if the
+    // resolver ever pulls from somewhere else (e.g. a Settings table).
+    const channelState = this.telegram.getChannelConfigState();
     return {
       alerts24h,
       activity24h,
       failed24h,
       skipped24h,
-      telegramEnabled: this.config.get<boolean>('app.telegram.enabled') ?? false,
-      botTokenConfigured: !!this.config.get<string>('app.telegram.botToken'),
+      telegramEnabled: channelState.enabled,
+      alertsBotConfigured: channelState.alertsBotConfigured,
+      activityBotConfigured: channelState.activityBotConfigured,
       byEventType: byEventTypeRaw.map((r) => ({
         eventType: r.eventType,
         count: r._count.eventType,

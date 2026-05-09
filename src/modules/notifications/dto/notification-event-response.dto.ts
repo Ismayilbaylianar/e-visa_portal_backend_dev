@@ -21,7 +21,13 @@ export class NotificationStatsResponseDto {
   @ApiProperty({ description: 'Failed deliveries in the last 24 hours' }) failed24h: number;
   @ApiProperty({ description: 'Skipped (kill-switch off / event toggled off) in the last 24 hours' }) skipped24h: number;
   @ApiProperty({ description: 'telegram.enabled config flag — informational' }) telegramEnabled: boolean;
-  @ApiProperty({ description: 'Whether TELEGRAM_BOT_TOKEN is set on the server' }) botTokenConfigured: boolean;
+  /**
+   * M11.5.1 — Twin-bot architecture. Each channel has its own bot
+   * + token; both flags are independent so the UI banner can show
+   * which (if any) is missing without exposing the tokens.
+   */
+  @ApiProperty({ description: 'Whether TELEGRAM_ALERTS_BOT_TOKEN is set on the server' }) alertsBotConfigured: boolean;
+  @ApiProperty({ description: 'Whether TELEGRAM_ACTIVITY_BOT_TOKEN is set on the server' }) activityBotConfigured: boolean;
   @ApiProperty({
     description: 'Top event types in the last 24 hours, sorted by count desc.',
     type: 'array',

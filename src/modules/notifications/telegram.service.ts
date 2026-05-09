@@ -4,11 +4,20 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EVENT_REGISTRY, EventChannel } from './event-registry';
 
 /**
- * M11.5 — TelegramNotificationService.
+ * M11.5 / M11.5.1 — TelegramNotificationService.
+ *
+ * Twin-bot architecture: each Telegram channel uses its OWN bot.
+ *   - Alerts bot   posts to TELEGRAM_ALERTS_CHAT_ID
+ *   - Activity bot posts to TELEGRAM_ACTIVITY_CHAT_ID
+ *
+ * Each bot must be admin in only its own channel. Cross-posting
+ * (alerts bot → activity channel) returns 403 Forbidden because
+ * the bot is not a member of that channel — `getBotConfig(channel)`
+ * pairs token + chatId together so this can't happen by accident.
  *
  * Wraps the Bot API `sendMessage` endpoint:
  *   - Persists every event to `notification_events` first (status
- *     `pending` | `skipped` based on the kill-switch).
+ *     `pending` | `skipped` based on the kill-switch / bot config).
  *   - Sends with a 1-rps-per-chat token bucket so we never trip
  *     Telegram's 30-msgs/sec global cap.
  *   - Retries 5xx + 429 with exponential backoff (max 3 attempts)
@@ -17,8 +26,8 @@ import { EVENT_REGISTRY, EventChannel } from './event-registry';
  *     JSON context dump so weird customer emails (`a_b@c.io`) don't
  *     blow up the parse.
  *
- * Bot token NEVER appears in DB rows, audit logs, or response
- * bodies — only inside the outbound HTTPS request URL.
+ * Bot tokens NEVER appear in DB rows, audit logs, or response
+ * bodies — only inside the outbound HTTPS request URLs.
  */
 
 interface SendArgs {
@@ -35,13 +44,20 @@ const RETRY_TICK_INTERVAL_MS = 30_000; // every 30s
 const PER_CHAT_INTERVAL_MS = 1_000;    // 1 msg/sec/chat
 const TELEGRAM_API_TIMEOUT_MS = 10_000;
 
+interface BotConfig {
+  /** Bot token from BotFather. Empty string = not configured. */
+  token: string;
+  /** Channel-specific chat ID (negative integer in string form). */
+  chatId: string;
+  /** True iff a non-empty token is set. Drives skip-vs-send routing. */
+  configured: boolean;
+}
+
 @Injectable()
 export class TelegramNotificationService implements OnModuleInit {
   private readonly logger = new Logger(TelegramNotificationService.name);
-  private readonly botToken: string;
   private readonly enabled: boolean;
-  private readonly chatIds: Record<EventChannel, string>;
-  /** Last-send timestamp per chatId — drives the 1 rps limiter. */
+  /** Per-chat 1 rps limiter — keyed by chatId, which is unique per channel. */
   private readonly lastSentAt = new Map<string, number>();
   private retryTimer?: NodeJS.Timeout;
 
@@ -49,17 +65,65 @@ export class TelegramNotificationService implements OnModuleInit {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
   ) {
-    this.botToken = this.config.get<string>('app.telegram.botToken') ?? '';
     this.enabled = this.config.get<boolean>('app.telegram.enabled') ?? false;
-    this.chatIds = {
-      alerts: this.config.get<string>('app.telegram.alertsChatId') ?? '',
-      activity: this.config.get<string>('app.telegram.activityChatId') ?? '',
-    };
-    if (this.enabled && !this.botToken) {
+
+    // Boot-time visibility into the twin-bot config. Each bot is
+    // independently optional — operator can stand up Alerts first
+    // and add Activity later without restarting the world.
+    const alerts = this.getBotConfig('alerts');
+    const activity = this.getBotConfig('activity');
+    if (this.enabled && !alerts.configured) {
       this.logger.warn(
-        'TELEGRAM_ENABLED=true but TELEGRAM_BOT_TOKEN is empty — every send will be marked failed. Add the token to .env and restart.',
+        'TELEGRAM_ENABLED=true but TELEGRAM_ALERTS_BOT_TOKEN is empty — Alerts events will be marked failed/skipped. Add the token to .env and restart.',
       );
     }
+    if (this.enabled && !activity.configured) {
+      this.logger.warn(
+        'TELEGRAM_ENABLED=true but TELEGRAM_ACTIVITY_BOT_TOKEN is empty — Activity events will be marked failed/skipped. Add the token to .env and restart.',
+      );
+    }
+
+    // M11.5.1 — deprecation hint for the legacy single-token scheme.
+    // We do NOT auto-fall back: silently routing Activity events
+    // through the Alerts bot would 403 in production. Operator
+    // must opt in to the split keys explicitly.
+    const legacy =
+      this.config.get<string>('app.telegram.legacyBotToken') ?? '';
+    if (legacy && (!alerts.configured || !activity.configured)) {
+      this.logger.warn(
+        '[deprecation] TELEGRAM_BOT_TOKEN is set but TELEGRAM_ALERTS_BOT_TOKEN / TELEGRAM_ACTIVITY_BOT_TOKEN are not — the legacy single-token scheme is no longer used. Rename your env var into the two new keys and restart.',
+      );
+    }
+  }
+
+  /**
+   * Resolve the (token, chatId) pair for a channel. Single source
+   * of truth — anything that needs to send/retry/inspect bot state
+   * goes through here so we never accidentally pair the alerts
+   * token with the activity chat ID (or vice versa).
+   */
+  private getBotConfig(channel: EventChannel): BotConfig {
+    if (channel === 'alerts') {
+      const token = this.config.get<string>('app.telegram.alertsBotToken') ?? '';
+      const chatId = this.config.get<string>('app.telegram.alertsChatId') ?? '';
+      return { token, chatId, configured: !!token };
+    }
+    const token = this.config.get<string>('app.telegram.activityBotToken') ?? '';
+    const chatId = this.config.get<string>('app.telegram.activityChatId') ?? '';
+    return { token, chatId, configured: !!token };
+  }
+
+  /** Public read of per-channel config (no token leak — only flags). */
+  getChannelConfigState(): {
+    enabled: boolean;
+    alertsBotConfigured: boolean;
+    activityBotConfigured: boolean;
+  } {
+    return {
+      enabled: this.enabled,
+      alertsBotConfigured: this.getBotConfig('alerts').configured,
+      activityBotConfigured: this.getBotConfig('activity').configured,
+    };
   }
 
   onModuleInit() {
@@ -83,6 +147,13 @@ export class TelegramNotificationService implements OnModuleInit {
   async send(args: SendArgs): Promise<{ id: string; status: string }> {
     const channel = args.channel;
     const severity = EVENT_REGISTRY[args.eventType]?.severity ?? channel;
+    const bot = this.getBotConfig(channel);
+
+    // Skip semantics: kill-switch off OR this channel's bot has no
+    // token. We mark `skipped` (not `failed`) because both of these
+    // are operator config gaps rather than send-time errors — the
+    // event isn't worth retrying until the operator fixes the env.
+    const willSkip = !this.enabled || !bot.configured;
 
     const event = await this.prisma.notificationEvent.create({
       data: {
@@ -92,13 +163,19 @@ export class TelegramNotificationService implements OnModuleInit {
         title: args.title,
         body: args.body,
         contextJson: (args.context ?? null) as any,
-        status: this.enabled && this.botToken ? 'pending' : 'skipped',
+        status: willSkip ? 'skipped' : 'pending',
+        // Surface why we skipped so the UI feed shows it.
+        lastError: willSkip
+          ? !this.enabled
+            ? 'TELEGRAM_ENABLED=false (master kill-switch)'
+            : `${channel} bot token not configured`
+          : null,
       },
     });
 
-    if (!this.enabled || !this.botToken) {
+    if (willSkip) {
       this.logger.debug(
-        `Telegram skipped (enabled=${this.enabled}, hasToken=${!!this.botToken}) for ${args.eventType}`,
+        `Telegram skipped (enabled=${this.enabled}, ${channel}BotConfigured=${bot.configured}) for ${args.eventType}`,
       );
       return { id: event.id, status: 'skipped' };
     }
@@ -124,21 +201,36 @@ export class TelegramNotificationService implements OnModuleInit {
 
   /** Single attempt — returns true on 2xx, false otherwise. */
   private async attemptSend(eventId: string, args: SendArgs): Promise<boolean> {
-    const chatId = this.chatIds[args.channel];
-    if (!chatId) {
-      await this.markFailed(eventId, `No chat ID configured for channel '${args.channel}'`);
+    // M11.5.1 — resolve token + chatId together so we can never
+    // mis-pair (e.g. alerts token + activity chatId → 403). The
+    // resolver re-reads on every call so an operator fixing .env
+    // mid-flight gets picked up by the retry processor.
+    const bot = this.getBotConfig(args.channel);
+    if (!bot.configured) {
+      await this.markFailed(
+        eventId,
+        `${args.channel} bot token not configured`,
+      );
+      return false;
+    }
+    if (!bot.chatId) {
+      await this.markFailed(
+        eventId,
+        `No chat ID configured for channel '${args.channel}'`,
+      );
       return false;
     }
 
     // Per-chat rate limit (1 msg/sec). If we'd exceed it, sleep
     // until the bucket refills. Cheap when we're idle, prevents
     // 429 storms when bursts of events fire (e.g. bulk approve).
-    const last = this.lastSentAt.get(chatId) ?? 0;
+    // The bucket is keyed by chatId — already unique per channel.
+    const last = this.lastSentAt.get(bot.chatId) ?? 0;
     const wait = PER_CHAT_INTERVAL_MS - (Date.now() - last);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 
     const text = this.formatMessage(args);
-    const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+    const url = `https://api.telegram.org/bot${bot.token}/sendMessage`;
 
     let response: Response;
     try {
@@ -148,7 +240,7 @@ export class TelegramNotificationService implements OnModuleInit {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chat_id: chatId,
+          chat_id: bot.chatId,
           text,
           parse_mode: 'MarkdownV2',
           disable_web_page_preview: true,
@@ -156,7 +248,7 @@ export class TelegramNotificationService implements OnModuleInit {
         signal: controller.signal,
       });
       clearTimeout(timer);
-      this.lastSentAt.set(chatId, Date.now());
+      this.lastSentAt.set(bot.chatId, Date.now());
     } catch (e) {
       // Network error — retryable.
       await this.markPendingRetry(eventId, `Network error: ${(e as Error).message}`);
@@ -196,7 +288,12 @@ export class TelegramNotificationService implements OnModuleInit {
    * is slow.
    */
   private async processRetryQueue(): Promise<void> {
-    if (!this.enabled || !this.botToken) return;
+    if (!this.enabled) return;
+    // M11.5.1 — don't pre-filter by bot config here. We may be sending
+    // Alerts (configured) and Activity (not configured); skipping the
+    // whole tick when one bot is missing would starve the other.
+    // attemptSend() resolves bot config per-row and marks individual
+    // rows as failed if their bot is missing.
     const candidates = await this.prisma.notificationEvent.findMany({
       where: { status: 'pending', attemptCount: { lt: MAX_ATTEMPTS } },
       orderBy: { createdAt: 'asc' },
