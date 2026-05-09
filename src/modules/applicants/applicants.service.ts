@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { EmailService } from '../email/email.service';
+import { NotificationEmitterService } from '../notifications/notification-emitter.service';
 import type {
   CreateApplicantDto,
   UpdateApplicantDto,
@@ -56,6 +57,7 @@ export class ApplicantsService {
     private readonly storageService: StorageService,
     private readonly auditLogsService: AuditLogsService,
     private readonly emailService: EmailService,
+    private readonly notificationEmitter: NotificationEmitterService,
   ) {}
 
   /**
@@ -786,6 +788,15 @@ export class ApplicantsService {
         replaced: !!existingVisa,
       },
     );
+
+    // M11.5 — fire Activity channel notification.
+    void this.notificationEmitter.emit('app.visa_issued', {
+      applicationId,
+      applicantId,
+      actorUserId: userId,
+      referenceNumber: dto.referenceNumber ?? null,
+      replaced: !!existingVisa,
+    });
 
     return {
       documentId: newDoc.id,

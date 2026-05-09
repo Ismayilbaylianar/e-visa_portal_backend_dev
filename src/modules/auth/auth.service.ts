@@ -18,6 +18,7 @@ import { ErrorCodes } from '@/common/constants';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { EmailService } from '../email/email.service';
+import { NotificationEmitterService } from '../notifications/notification-emitter.service';
 
 @Injectable()
 export class AuthService {
@@ -33,6 +34,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly auditLogsService: AuditLogsService,
     private readonly emailService: EmailService,
+    private readonly notificationEmitter: NotificationEmitterService,
   ) {
     this.accessSecret = this.configService.get<string>('app.jwt.accessSecret')!;
     this.refreshSecret = this.configService.get<string>('app.jwt.refreshSecret')!;
@@ -63,6 +65,12 @@ export class AuthService {
 
     if (!user) {
       this.logger.warn(`Login failed: user not found for email ${dto.email}`);
+      // M11.5 — track in the brute-force window (in-memory).
+      this.notificationEmitter.recordLoginFailure({
+        ip: ipAddress,
+        email: dto.email,
+        userAgent,
+      });
       throw new UnauthorizedException('Invalid credentials', [
         { reason: ErrorCodes.INVALID_CREDENTIALS, message: 'Email or password is incorrect' },
       ]);
@@ -83,6 +91,11 @@ export class AuthService {
     const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isPasswordValid) {
       this.logger.warn(`Login failed: invalid password for user ${user.id}`);
+      this.notificationEmitter.recordLoginFailure({
+        ip: ipAddress,
+        email: dto.email,
+        userAgent,
+      });
       throw new UnauthorizedException('Invalid credentials', [
         { reason: ErrorCodes.INVALID_CREDENTIALS, message: 'Email or password is incorrect' },
       ]);

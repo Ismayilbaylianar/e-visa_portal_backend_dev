@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { EmailService } from '../email/email.service';
+import { NotificationEmitterService } from '../notifications/notification-emitter.service';
 import {
   CreateApplicationDto,
   UpdateApplicationDto,
@@ -28,6 +29,7 @@ export class ApplicationsService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly emailService: EmailService,
+    private readonly notificationEmitter: NotificationEmitterService,
   ) {}
 
   private generateResumeToken(): string {
@@ -564,6 +566,19 @@ export class ApplicationsService {
     });
 
     this.logger.log(`Application submitted: ${id}`);
+
+    // M11.5 — surface to the Activity Telegram channel + admin feed.
+    void this.notificationEmitter.emit('app.submitted', {
+      applicationId: id,
+      applicationCode: updatedApplication.applicants[0]?.applicationCode,
+      email: updatedApplication.portalIdentity?.email,
+      destinationName: updatedApplication.destinationCountry?.name,
+      visaTypeName: updatedApplication.visaType?.label,
+      applicantCount: updatedApplication.applicants.length,
+      totalAmount: updatedApplication.totalFeeAmount?.toString?.() ?? null,
+      currency: updatedApplication.currencyCode,
+    });
+
     return this.mapToResponse(updatedApplication);
   }
 
@@ -703,6 +718,14 @@ export class ApplicationsService {
     );
 
     this.logger.log(`Application approved: ${id} by admin ${adminUserId}`);
+
+    void this.notificationEmitter.emit('app.approved', {
+      applicationId: id,
+      applicationCode: updatedApplication.applicants?.[0]?.applicationCode,
+      actorUserId: adminUserId,
+      applicantCount: updatedApplication.applicants?.length ?? 0,
+    });
+
     return this.mapToResponse(updatedApplication);
   }
 
@@ -772,6 +795,14 @@ export class ApplicationsService {
     );
 
     this.logger.log(`Application rejected: ${id} by admin ${adminUserId}`);
+
+    void this.notificationEmitter.emit('app.rejected', {
+      applicationId: id,
+      applicationCode: updatedApplication.applicants?.[0]?.applicationCode,
+      reason: dto.reason,
+      actorUserId: adminUserId,
+    });
+
     return this.mapToResponse(updatedApplication);
   }
 

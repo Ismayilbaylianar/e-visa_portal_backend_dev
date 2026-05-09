@@ -9,6 +9,7 @@ import { AuditLogsModule } from '../auditLogs/audit-logs.module';
 import { EmailModule } from '../email/email.module';
 import { ApplicantsModule } from '../applicants/applicants.module';
 import { CustomerPortalModule } from '../customerPortal/customer-portal.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -23,6 +24,8 @@ import { CustomerPortalModule } from '../customerPortal/customer-portal.module';
     // Module 9b — resubmit endpoint lives in ApplicationsPortalController
     // (URL group fits there) but its logic is in CustomerPortalService.
     CustomerPortalModule,
+    // M11.5 — emit Telegram events on submit/approve/reject.
+    NotificationsModule,
   ],
   controllers: [ApplicationsAdminController, ApplicationsPortalController],
   providers: [ApplicationsService],

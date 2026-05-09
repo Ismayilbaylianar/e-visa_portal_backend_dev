@@ -5,15 +5,25 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { BaseException } from '../exceptions';
 import { ErrorCodes } from '../constants';
 import { ApiErrorResponse, ApiErrorDetail } from '../types';
+import { NotificationEmitterService } from '../../modules/notifications/notification-emitter.service';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
+
+  constructor(
+    // M11.5 — optional so the existing `new GlobalExceptionFilter()`
+    // bootstrap in main.ts keeps compiling. When wired through
+    // `APP_FILTER` instead, Nest injects the real emitter.
+    @Optional()
+    private readonly notificationEmitter?: NotificationEmitterService,
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -75,6 +85,22 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     this.logger.error(
       `[${requestId}] ${request.method} ${request.url} - ${statusCode} - ${message}`,
     );
+
+    // M11.5 — surface 5xx to the Alerts Telegram channel + admin
+    // feed. We deliberately strip the stack trace before sending —
+    // server logs already have it; Telegram is one-step-from-public.
+    if (statusCode >= 500 && this.notificationEmitter) {
+      const userIdFromAuth = (request as any).user?.id;
+      void this.notificationEmitter.emit('system.error_5xx', {
+        method: request.method,
+        path: request.originalUrl ?? request.url,
+        status: statusCode,
+        message,
+        requestId,
+        userId: userIdFromAuth,
+        ip: (request.headers['x-forwarded-for'] as string) ?? request.ip,
+      });
+    }
 
     response.status(statusCode).json(errorResponse);
   }

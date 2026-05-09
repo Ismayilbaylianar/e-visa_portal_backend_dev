@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuditLogsModule } from '../auditLogs/audit-logs.module';
 import { EmailModule } from '../email/email.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -24,6 +25,8 @@ import { EmailModule } from '../email/email.module';
     // and use the existing Resend SMTP wiring (Module 4).
     AuditLogsModule,
     EmailModule,
+    // M11.5 — login-failure brute-force tracker.
+    NotificationsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

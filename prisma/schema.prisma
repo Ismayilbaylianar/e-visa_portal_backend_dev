@@ -1127,6 +1127,51 @@ model JobExecution {
   @@map("job_executions")
 }
 
+/// M11.5 — Twin-channel Telegram notifications.
+/// Append-only log of every event the platform fires; the admin
+/// /notifications page renders this directly. The `status` column
+/// drives the retry processor (`pending` → `sent` | `failed`) and
+/// the `skipped` state when TELEGRAM_ENABLED=false (so the UI feed
+/// keeps working when Telegram is muted).
+model NotificationEvent {
+  id           String    @id @default(uuid())
+  /// e.g. `app.submitted`, `payment.failed`. Stable string key from
+  /// EVENT_REGISTRY in src/modules/notifications/event-registry.ts.
+  eventType    String    @map("event_type")
+  /// `alert` | `activity` — drives sidebar grouping in the UI feed.
+  severity     String
+  /// `alerts` | `activity` — which Telegram channel this targets.
+  channel      String
+  title        String
+  body         String
+  contextJson  Json?     @map("context_json")
+  status       String    @default("pending")
+  attemptCount Int       @default(0) @map("attempt_count")
+  lastError    String?   @map("last_error")
+  sentAt       DateTime? @map("sent_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@index([channel, createdAt(sort: Desc)])
+  @@index([severity, createdAt(sort: Desc)])
+  @@index([eventType])
+  @@map("notification_events")
+}
+
+/// M11.5 — admin per-event-type toggle. Seeded from EVENT_REGISTRY;
+/// admin can flip any row off via /admin/settings → Notifications.
+/// Soft-disable (the row stays, `enabled=false`) so the UI feed's
+/// list of "what events exist" survives toggling.
+model NotificationSetting {
+  eventType   String   @id @map("event_type")
+  enabled     Boolean  @default(true)
+  channel     String
+  description String?
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("notification_settings")
+}
+
 model AuditLog {
   id           String    @id @default(uuid())
   actorUserId  String?   @map("actor_user_id")

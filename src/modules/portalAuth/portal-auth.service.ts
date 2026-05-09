@@ -6,6 +6,7 @@ import { OtpService } from '../otp/otp.service';
 import { PortalSessionsService } from '../portalSessions/portal-sessions.service';
 import { EmailService } from '../email/email.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
+import { NotificationEmitterService } from '../notifications/notification-emitter.service';
 import { SendOtpDto, VerifyOtpDto, PortalAuthResponseDto, SendOtpResponseDto } from './dto';
 import {
   UnauthorizedException,
@@ -40,6 +41,7 @@ export class PortalAuthService {
     private readonly portalSessionsService: PortalSessionsService,
     private readonly emailService: EmailService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly notificationEmitter: NotificationEmitterService,
   ) {
     this.OTP_EXPIRY_MINUTES = this.configService.get<number>('OTP_EXPIRY_MINUTES', 10);
     this.OTP_RESEND_COOLDOWN_SECONDS = this.configService.get<number>(
@@ -275,6 +277,12 @@ export class PortalAuthService {
         },
       });
       this.logger.log(`New portal identity created: ${portalIdentity.id}`);
+      // M11.5 — first-time portal user surfaces to the Activity feed.
+      void this.notificationEmitter.emit('customer.registered', {
+        portalIdentityId: portalIdentity.id,
+        email,
+        ip: ipAddress,
+      });
     } else {
       // Update last verified
       portalIdentity = await this.prisma.portalIdentity.update({

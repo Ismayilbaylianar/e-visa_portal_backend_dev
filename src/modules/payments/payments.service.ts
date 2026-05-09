@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
+import { NotificationEmitterService } from '../notifications/notification-emitter.service';
 import {
   CreatePaymentDto,
   InitializePaymentDto,
@@ -30,6 +31,7 @@ export class PaymentsService {
     private readonly configService: ConfigService,
     @Inject(MockPaymentProvider) private readonly mockProvider: MockPaymentProvider,
     private readonly auditLogsService: AuditLogsService,
+    private readonly notificationEmitter: NotificationEmitterService,
   ) {
     this.paymentTimeoutHours = this.configService.get<number>('PAYMENT_TIMEOUT_HOURS', 3);
 
@@ -762,6 +764,28 @@ export class PaymentsService {
     });
 
     this.logger.log(`Payment ${paymentId} status updated: ${oldStatus} -> ${newStatus}`);
+
+    // M11.5 — Telegram notifications. Fired AFTER the transaction
+    // commits so a delivery failure can't roll back a real payment.
+    if (newStatus === PaymentStatus.PAID) {
+      void this.notificationEmitter.emit('payment.received', {
+        paymentId,
+        applicationId: payment.applicationId,
+        paymentReference: payment.paymentReference,
+        amount: payment.totalAmount?.toString?.(),
+        currency: payment.currencyCode,
+        provider: payment.paymentProviderKey,
+      });
+    } else if (newStatus === PaymentStatus.FAILED) {
+      void this.notificationEmitter.emit('payment.failed', {
+        paymentId,
+        applicationId: payment.applicationId,
+        paymentReference: payment.paymentReference,
+        amount: payment.totalAmount?.toString?.(),
+        currency: payment.currencyCode,
+        reason,
+      });
+    }
   }
 
   /**

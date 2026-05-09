@@ -4,7 +4,9 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+// M11.5 — GlobalExceptionFilter is now registered via APP_FILTER in
+// AppModule (see app.module.ts) so it can DI-inject the notification
+// emitter for 5xx Telegram alerts.
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor';
 
@@ -47,8 +49,10 @@ async function bootstrap() {
   // Global interceptors
   app.useGlobalInterceptors(new RequestIdInterceptor(), new TransformInterceptor());
 
-  // Global filters
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  // M11.5 — Global filter is now registered as APP_FILTER inside
+  // AppModule so Nest DI can inject NotificationEmitterService for
+  // 5xx Telegram alerts. Keeping this line here would shadow the
+  // DI'd one with a non-DI'd instance (no emitter).
 
   // CORS
   app.enableCors({

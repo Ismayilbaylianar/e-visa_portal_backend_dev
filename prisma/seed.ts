@@ -124,6 +124,13 @@ const PERMISSIONS = [
   // M11.1 — Homepage slides (countryPages.update is reused for hero images)
   { moduleKey: 'homepageSlides', actionKey: 'read', description: 'View homepage carousel slides' },
   { moduleKey: 'homepageSlides', actionKey: 'update', description: 'Create, edit, reorder, publish, or delete homepage slides' },
+
+  // M11.5 — Telegram twin-feed notifications. Single permission key
+  // gates the entire admin surface (feed page, dashboard widgets,
+  // settings toggles, test message endpoint). Granted to superAdmin
+  // only by default; admin/operator do not see the page or the
+  // dashboard widgets.
+  { moduleKey: 'notifications', actionKey: 'manage', description: 'View notification feed, send test messages, and toggle per-event delivery' },
 ];
 
 // Role definitions with their permissions
@@ -361,6 +368,13 @@ async function main() {
   // forced-change modal). Demo creds above stay around for
   // development convenience but production logs in with these.
   await seedProductionSuperAdmins(roleMap);
+
+  // ─── M11.5 — Telegram notification per-event toggles ───
+  // Idempotent: each row is upserted by event_type. Editing
+  // descriptions or default-enabled in the registry will reflect on
+  // re-seed, but admin toggle state is preserved (we never touch
+  // `enabled` after the row first exists).
+  await seedNotificationSettings();
 
   console.log('\n✨ Seed completed successfully!\n');
 
@@ -2688,6 +2702,65 @@ async function seedProductionSuperAdmins(roleMap: Map<string, string>): Promise<
     console.log('');
   }
   console.log('═══════════════════════════════════════════\n');
+}
+
+/**
+ * M11.5 — registry of notification event types. Mirrors
+ * src/modules/notifications/event-registry.ts (which is the runtime
+ * source of truth). Duplicated here so the seed has no runtime
+ * dependency on the Nest module graph. Keep in sync — adding an
+ * event requires updating both files.
+ */
+const NOTIFICATION_EVENT_SEEDS: Array<{
+  eventType: string;
+  channel: 'alerts' | 'activity';
+  description: string;
+  defaultEnabled: boolean;
+}> = [
+  // Alerts
+  { eventType: 'system.error_5xx',           channel: 'alerts',   description: 'HTTP 5xx server error',                                  defaultEnabled: true },
+  { eventType: 'payment.failed',             channel: 'alerts',   description: 'Payment processing failed',                              defaultEnabled: true },
+  { eventType: 'auth.login_failed_repeated', channel: 'alerts',   description: 'Repeated login failures (possible brute force)',         defaultEnabled: true },
+  { eventType: 'db.error',                   channel: 'alerts',   description: 'Database error',                                         defaultEnabled: true },
+  { eventType: 'health.check_failed',        channel: 'alerts',   description: 'Health check failure',                                   defaultEnabled: true },
+  // Activity
+  { eventType: 'app.submitted',              channel: 'activity', description: 'New application submitted for review',                   defaultEnabled: true },
+  { eventType: 'payment.received',           channel: 'activity', description: 'Payment received',                                       defaultEnabled: true },
+  { eventType: 'app.approved',               channel: 'activity', description: 'Application approved',                                   defaultEnabled: true },
+  { eventType: 'app.rejected',               channel: 'activity', description: 'Application rejected',                                   defaultEnabled: true },
+  { eventType: 'app.visa_issued',            channel: 'activity', description: 'Visa issued (PDF uploaded for applicant)',               defaultEnabled: true },
+  { eventType: 'customer.registered',        channel: 'activity', description: 'New customer portal identity created',                   defaultEnabled: true },
+];
+
+async function seedNotificationSettings(): Promise<void> {
+  console.log('\n🔔 M11.5 — notification toggles:');
+  let createdCount = 0;
+  let preservedCount = 0;
+  for (const spec of NOTIFICATION_EVENT_SEEDS) {
+    const existing = await prisma.notificationSetting.findUnique({
+      where: { eventType: spec.eventType },
+    });
+    if (existing) {
+      // Refresh description + channel only — never touch admin's
+      // `enabled` choice on re-seed.
+      await prisma.notificationSetting.update({
+        where: { eventType: spec.eventType },
+        data: { description: spec.description, channel: spec.channel },
+      });
+      preservedCount++;
+    } else {
+      await prisma.notificationSetting.create({
+        data: {
+          eventType: spec.eventType,
+          channel: spec.channel,
+          description: spec.description,
+          enabled: spec.defaultEnabled,
+        },
+      });
+      createdCount++;
+    }
+  }
+  console.log(`  Notification settings: ${createdCount} new + ${preservedCount} preserved`);
 }
 
 main()

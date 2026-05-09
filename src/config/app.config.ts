@@ -60,4 +60,23 @@ export const appConfig = registerAs('app', () => ({
       fromName: process.env.SMTP_FROM_NAME || 'Visa Portal',
     },
   },
+
+  // M11.5 — Telegram notifications.
+  // - `botToken` is sensitive and supplied via .env at runtime
+  //   (Anar adds it on the prod box after this module deploys).
+  // - The two chat IDs ARE the real production routing identifiers
+  //   for the private Alerts + Activity channels; safe to commit.
+  // - `enabled` is the master kill-switch — when false, every event
+  //   still records a `status='skipped'` row so the admin /notifications
+  //   feed continues working (Telegram is just suppressed).
+  // - `adminBaseUrl` is the public-facing admin URL we link to in
+  //   notifications. Kept here so the Telegram service can construct
+  //   "open in admin" deep-links.
+  telegram: {
+    enabled: (process.env.TELEGRAM_ENABLED ?? 'false').toLowerCase() === 'true',
+    botToken: process.env.TELEGRAM_BOT_TOKEN || '',
+    alertsChatId:   process.env.TELEGRAM_ALERTS_CHAT_ID   || '-1003745374795',
+    activityChatId: process.env.TELEGRAM_ACTIVITY_CHAT_ID || '-1003907564535',
+    adminBaseUrl:   process.env.ADMIN_BASE_URL || 'https://evisaglobal.com',
+  },
 }));

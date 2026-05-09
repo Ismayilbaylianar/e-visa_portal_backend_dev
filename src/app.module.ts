@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { appConfig } from './config/app.config';
 import { dbConfig } from './config/db.config';
 import { swaggerConfig } from './config/swagger.config';
 import { ThrottlerBehindProxyGuard } from './common/guards';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
 // Core modules
 import { PrismaModule } from './modules/prisma/prisma.module';
@@ -171,6 +172,14 @@ import { HomepageSlidesModule } from './modules/homepageSlides/homepage-slides.m
     {
       provide: APP_GUARD,
       useClass: ThrottlerBehindProxyGuard,
+    },
+    // M11.5 — register the global exception filter via DI so it can
+    // inject NotificationEmitterService and fire `system.error_5xx`
+    // Telegram alerts on 5xx responses. Replaces the manual
+    // `app.useGlobalFilters(new GlobalExceptionFilter())` in main.ts.
+    {
+      provide: APP_FILTER,
+      useClass: GlobalExceptionFilter,
     },
   ],
 })
