@@ -61,36 +61,95 @@ export class ApplicantsService {
   ) {}
 
   /**
-   * Generate unique application code for an applicant
-   * Format: APP-YYYY-NNNNNN (e.g., APP-2026-000001)
+   * Generate unique application code for an applicant.
+   * Format: APP-YYYY-NNNNNN (e.g., APP-2026-000001).
    *
-   * Application code is generated when applicant is created.
+   * History — M11.6 hotfix:
+   *   The original implementation did `findFirst orderBy code desc`
+   *   then `parseInt(suffix)`. That broke in production once any
+   *   non-numeric legacy code (e.g. `APP-2026-M9SMOKE` from a Module 9
+   *   smoke test) existed: in lexicographic sort `M9SMOKE` outranks
+   *   `000001`, parseInt returned NaN, the function fell back to
+   *   `nextNumber=1`, and every new applicant tried to insert
+   *   `APP-2026-000001` → unique violation, hard test blocked.
+   *
+   * Fix: scan only numeric-suffix codes for the year (regex match
+   * inside the application layer since Prisma's `where` doesn't
+   * support PostgreSQL's `~` operator portably). The DB already has
+   * an index on `application_code`; we order by created_at desc and
+   * walk a small window of recent rows — for the production cardinality
+   * this is fine, and the overhead is bounded.
+   *
+   * Defense in depth: callers wrap `applicantApplicant.create()` in
+   * `withCodeRetry()` so any remaining race (concurrent inserts in
+   * a multi-applicant submission) regenerates and retries instead
+   * of bubbling P2002 to the user.
    */
   private async generateApplicationCode(): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `APP-${year}-`;
 
-    // Find the highest existing code for this year
-    const lastApplicant = await this.prisma.applicationApplicant.findFirst({
+    // Pull a window of recent same-year codes (any format) and find
+    // the largest numeric suffix. 200 rows is a generous safety margin
+    // — multi-applicant submissions only ever insert a handful at
+    // a time, and old test codes (M9SMOKE etc.) get filtered out.
+    const candidates = await this.prisma.applicationApplicant.findMany({
       where: {
-        applicationCode: {
-          startsWith: prefix,
-        },
+        applicationCode: { startsWith: prefix },
       },
-      orderBy: {
-        applicationCode: 'desc',
-      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: { applicationCode: true },
     });
 
-    let nextNumber = 1;
-    if (lastApplicant?.applicationCode) {
-      const lastNumber = parseInt(lastApplicant.applicationCode.replace(prefix, ''), 10);
-      if (!isNaN(lastNumber)) {
-        nextNumber = lastNumber + 1;
-      }
+    let maxNumber = 0;
+    for (const c of candidates) {
+      if (!c.applicationCode) continue;
+      const suffix = c.applicationCode.slice(prefix.length);
+      // Only consider strictly-numeric suffixes; ignore anything
+      // alphanumeric (legacy test codes like M9SMOKE) so the
+      // counter advances cleanly.
+      if (!/^\d+$/.test(suffix)) continue;
+      const n = parseInt(suffix, 10);
+      if (Number.isFinite(n) && n > maxNumber) maxNumber = n;
     }
 
+    const nextNumber = maxNumber + 1;
     return `${prefix}${nextNumber.toString().padStart(6, '0')}`;
+  }
+
+  /**
+   * M11.6 — wrap an applicant create that uses `applicationCode`
+   * in a small retry loop. The generator above is now correct
+   * against legacy codes, but two concurrent multi-applicant
+   * inserts can still both compute the same `nextNumber` before
+   * either commits. Retry on Prisma P2002 (unique violation) for
+   * the application_code column, regenerating each time.
+   */
+  private async withCodeRetry<T>(
+    fn: (applicationCode: string) => Promise<T>,
+  ): Promise<T> {
+    const MAX_ATTEMPTS = 5;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const code = await this.generateApplicationCode();
+      try {
+        return await fn(code);
+      } catch (e: any) {
+        // Prisma raises P2002 with `target: ['application_code']`
+        // on the duplicate. Anything else bubbles up untouched.
+        const isCodeCollision =
+          e?.code === 'P2002' &&
+          Array.isArray(e?.meta?.target) &&
+          e.meta.target.includes('application_code');
+        if (!isCodeCollision) throw e;
+        lastError = e;
+        this.logger.warn(
+          `applicationCode collision on attempt ${attempt + 1}/${MAX_ATTEMPTS} — regenerating`,
+        );
+      }
+    }
+    throw lastError;
   }
 
   /**
@@ -252,25 +311,29 @@ export class ApplicantsService {
       }
     }
 
-    // Generate unique application code
-    const applicationCode = await this.generateApplicationCode();
-
-    const applicant = await this.prisma.applicationApplicant.create({
-      data: {
-        applicationId,
-        isMainApplicant: dto.isMainApplicant ?? false,
-        email: dto.email,
-        phone: dto.phone,
-        formDataJson: dto.formDataJson,
-        status: ApplicantStatus.DRAFT,
-        applicationCode,
-      },
-      include: {
-        documents: {
-          where: { deletedAt: null },
+    // M11.6 — generate + insert under retry. The generator now
+    // ignores legacy non-numeric codes (e.g. APP-2026-M9SMOKE) so
+    // the first attempt is correct against existing data; the
+    // retry loop guards against concurrent inserts in a multi-
+    // applicant submission both computing the same nextNumber.
+    const applicant = await this.withCodeRetry((applicationCode) =>
+      this.prisma.applicationApplicant.create({
+        data: {
+          applicationId,
+          isMainApplicant: dto.isMainApplicant ?? false,
+          email: dto.email,
+          phone: dto.phone,
+          formDataJson: dto.formDataJson,
+          status: ApplicantStatus.DRAFT,
+          applicationCode,
         },
-      },
-    });
+        include: {
+          documents: {
+            where: { deletedAt: null },
+          },
+        },
+      }),
+    );
 
     // Create initial status history
     await this.prisma.applicantStatusHistory.create({
@@ -283,7 +346,9 @@ export class ApplicantsService {
       },
     });
 
-    this.logger.log(`Applicant created: ${applicant.id} with code: ${applicationCode}`);
+    this.logger.log(
+      `Applicant created: ${applicant.id} with code: ${applicant.applicationCode}`,
+    );
     return this.mapToResponse(applicant);
   }
 
