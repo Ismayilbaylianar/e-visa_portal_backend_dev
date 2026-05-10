@@ -94,7 +94,11 @@ export class EmailConfigService implements OnModuleInit {
         user: this.configService.get<string>('SMTP_USER', ''),
         pass: this.configService.get<string>('SMTP_PASS', ''),
         fromEmail: this.configService.get<string>('SMTP_FROM_EMAIL', ''),
-        fromName: this.configService.get<string>('SMTP_FROM_NAME', 'Visa Portal'),
+        // M11.10 — brand default. SMTP_FROM_NAME on prod takes
+        // precedence; this fallback only kicks in if the env var
+        // isn't set. Updated from "Visa Portal" so any environment
+        // without the var still ships the correct brand.
+        fromName: this.configService.get<string>('SMTP_FROM_NAME', 'E-Visa Global'),
       },
       otp: {
         resendCooldownSeconds: parseInt(

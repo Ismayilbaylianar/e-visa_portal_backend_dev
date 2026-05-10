@@ -39,7 +39,9 @@ export class SmtpEmailProvider implements EmailProvider, OnModuleInit {
     this.user = this.configService.get<string>('SMTP_USER', '');
     this.pass = this.configService.get<string>('SMTP_PASS', '');
     this.fromEmail = this.configService.get<string>('SMTP_FROM_EMAIL', '');
-    this.fromName = this.configService.get<string>('SMTP_FROM_NAME', 'Visa Portal');
+    // M11.10 — brand default; see email-config.service.ts for
+    // rationale.
+    this.fromName = this.configService.get<string>('SMTP_FROM_NAME', 'E-Visa Global');
   }
 
   async onModuleInit(): Promise<void> {
