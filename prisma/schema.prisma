@@ -729,6 +729,13 @@ model Setting {
 
 model Application {
   id                      String            @id @default(uuid())
+  /// M11.10 (BUG 4) — Booking-level reference code (REF-YYYY-NNNNNN).
+  /// One per booking, shared by every applicant in it. Customer
+  /// /tracks by EITHER this code or any per-applicant
+  /// `application_applicants.application_code` — the lookup endpoint
+  /// matches both columns. Nullable because pre-M11.10 rows pre-date
+  /// the column; the migration backfills them.
+  referenceCode           String?           @unique @map("reference_code")
   portalIdentityId        String            @map("portal_identity_id")
   nationalityCountryId    String            @map("nationality_country_id")
   destinationCountryId    String            @map("destination_country_id")
@@ -1281,6 +1288,20 @@ model ContactInfo {
   supportHours     String?  @map("support_hours")
   // socialLinks shape: { facebook?, twitter?, instagram?, linkedin?, ... }
   socialLinksJson  Json?    @map("social_links_json")
+  // M11.10 (BUG 7) — Secondary contact channels. Pragmatic scope cut
+  // vs the full dynamic-channels feature in the brief: covers the
+  // actual reported pain ("I want a Phone 2 / Email 2 / Telegram /
+  // sales address"). Each is independently nullable so admins keep
+  // the M11.7 hide-when-blank behavior on the public /contact page.
+  // Full dynamic channel-types (CRUD-able list per type) is queued
+  // for post-launch.
+  email2           String?  @map("email_2")
+  phone2           String?  @map("phone_2")
+  whatsapp2        String?  @map("whatsapp_2")
+  telegram         String?
+  /// Free-form copy block surfaced under contact entries on /contact —
+  /// e.g. "Sales: anar@... · Emergency: +994 XX XXX..."
+  customNote       String?  @map("custom_note") @db.Text
   updatedAt        DateTime @updatedAt @map("updated_at")
   updatedByUserId  String?  @map("updated_by_user_id")
 

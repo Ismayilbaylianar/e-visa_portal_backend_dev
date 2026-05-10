@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
+import { EmailService } from '../email/email.service';
 import { NotificationEmitterService } from '../notifications/notification-emitter.service';
 import {
   CreatePaymentDto,
@@ -32,6 +33,8 @@ export class PaymentsService {
     @Inject(MockPaymentProvider) private readonly mockProvider: MockPaymentProvider,
     private readonly auditLogsService: AuditLogsService,
     private readonly notificationEmitter: NotificationEmitterService,
+    // M11.10 (BUG 3) — needed by sendPaymentSuccessEmail.
+    private readonly emailService: EmailService,
   ) {
     this.paymentTimeoutHours = this.configService.get<number>('PAYMENT_TIMEOUT_HOURS', 3);
 
@@ -865,6 +868,12 @@ export class PaymentsService {
         currency: payment.currencyCode,
         provider: payment.paymentProviderKey,
       });
+      // M11.10 (BUG 3) — Customer payment confirmation email. Fires
+      // post-commit so a delivery failure never rolls back a real
+      // payment; we log + audit the result either way (see
+      // sendPaymentSuccessEmail). Don't await here so a slow SMTP
+      // hop can't bottleneck the callback handler.
+      void this.sendPaymentSuccessEmail(paymentId);
     } else if (newStatus === PaymentStatus.FAILED) {
       void this.notificationEmitter.emit('payment.failed', {
         paymentId,
@@ -874,6 +883,129 @@ export class PaymentsService {
         currency: payment.currencyCode,
         reason,
       });
+    }
+  }
+
+  /**
+   * M11.10 (BUG 3) — Send the customer payment confirmation email.
+   *
+   * Variables wired into the `payment.success` template (M11.8 EXT):
+   *   fullName, applicationCode, applicationStatus,
+   *   destinationCountry, visaType, ctaUrl
+   *
+   * Plus M11.10 (BUG 6) breakdown variables for the email body:
+   *   amount, currency, governmentFee, serviceFee, expeditedFee
+   *
+   * Emits one `notification.email_sent` audit row per recipient
+   * (portal email + every applicant email, deduped). Mirrors the
+   * pattern in applications.service.sendStatusNotificationEmail so
+   * post-payment + post-status emails behave identically.
+   */
+  private async sendPaymentSuccessEmail(paymentId: string): Promise<void> {
+    try {
+      const payment = await this.prisma.payment.findFirst({
+        where: { id: paymentId, deletedAt: null },
+        include: {
+          application: {
+            include: {
+              portalIdentity: true,
+              destinationCountry: { select: { name: true } },
+              visaType: { select: { label: true } },
+              applicants: {
+                where: { deletedAt: null },
+                orderBy: { isMainApplicant: 'desc' },
+              },
+            },
+          },
+        },
+      });
+      if (!payment?.application) return;
+
+      const app = payment.application;
+      const main = app.applicants?.find((a: any) => a.isMainApplicant) ?? app.applicants?.[0];
+      const applicationCode = main?.applicationCode;
+      if (!applicationCode) {
+        this.logger.warn(`No applicationCode for payment ${paymentId}; skipping email`);
+        return;
+      }
+
+      const fullName = (() => {
+        const data = (main?.formDataJson ?? {}) as Record<string, unknown>;
+        const fn = String(data.firstName ?? '').trim();
+        const ln = String(data.lastName ?? '').trim();
+        return [fn, ln].filter(Boolean).join(' ') || 'Applicant';
+      })();
+
+      const baseUrl = (
+        this.configService.get<string>('FRONTEND_URL') ??
+        this.configService.get<string>('PUBLIC_BASE_URL') ??
+        'https://evisaglobal.com'
+      ).replace(/\/+$/, '');
+
+      // Recipient set: portal email + every applicant.email
+      // (case-insensitive dedup so co-applicants on the same address
+      // don't get double-mailed).
+      const recipients = new Set<string>();
+      if (app.portalIdentity?.email) {
+        recipients.add(app.portalIdentity.email.toLowerCase().trim());
+      }
+      for (const ap of app.applicants ?? []) {
+        if (ap.email) recipients.add(ap.email.toLowerCase().trim());
+      }
+      if (recipients.size === 0) return;
+
+      const variables = {
+        fullName,
+        applicationCode,
+        applicationStatus: 'Payment received',
+        destinationCountry: app.destinationCountry?.name ?? '',
+        visaType: app.visaType?.label ?? '',
+        ctaUrl: `${baseUrl}/track`,
+        // BUG 6 breakdown
+        amount: payment.totalAmount?.toString() ?? '',
+        currency: payment.currencyCode ?? '',
+        governmentFee: payment.governmentFeeAmount?.toString() ?? '',
+        serviceFee: payment.serviceFeeAmount?.toString() ?? '',
+        expeditedFee: payment.expeditedFeeAmount?.toString() ?? '',
+        paymentReference: payment.paymentReference ?? '',
+      };
+
+      for (const recipient of recipients) {
+        try {
+          const result = await this.emailService.sendTemplatedEmail({
+            to: recipient,
+            templateKey: 'payment.success',
+            variables,
+            relatedEntity: 'Payment',
+            relatedEntityId: payment.id,
+          });
+          await this.auditLogsService.logSystemAction(
+            'notification.email_sent',
+            'Payment',
+            payment.id,
+            undefined,
+            {
+              recipient,
+              templateKey: 'payment.success',
+              applicationCode,
+              success: result.success,
+              messageId: result.messageId ?? null,
+              error: result.error ?? null,
+            },
+          );
+          this.logger.log(
+            `[BUG 3] payment.success → ${recipient} (${applicationCode}) ${result.success ? 'ok' : 'fail'}`,
+          );
+        } catch (err) {
+          this.logger.error(
+            `Failed payment.success email to ${recipient}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        `sendPaymentSuccessEmail outer error for ${paymentId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

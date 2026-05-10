@@ -256,33 +256,40 @@ export class ApplicationsService {
 
     const totalFeeAmount = governmentFee + serviceFee + expeditedFee;
 
-    const application = await this.prisma.application.create({
-      data: {
-        portalIdentityId,
-        nationalityCountryId: dto.nationalityCountryId,
-        destinationCountryId: dto.destinationCountryId,
-        visaTypeId: dto.visaTypeId,
-        templateId: templateBinding.templateId,
-        templateBindingId: templateBinding.id,
-        totalFeeAmount,
-        currencyCode: nationalityFee.currencyCode,
-        expedited: dto.expedited ?? false,
-        paymentStatus: PaymentStatus.PENDING,
-        currentStatus: ApplicationStatus.DRAFT,
-        resumeToken: this.generateResumeToken(),
-      },
-      include: {
-        portalIdentity: true,
-        nationalityCountry: true,
-        destinationCountry: true,
-        visaType: true,
-        template: true,
-        applicants: {
-          where: { deletedAt: null },
-          orderBy: { createdAt: 'asc' },
+    // M11.10 (BUG 4) — Generate booking-level reference code
+    // (REF-YYYY-NNNNNN). Same defensive pattern as the M11.6
+    // applicationCode generator: scan recent rows for the year,
+    // pick numeric-only suffixes, take max+1, retry on P2002.
+    const application = await this.withReferenceCodeRetry((referenceCode) =>
+      this.prisma.application.create({
+        data: {
+          referenceCode,
+          portalIdentityId,
+          nationalityCountryId: dto.nationalityCountryId,
+          destinationCountryId: dto.destinationCountryId,
+          visaTypeId: dto.visaTypeId,
+          templateId: templateBinding.templateId,
+          templateBindingId: templateBinding.id,
+          totalFeeAmount,
+          currencyCode: nationalityFee.currencyCode,
+          expedited: dto.expedited ?? false,
+          paymentStatus: PaymentStatus.PENDING,
+          currentStatus: ApplicationStatus.DRAFT,
+          resumeToken: this.generateResumeToken(),
         },
-      },
-    });
+        include: {
+          portalIdentity: true,
+          nationalityCountry: true,
+          destinationCountry: true,
+          visaType: true,
+          template: true,
+          applicants: {
+            where: { deletedAt: null },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      }),
+    );
 
     await this.prisma.applicationStatusHistory.create({
       data: {
@@ -896,11 +903,25 @@ export class ApplicationsService {
       { status: newStatus, note: dto.note, documentTypeKeys: dto.documentTypeKeys },
     );
 
-    // Send notification email
+    // M11.10 (BUG 5) — Compose the email `notes` body from BOTH the
+    // operator's free-form message AND the bulleted list of
+    // requested document type keys. The customer sees:
+    //
+    //   What we need:
+    //   <operator's typed message>
+    //   • passport_photo
+    //   • proof_of_address
+    //
+    // (Bullets render as plain text in the HTML template — the
+    // template wraps {{notes}} in a colored callout.)
+    const requestedDocs = (dto.documentTypeKeys ?? [])
+      .map((key) => `• ${key}`)
+      .join('\n');
+    const composedNote = [dto.note, requestedDocs].filter(Boolean).join('\n\n');
     await this.sendStatusNotificationEmail(
       updatedApplication,
       'Additional Documents Required',
-      dto.note,
+      composedNote,
     );
 
     this.logger.log(`Documents requested for application: ${id} by admin ${adminUserId}`);
@@ -1151,6 +1172,10 @@ export class ApplicationsService {
   private mapToResponse(application: any): ApplicationResponseDto {
     return {
       id: application.id,
+      // M11.10 (BUG 4) — Surface the booking-level reference code so
+      // the success page, /me, and any admin detail view can render
+      // both REF + APP codes side-by-side.
+      referenceCode: application.referenceCode ?? null,
       portalIdentityId: application.portalIdentityId,
       nationalityCountryId: application.nationalityCountryId,
       destinationCountryId: application.destinationCountryId,
@@ -1347,5 +1372,64 @@ export class ApplicationsService {
         : null,
       createdAt: r.createdAt,
     }));
+  }
+
+  /**
+   * M11.10 (BUG 4) — Generate next REF-YYYY-NNNNNN booking code.
+   *
+   * Mirrors the M11.6 application code generator's defensive
+   * pattern: scan a recent window of rows for the current year,
+   * filter to numeric-only suffixes (a corrupt legacy code shouldn't
+   * NaN-poison the max), pick max+1, retry on P2002 unique
+   * collisions (race between two concurrent submissions).
+   */
+  private async generateReferenceCode(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `REF-${year}-`;
+    const recent = await this.prisma.application.findMany({
+      where: {
+        referenceCode: { startsWith: prefix },
+        deletedAt: null,
+      },
+      select: { referenceCode: true },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    let maxNum = 0;
+    for (const row of recent) {
+      const code = row.referenceCode;
+      if (!code) continue;
+      const suffix = code.slice(prefix.length);
+      const numMatch = suffix.match(/^\d+$/);
+      if (!numMatch) continue;
+      const n = parseInt(suffix, 10);
+      if (Number.isFinite(n) && n > maxNum) maxNum = n;
+    }
+    const nextNumber = maxNum + 1;
+    return `${prefix}${nextNumber.toString().padStart(6, '0')}`;
+  }
+
+  private async withReferenceCodeRetry<T>(
+    operation: (referenceCode: string) => Promise<T>,
+    maxAttempts = 5,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const referenceCode = await this.generateReferenceCode();
+      try {
+        return await operation(referenceCode);
+      } catch (err) {
+        lastError = err;
+        // Prisma P2002 = unique constraint violation. Retry with a
+        // fresh code; any other error bubbles immediately.
+        const code = (err as any)?.code;
+        if (code !== 'P2002') throw err;
+        this.logger.warn(
+          `[BUG 4] referenceCode collision on ${referenceCode} (attempt ${attempt}/${maxAttempts}); retrying`,
+        );
+      }
+    }
+    throw lastError;
   }
 }

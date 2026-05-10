@@ -292,6 +292,43 @@ export class DocumentsService {
   }
 
   /**
+   * M11.10 (BUG 1) — Admin variant of getSignedUrl. Same signed URL
+   * issuance as the portal flow, but skips the
+   * `portalIdentityId === application.portalIdentityId` ownership
+   * check because admins legitimately need to view any customer's
+   * uploaded documents. Authorization is enforced at the controller
+   * layer via the `documents.download` permission.
+   *
+   * The returned URL is short-lived (1h, matching portal) and
+   * carries auth in the query string so admins can open it directly
+   * in a new tab — fixes the M11.10 launch-blocker bug where the
+   * frontend's anchor href hit /admin/documents/:id/download without
+   * a Bearer header and got a 401.
+   */
+  async getSignedUrlAdmin(
+    documentId: string,
+    inline = false,
+  ): Promise<string> {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, deletedAt: null },
+    });
+    if (!document) {
+      throw new NotFoundException('Document not found', [
+        { reason: ErrorCodes.DOCUMENT_NOT_FOUND, message: 'Document does not exist' },
+      ]);
+    }
+    const storageKey = this.getStorageKey(document);
+    return this.storageService.getSignedUrl(storageKey, {
+      expiresIn: 3600,
+      // `inline` lets the browser render the file in a new tab
+      // (preview); without it the storage layer defaults to
+      // attachment (download). Both flows are auth'd via the same
+      // signed URL so we don't need separate endpoints.
+      contentDisposition: `${inline ? 'inline' : 'attachment'}; filename="${document.originalFileName}"`,
+    });
+  }
+
+  /**
    * Soft delete a document
    */
   async delete(documentId: string, portalIdentityId: string): Promise<void> {

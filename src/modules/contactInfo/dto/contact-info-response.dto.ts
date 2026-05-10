@@ -45,6 +45,13 @@ export class ContactInfoResponseDto {
   @ApiPropertyOptional({ type: ContactSocialLinksDto })
   socialLinks?: ContactSocialLinksDto;
 
+  // M11.10 (BUG 7) — Secondary contact channels.
+  @ApiPropertyOptional() email2?: string;
+  @ApiPropertyOptional() phone2?: string;
+  @ApiPropertyOptional() whatsapp2?: string;
+  @ApiPropertyOptional() telegram?: string;
+  @ApiPropertyOptional() customNote?: string;
+
   @ApiProperty()
   updatedAt: Date;
 

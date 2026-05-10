@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   Res,
   HttpCode,
   HttpStatus,
@@ -230,6 +231,37 @@ export class DocumentsAdminController {
     });
 
     return new StreamableFile(buffer);
+  }
+
+  /**
+   * M11.10 (BUG 1) — Admin signed URL. Returns a short-lived URL the
+   * frontend can `window.open(...)` directly so a user navigating
+   * straight to the file URL no longer hits a 401 (browsers can't
+   * attach the Bearer header to direct nav). `inline=true` triggers
+   * `Content-Disposition: inline` for in-tab preview of images/PDFs;
+   * default false serves as a download attachment.
+   */
+  @Get(':documentId/url')
+  @RequirePermissions('documents.download')
+  @ApiOperation({
+    summary: 'Get signed URL for document (admin)',
+    description: 'Returns a short-lived signed URL — open in a new tab to preview/download without re-attaching the auth header.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Signed URL',
+    type: DocumentUrlResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  async getSignedUrl(
+    @Param() params: DocumentIdParamDto,
+    @Query('inline') inline?: string,
+  ): Promise<DocumentUrlResponseDto> {
+    const url = await this.documentsService.getSignedUrlAdmin(
+      params.documentId,
+      inline === 'true' || inline === '1',
+    );
+    return { url, expiresIn: 3600 };
   }
 
   @Patch(':documentId/review')

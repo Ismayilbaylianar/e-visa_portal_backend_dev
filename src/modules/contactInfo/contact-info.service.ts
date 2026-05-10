@@ -61,6 +61,12 @@ export class ContactInfoService {
       businessHours: current.businessHours,
       supportHours: current.supportHours,
       socialLinks: current.socialLinks,
+      // M11.10 (BUG 7) — secondary channel snapshot for audit diff.
+      email2: current.email2,
+      phone2: current.phone2,
+      whatsapp2: current.whatsapp2,
+      telegram: current.telegram,
+      customNote: current.customNote,
     };
 
     const updated = await this.prisma.contactInfo.update({
@@ -75,6 +81,13 @@ export class ContactInfoService {
         businessHours: dto.businessHours ?? undefined,
         supportHours: dto.supportHours ?? undefined,
         socialLinksJson: dto.socialLinks ?? undefined,
+        // M11.10 (BUG 7) — secondary channels. `null` clears,
+        // `undefined` leaves untouched (matches existing pattern).
+        email2: dto.email2 === undefined ? undefined : dto.email2 || null,
+        phone2: dto.phone2 === undefined ? undefined : dto.phone2 || null,
+        whatsapp2: dto.whatsapp2 === undefined ? undefined : dto.whatsapp2 || null,
+        telegram: dto.telegram === undefined ? undefined : dto.telegram || null,
+        customNote: dto.customNote === undefined ? undefined : dto.customNote || null,
         updatedByUserId: adminUserId,
       },
     });
@@ -110,6 +123,11 @@ export class ContactInfoService {
     businessHours: string | null;
     supportHours: string | null;
     socialLinksJson: unknown;
+    email2?: string | null;
+    phone2?: string | null;
+    whatsapp2?: string | null;
+    telegram?: string | null;
+    customNote?: string | null;
     updatedAt: Date;
     updatedByUserId: string | null;
   }): ContactInfoResponseDto {
@@ -128,6 +146,14 @@ export class ContactInfoService {
       businessHours: row.businessHours ?? undefined,
       supportHours: row.supportHours ?? undefined,
       socialLinks: social,
+      // M11.10 (BUG 7) — secondary channels surface as nullable so
+      // the public page's M11.7 hide-when-blank logic continues
+      // working unchanged.
+      email2: row.email2 ?? undefined,
+      phone2: row.phone2 ?? undefined,
+      whatsapp2: row.whatsapp2 ?? undefined,
+      telegram: row.telegram ?? undefined,
+      customNote: row.customNote ?? undefined,
       updatedAt: row.updatedAt,
       updatedByUserId: row.updatedByUserId ?? undefined,
     };

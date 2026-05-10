@@ -261,13 +261,18 @@ export class PublicSelectionService {
           destinationCountry: {
             isActive: true,
             deletedAt: null,
-            page: {
-              is: {
-                isActive: true,
-                isPublished: true,
-                deletedAt: null,
-              },
-            },
+            // M11.10 (BUG 2) — DROP the published-CountryPage filter.
+            // Bindings, not country pages, are the source of truth
+            // for "is this destination available for this nationality
+            // to apply to?". The marketing CountryPage is a separate
+            // SEO/landing surface — its absence shouldn't gate the
+            // apply flow. Before this change, admins binding
+            // destinations whose country page wasn't yet published
+            // saw only 1 of N destinations on /apply. Slug stays in
+            // the response (nullable when the page doesn't exist) so
+            // the public site can route to the marketing page when
+            // it exists and to the apply flow directly when it
+            // doesn't.
           },
         },
       },
@@ -280,7 +285,7 @@ export class PublicSelectionService {
                 name: true,
                 isoCode: true,
                 flagEmoji: true,
-                page: { select: { slug: true } },
+                page: { select: { slug: true, isPublished: true } },
               },
             },
           },
@@ -299,7 +304,12 @@ export class PublicSelectionService {
         name: dest.name,
         isoCode: dest.isoCode,
         flagEmoji: dest.flagEmoji ?? undefined,
-        slug: dest.page?.slug,
+        // Only expose the slug when the marketing page is actually
+        // published — otherwise the public router would 404 on
+        // /country/<slug>. Frontend should fall through to the
+        // apply flow when slug is undefined.
+        slug:
+          dest.page && dest.page.isPublished ? dest.page.slug : undefined,
       });
     }
 

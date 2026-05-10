@@ -93,6 +93,19 @@ export class ApplicationResponseDto {
   })
   id: string;
 
+  /**
+   * M11.10 (BUG 4) — Booking-level reference code shared by every
+   * applicant on this booking. Customer-facing surfaces (success
+   * page, /track, /me, post-payment email) lead with this; the
+   * per-applicant `applicants[].applicationCode` is shown alongside.
+   */
+  @ApiProperty({
+    description: 'Booking reference code (REF-YYYY-NNNNNN)',
+    example: 'REF-2026-000001',
+    required: false,
+  })
+  referenceCode?: string | null;
+
   @ApiProperty({
     description: 'Portal identity ID',
     example: '550e8400-e29b-41d4-a716-446655440001',

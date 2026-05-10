@@ -66,4 +66,14 @@ export class UpdateContactInfoDto {
   @IsOptional()
   @IsObject()
   socialLinks?: Record<string, string>;
+
+  // M11.10 (BUG 7) — Secondary contact channels. Pass empty string
+  // to clear; omit to leave untouched. Email2 uses @IsString rather
+  // than @IsEmail so admin can clear with '' (class-validator's
+  // @IsEmail rejects empty string even with @IsOptional).
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(254) email2?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(50) phone2?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(50) whatsapp2?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(50) telegram?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(2000) customNote?: string;
 }

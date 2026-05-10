@@ -10,9 +10,15 @@ export class TrackApplicationDto {
   @IsNotEmpty()
   email: string;
 
+  /**
+   * M11.10 (BUG 4) — Accepts either an applicant code
+   * (APP-YYYY-NNNNNN) or a booking reference code (REF-YYYY-NNNNNN).
+   * Field name kept as `applicationCode` for back-compat with
+   * existing frontend builds that haven't deployed the rename yet.
+   */
   @ApiProperty({
-    description: 'Application code received after submission',
-    example: 'APP-2024-001234',
+    description: 'Reference code (REF-YYYY-NNNNNN) OR application code (APP-YYYY-NNNNNN). The endpoint searches both columns.',
+    example: 'REF-2026-000001',
   })
   @IsString()
   @IsNotEmpty()

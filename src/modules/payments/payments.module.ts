@@ -10,6 +10,7 @@ import { MockPaymentProvider } from './providers';
 import { AuditLogsModule } from '../auditLogs/audit-logs.module';
 import { PortalAuthModule } from '../portalAuth/portal-auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
@@ -18,6 +19,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     PortalAuthModule,
     // M11.5 — payment.received / payment.failed Telegram events.
     NotificationsModule,
+    // M11.10 (BUG 3) — payment.success customer email.
+    EmailModule,
   ],
   controllers: [PaymentsAdminController, PaymentsPortalController, PaymentsPublicController],
   providers: [PaymentsService, MockPaymentProvider],
