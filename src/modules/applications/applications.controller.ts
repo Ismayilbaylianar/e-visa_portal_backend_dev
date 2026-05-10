@@ -386,6 +386,29 @@ export class ApplicationsPortalController {
     return this.applicationsService.findByIdForPortal(params.applicationId, portalIdentity.id);
   }
 
+  /**
+   * M11.12 (BUG O) — Alias for the frontend, which calls
+   * `/portal/applications/:id` (without the `me/` prefix). The
+   * existing `me/applications/:id` route stays for back-compat;
+   * both delegate to `findByIdForPortal` which enforces the portal
+   * identity ownership check. Without this alias the /me document
+   * upload flow 404s when it tries to refresh detail post-upload.
+   */
+  @Get('applications/:applicationId')
+  @ApiOperation({
+    summary: 'Get application by ID (Portal alias)',
+    description:
+      'Same as `me/applications/:applicationId`. Both routes return the application owned by the current portal identity; 404 if it belongs to a different identity. Frontend `portal.ts` calls this shorter path post-upload to refresh detail.',
+  })
+  @ApiResponse({ status: 200, description: 'Application details', type: ApplicationResponseDto })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  async findMyApplicationAlias(
+    @Param() params: ApplicationIdParamDto,
+    @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
+  ): Promise<ApplicationResponseDto> {
+    return this.applicationsService.findByIdForPortal(params.applicationId, portalIdentity.id);
+  }
+
   @Patch('applications/:applicationId')
   @ApiOperation({
     summary: 'Update application',
