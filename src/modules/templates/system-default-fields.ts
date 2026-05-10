@@ -123,12 +123,15 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
       label: 'Date of Birth',
       fieldType: 'date',
       isRequired: true,
-      helpText: 'You must be at least 18 years old',
+      // M11.11 (BUG B) — Removed the +18 minimum so children
+      // travelling with parents can submit. Only constraint is "not
+      // in the future"; destination-specific age policies are
+      // enforced manually by the operator on review.
       validationRulesJson: {
-        max: 'today-18years',
+        max: 'today',
         errorMessages: {
           required: 'Date of birth is required',
-          max: 'You must be at least 18 years old',
+          max: 'Date of birth cannot be in the future',
         },
       },
       sortOrder: 4,
@@ -204,12 +207,17 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
       label: 'Expiry Date',
       fieldType: 'date',
       isRequired: true,
-      helpText: 'Must be valid for at least 6 months from travel date',
+      // M11.11 (BUG B) — Hint kept (informational), but the +6mo
+      // minimum is removed. The cross-field guard on
+      // plannedArrivalDate (max = $passportExpiryDate) still prevents
+      // travel after the passport expires — that's the real
+      // correctness check. Hard-blocking on +6mo at the field level
+      // turned away too many valid applicants whose destination
+      // didn't actually require it.
+      helpText: 'Some destinations require 6 months passport validity — check your destination requirements.',
       validationRulesJson: {
-        min: 'today+6months',
         errorMessages: {
           required: 'Expiry date is required',
-          min: 'Passport must be valid for at least 6 months from today',
         },
       },
       sortOrder: 4,

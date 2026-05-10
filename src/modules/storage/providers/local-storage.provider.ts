@@ -99,7 +99,11 @@ export class LocalStorageProvider implements StorageProvider {
 
       return {
         storageKey: key,
-        url: this.buildUrl(key),
+        // M11.11 (BUG C) — upload result returns the unsigned base
+        // URL; consumers needing access call getSignedUrl() to mint
+        // a token. (Direct unsigned URL would 404 in the new
+        // FilesController which requires a signed token.)
+        url: `${this.baseUrl}/api/v1/files/${this.sanitizePath(key)}`,
         provider: this.providerName,
         etag: hash,
       };
@@ -213,17 +217,111 @@ export class LocalStorageProvider implements StorageProvider {
     }
   }
 
-  async getSignedUrl(key: string, _options?: StorageSignedUrlOptions): Promise<string> {
-    return this.buildUrl(key);
+  async getSignedUrl(key: string, options?: StorageSignedUrlOptions): Promise<string> {
+    return this.buildSignedUrl(key, options);
   }
 
   getBaseUrl(): string {
     return this.baseUrl;
   }
 
-  private buildUrl(key: string): string {
+  /**
+   * M11.11 (BUG C) — HMAC-signed URL for direct file access via the
+   * FilesController. Token format: `<base64url-payload>.<base64url-sig>`
+   * where payload = JSON{ k: storageKey, e: expiryEpochSeconds, d?: 'inline'|'attachment', f?: filename }
+   * and sig = HMAC-SHA256(payload, FILES_SIGNING_SECRET || JWT_SECRET).
+   *
+   * Doesn't depend on JwtService (avoid circular module imports from
+   * the storage layer); plain crypto + HMAC is sufficient since the
+   * URL is short-lived and the secret is only on the server.
+   */
+  private buildSignedUrl(key: string, options?: StorageSignedUrlOptions): string {
     const safePath = this.sanitizePath(key);
-    return `${this.baseUrl}/api/v1/files/${safePath}`;
+    const expiresIn = options?.expiresIn ?? 3600;
+    const expiryEpochSec = Math.floor(Date.now() / 1000) + expiresIn;
+    const disposition = options?.contentDisposition ?? '';
+    const isInline = /^\s*inline/i.test(disposition);
+    const filenameMatch = disposition.match(/filename="([^"]+)"/);
+    const filename = filenameMatch ? filenameMatch[1] : undefined;
+
+    const payload = {
+      k: safePath,
+      e: expiryEpochSec,
+      d: isInline ? 'inline' : 'attachment',
+      ...(filename ? { f: filename } : {}),
+    };
+    const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const secret =
+      this.configService.get<string>('FILES_SIGNING_SECRET') ||
+      this.configService.get<string>('JWT_SECRET') ||
+      '';
+    if (!secret) {
+      this.logger.error('No FILES_SIGNING_SECRET / JWT_SECRET configured — file URLs will fail validation.');
+    }
+    const sig = crypto
+      .createHmac('sha256', secret)
+      .update(payloadB64)
+      .digest('base64url');
+    const token = `${payloadB64}.${sig}`;
+
+    return `${this.baseUrl}/api/v1/files/${safePath}?token=${token}`;
+  }
+
+  /**
+   * M11.11 (BUG C) — Validate a signed token issued by buildSignedUrl.
+   * Returns the decoded payload on success, throws on any failure
+   * (signature mismatch, expired, malformed, key drift).
+   */
+  verifySignedToken(token: string, expectedKey: string): {
+    disposition: 'inline' | 'attachment';
+    filename?: string;
+  } {
+    const [payloadB64, sig] = (token || '').split('.');
+    if (!payloadB64 || !sig) throw new Error('Malformed token');
+    const secret =
+      this.configService.get<string>('FILES_SIGNING_SECRET') ||
+      this.configService.get<string>('JWT_SECRET') ||
+      '';
+    const expectedSig = crypto
+      .createHmac('sha256', secret)
+      .update(payloadB64)
+      .digest('base64url');
+    if (
+      sig.length !== expectedSig.length ||
+      !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))
+    ) {
+      throw new Error('Invalid signature');
+    }
+    let payload: { k: string; e: number; d?: string; f?: string };
+    try {
+      payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+    } catch {
+      throw new Error('Malformed payload');
+    }
+    if (typeof payload.e !== 'number' || payload.e < Math.floor(Date.now() / 1000)) {
+      throw new Error('Token expired');
+    }
+    if (payload.k !== expectedKey) {
+      throw new Error('Token key mismatch');
+    }
+    return {
+      disposition: payload.d === 'inline' ? 'inline' : 'attachment',
+      filename: payload.f,
+    };
+  }
+
+  /**
+   * M11.11 (BUG C) — Stream-friendly read for the FilesController so
+   * it doesn't have to load the whole file into memory before
+   * responding. Used in addition to the existing buffer-based
+   * `download()`.
+   */
+  createReadStream(key: string): NodeJS.ReadableStream {
+    const absolutePath = this.getAbsolutePath(key);
+    if (!fs.existsSync(absolutePath)) {
+      throw new Error(`File not found: ${key}`);
+    }
+    return fs.createReadStream(absolutePath);
   }
 
   private guessContentType(key: string): string {

@@ -44,8 +44,21 @@ import { StorageConfigService } from './storage-config.service';
       },
       inject: [ConfigService],
     },
+    // M11.11 (BUG C) — Register the local provider as a regular
+    // class provider too so FilesController can inject it directly
+    // (it needs `verifySignedToken` + `createReadStream`, which
+    // aren't on the StorageProvider interface). Coexists with the
+    // STORAGE_PROVIDER token: that token returns whichever provider
+    // is configured (could be S3); the class binding here always
+    // resolves to LocalStorageProvider for token verification.
+    LocalStorageProvider,
     StorageService,
   ],
-  exports: [StorageService, StorageConfigService, STORAGE_PROVIDER],
+  exports: [
+    StorageService,
+    StorageConfigService,
+    STORAGE_PROVIDER,
+    LocalStorageProvider,
+  ],
 })
 export class StorageModule {}

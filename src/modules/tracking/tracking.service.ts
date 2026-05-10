@@ -115,21 +115,28 @@ export class TrackingService {
       ]);
     }
 
-    // Load the booking + every applicant + each applicant's status
-    // history. Single round-trip.
+    // M11.11 (BUG H) — Load the booking with all the fields the
+    // /track detail page needs: destination + visaType joins,
+    // booking-level totals, per-applicant fullName + submitted/paid
+    // timestamps. The previous `select` clause skipped all of these,
+    // so the page rendered "Not available" for everything except
+    // the raw enum status.
     const application = await this.prisma.application.findFirst({
       where: { id: applicationId, deletedAt: null },
-      select: {
-        id: true,
-        referenceCode: true,
+      include: {
+        destinationCountry: {
+          select: { isoCode: true, name: true, flagEmoji: true },
+        },
+        visaType: {
+          select: { purpose: true, label: true },
+        },
+        portalIdentity: {
+          select: { email: true },
+        },
         applicants: {
           where: { deletedAt: null },
           orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
-          select: {
-            applicationCode: true,
-            status: true,
-            resultFileName: true,
-            resultStorageKey: true,
+          include: {
             statusHistory: { orderBy: { createdAt: 'asc' } },
           },
         },
@@ -143,6 +150,14 @@ export class TrackingService {
       ]);
     }
 
+    // Newest payment row gives us the booking-level paidAt timestamp
+    // (frontend renders "Submitted (paid Mar 14)" or similar).
+    const latestPayment = await this.prisma.payment.findFirst({
+      where: { applicationId: application.id, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { paidAt: true, paymentStatus: true },
+    });
+
     const applicants: TrackingResponseDto[] = application.applicants.map((ap) => {
       const statusHistory: StatusHistoryItemDto[] = ap.statusHistory.map((h) => ({
         oldStatus: h.oldStatus,
@@ -150,9 +165,14 @@ export class TrackingService {
         note: h.note || null,
         changedAt: h.createdAt,
       }));
+      const data = (ap.formDataJson ?? {}) as Record<string, unknown>;
+      const fn = String(data.firstName ?? '').trim();
+      const ln = String(data.lastName ?? '').trim();
+      const fullName = [fn, ln].filter(Boolean).join(' ') || null;
       return {
         applicationCode: ap.applicationCode ?? '',
         referenceCode: application.referenceCode ?? null,
+        fullName,
         currentStatus: ap.status,
         statusHistory,
         resultAvailable: !!(ap.resultFileName && ap.resultStorageKey),
@@ -161,12 +181,36 @@ export class TrackingService {
     });
 
     this.logger.log(
-      `[BUG 4] tracked booking ${application.referenceCode ?? application.id} via ${code} (${applicants.length} applicant(s))`,
+      `[BUG 4/H] tracked booking ${application.referenceCode ?? application.id} via ${code} (${applicants.length} applicant(s))`,
     );
 
     return {
       referenceCode: application.referenceCode ?? '',
       applicants,
+      // M11.11 (BUG H) — booking-level fields
+      destination: application.destinationCountry
+        ? {
+            isoCode: application.destinationCountry.isoCode,
+            name: application.destinationCountry.name,
+            flagEmoji: application.destinationCountry.flagEmoji ?? null,
+          }
+        : null,
+      visaType: application.visaType
+        ? {
+            purpose: application.visaType.purpose,
+            label: application.visaType.label,
+          }
+        : null,
+      currentStatus: application.currentStatus,
+      totalAmount: application.totalFeeAmount?.toString() ?? null,
+      currencyCode: application.currencyCode ?? null,
+      primaryEmail: application.portalIdentity?.email ?? null,
+      submittedAt:
+        application.currentStatus !== 'DRAFT' && application.currentStatus !== 'UNPAID'
+          ? application.updatedAt
+          : null,
+      paidAt: latestPayment?.paidAt ?? null,
+      createdAt: application.createdAt,
     };
   }
 }

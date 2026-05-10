@@ -97,15 +97,23 @@ export class TemplateBindingsService {
           template: {
             select: { id: true, name: true, key: true },
           },
-          // M11.8 (ISSUE 6) — list view now groups bindings by
-          // (template, nationality, visaType). To do that client-side
-          // without an N+1 detail-fetch storm, we surface a lite
-          // version of the nationality fees here. Just enough to
-          // identify the nationality and render the flag.
+          // M11.8 (ISSUE 6) + M11.11 (BUG A) — list view now groups
+          // bindings by (template, nationality, visaType) AND surfaces
+          // the actual fee amounts per fee row. The amounts are
+          // needed by the Destinations Manager so a refresh shows the
+          // saved values instead of zeros (the previous lite shape
+          // dropped them, forcing the form to display $0 even though
+          // the public site rendered the right prices).
           nationalityFees: {
             where: { deletedAt: null },
             select: {
               id: true,
+              isActive: true,
+              currencyCode: true,
+              governmentFeeAmount: true,
+              serviceFeeAmount: true,
+              expeditedEnabled: true,
+              expeditedFeeAmount: true,
               nationalityCountry: {
                 select: { id: true, name: true, isoCode: true, flagEmoji: true },
               },
@@ -643,11 +651,19 @@ export class TemplateBindingsService {
             key: binding.template.key,
           }
         : undefined,
-      // M11.8 (ISSUE 6) — lite list of nationalities so the admin
-      // list view can group bindings by (template, nationality,
-      // visaType) without an N+1 detail fetch.
+      // M11.8 (ISSUE 6) + M11.11 (BUG A) — nationality fees with
+      // amounts. Fees are surfaced on the LIST endpoint so the
+      // Destinations Manager can hydrate its bulk-edit form on
+      // refresh; without this the form would re-display zeros for
+      // already-saved fees because no per-binding fetch happens.
       nationalityFees: (binding.nationalityFees ?? []).map((fee: any) => ({
         id: fee.id,
+        isActive: fee.isActive ?? true,
+        currencyCode: fee.currencyCode ?? 'USD',
+        governmentFeeAmount: fee.governmentFeeAmount?.toString() ?? '0',
+        serviceFeeAmount: fee.serviceFeeAmount?.toString() ?? '0',
+        expeditedEnabled: fee.expeditedEnabled ?? false,
+        expeditedFeeAmount: fee.expeditedFeeAmount?.toString() ?? null,
         nationalityCountry: fee.nationalityCountry
           ? {
               id: fee.nationalityCountry.id,

@@ -72,6 +72,7 @@ import { FaqItemsModule } from './modules/faqItems/faq-items.module';
 // M11.1 — Country page hero images + homepage carousel slides
 import { CountryPageImagesModule } from './modules/countryPageImages/country-page-images.module';
 import { HomepageSlidesModule } from './modules/homepageSlides/homepage-slides.module';
+import { FilesModule } from './modules/files/files.module';
 
 @Module({
   imports: [
@@ -157,6 +158,11 @@ import { HomepageSlidesModule } from './modules/homepageSlides/homepage-slides.m
 
     // Storage Infrastructure
     StorageModule,
+
+    // M11.11 (BUG C) — /api/v1/files/* endpoint that resolves the
+    // signed URLs returned by the storage layer. Without this,
+    // every customer + admin document Preview returned 404.
+    FilesModule,
 
     // M11.B — Content Management (CMS)
     ContentPagesModule,

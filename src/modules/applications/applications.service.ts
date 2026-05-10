@@ -542,8 +542,116 @@ export class ApplicationsService {
       newValue: { status: newStatus, action: 'submit_for_review' },
     });
 
+    // M11.11 (BUG G) — Customer "application received" email. Fires
+    // at the DRAFT → UNPAID transition (i.e. user has finished
+    // filling the form and clicked Submit, payment still pending).
+    // The follow-up `payment.success` email lands separately when
+    // payment clears (M11.10 BUG 3 wiring).
+    void this.sendApplicationCreatedEmail(updatedApplication);
+
     this.logger.log(`Application submitted for review: ${id}`);
     return this.mapToResponse(updatedApplication);
+  }
+
+  /**
+   * M11.11 (BUG G) — Send the `application.created` template to
+   * portal email + every applicant email (case-insensitive dedup).
+   * Same shape as M11.10 BUG 3's payment.success email — variables
+   * cover {{fullName}}, {{applicationCode}}, {{referenceCode}},
+   * {{destinationCountry}}, {{visaType}}, {{totalAmount}},
+   * {{currencyCode}}, {{ctaUrl}}.
+   *
+   * Per-recipient `notification.email_sent` audit row written so
+   * the audit timeline shows exactly what fired.
+   */
+  private async sendApplicationCreatedEmail(application: any): Promise<void> {
+    try {
+      const main =
+        application.applicants?.find((a: any) => a.isMainApplicant) ??
+        application.applicants?.[0];
+      const applicationCode = main?.applicationCode;
+      if (!applicationCode) {
+        this.logger.warn(
+          `[BUG G] No applicationCode for application ${application.id}; skipping created email`,
+        );
+        return;
+      }
+
+      const fullName = (() => {
+        const data = (main?.formDataJson ?? {}) as Record<string, unknown>;
+        const fn = String(data.firstName ?? '').trim();
+        const ln = String(data.lastName ?? '').trim();
+        return [fn, ln].filter(Boolean).join(' ') || 'Applicant';
+      })();
+
+      const baseUrl = (
+        this.configService.get<string>('FRONTEND_URL') ??
+        this.configService.get<string>('PUBLIC_BASE_URL') ??
+        'https://evisaglobal.com'
+      ).replace(/\/+$/, '');
+
+      const recipients = new Set<string>();
+      if (application.portalIdentity?.email) {
+        recipients.add(application.portalIdentity.email.toLowerCase().trim());
+      }
+      for (const ap of application.applicants ?? []) {
+        if (ap.email) recipients.add(ap.email.toLowerCase().trim());
+      }
+      if (recipients.size === 0) return;
+
+      const variables = {
+        fullName,
+        applicationCode,
+        referenceCode: application.referenceCode ?? '',
+        applicationStatus: 'Pending Payment',
+        destinationCountry: application.destinationCountry?.name ?? '',
+        visaType: application.visaType?.label ?? '',
+        totalAmount: application.totalFeeAmount?.toString() ?? '',
+        currencyCode: application.currencyCode ?? '',
+        // CTA: /track lets the customer follow status. Once the
+        // payment-page builder is wired into a real flow, swap to
+        // the payment URL when status is UNPAID.
+        ctaUrl: `${baseUrl}/track`,
+      };
+
+      for (const recipient of recipients) {
+        try {
+          const result = await this.emailService.sendTemplatedEmail({
+            to: recipient,
+            templateKey: 'application.created',
+            variables,
+            relatedEntity: 'Application',
+            relatedEntityId: application.id,
+          });
+          await this.auditLogsService.logSystemAction(
+            'notification.email_sent',
+            'Application',
+            application.id,
+            undefined,
+            {
+              recipient,
+              templateKey: 'application.created',
+              applicationCode,
+              referenceCode: application.referenceCode ?? null,
+              success: result.success,
+              messageId: result.messageId ?? null,
+              error: result.error ?? null,
+            },
+          );
+          this.logger.log(
+            `[BUG G] application.created → ${recipient} (${applicationCode}) ${result.success ? 'ok' : 'fail'}`,
+          );
+        } catch (err) {
+          this.logger.error(
+            `[BUG G] Failed application.created to ${recipient}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        `[BUG G] sendApplicationCreatedEmail outer error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**
