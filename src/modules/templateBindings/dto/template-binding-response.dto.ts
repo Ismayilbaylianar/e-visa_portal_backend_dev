@@ -284,4 +284,20 @@ export class TemplateBindingListItemResponseDto {
 
   @ApiPropertyOptional({ type: TemplateBasicResponseDto })
   template?: TemplateBasicResponseDto;
+
+  /**
+   * M11.8 (ISSUE 6) — Lite list of nationalities the binding covers.
+   * Lets the admin list view group bindings by (template, nationality,
+   * visaType) without an N+1 detail-fetch storm. Detail endpoint
+   * still returns the full fee object (with amounts, currency, etc).
+   */
+  @ApiPropertyOptional({
+    description: 'Lite list of nationality countries this binding covers (no fee amounts).',
+    type: 'array',
+    items: { type: 'object' },
+  })
+  nationalityFees?: Array<{
+    id: string;
+    nationalityCountry?: { id: string; name: string; isoCode: string; flagEmoji: string | null };
+  }>;
 }

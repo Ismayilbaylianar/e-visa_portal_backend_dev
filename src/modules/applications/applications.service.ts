@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { EmailService } from '../email/email.service';
@@ -30,6 +31,9 @@ export class ApplicationsService {
     private readonly auditLogsService: AuditLogsService,
     private readonly emailService: EmailService,
     private readonly notificationEmitter: NotificationEmitterService,
+    // M11.8 (ISSUE 8) — needed by sendStatusNotificationEmail to
+    // build the {{ctaUrl}} variable from FRONTEND_URL.
+    private readonly configService: ConfigService,
   ) {}
 
   private generateResumeToken(): string {
@@ -115,6 +119,16 @@ export class ApplicationsService {
         applicants: {
           where: { deletedAt: null },
           orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
+          include: {
+            // M11.8 (ISSUE 7) — admin + portal detail pages render
+            // an Applicants → Documents section. Without this include
+            // the response had `documents: []` even when uploads
+            // existed in the documents table, so admins saw nothing.
+            documents: {
+              where: { deletedAt: null },
+              orderBy: { uploadedAt: 'desc' },
+            },
+          },
         },
       },
     });
@@ -143,6 +157,16 @@ export class ApplicationsService {
         applicants: {
           where: { deletedAt: null },
           orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
+          include: {
+            // M11.8 (ISSUE 7) — admin + portal detail pages render
+            // an Applicants → Documents section. Without this include
+            // the response had `documents: []` even when uploads
+            // existed in the documents table, so admins saw nothing.
+            documents: {
+              where: { deletedAt: null },
+              orderBy: { uploadedAt: 'desc' },
+            },
+          },
         },
       },
     });
@@ -601,6 +625,16 @@ export class ApplicationsService {
         applicants: {
           where: { deletedAt: null },
           orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
+          include: {
+            // M11.8 (ISSUE 7) — admin + portal detail pages render
+            // an Applicants → Documents section. Without this include
+            // the response had `documents: []` even when uploads
+            // existed in the documents table, so admins saw nothing.
+            documents: {
+              where: { deletedAt: null },
+              orderBy: { uploadedAt: 'desc' },
+            },
+          },
         },
       },
     });
@@ -939,6 +973,16 @@ export class ApplicationsService {
         applicants: {
           where: { deletedAt: null },
           orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
+          include: {
+            // M11.8 (ISSUE 7) — admin + portal detail pages render
+            // an Applicants → Documents section. Without this include
+            // the response had `documents: []` even when uploads
+            // existed in the documents table, so admins saw nothing.
+            documents: {
+              where: { deletedAt: null },
+              orderBy: { uploadedAt: 'desc' },
+            },
+          },
         },
       },
     });
@@ -973,29 +1017,134 @@ export class ApplicationsService {
   }
 
   /**
-   * Send status notification email to applicant
+   * Send status notification email to the customer.
+   *
+   * M11.8 (ISSUE 8) — fixes three bugs at once:
+   *   1. Old code referenced `application.code` which doesn't exist
+   *      on the Application model and silently fell back to the
+   *      first 8 chars of the row UUID — that gibberish was what
+   *      reached customers and broke /track lookups.
+   *   2. Only the portal-identity email was notified; co-applicants
+   *      with their own contact email got nothing.
+   *   3. No audit row was written, so we couldn't tell from the
+   *      audit log whether a notification actually fired.
+   *
+   * Now: resolve the canonical `APP-YYYY-NNNNNN` code from
+   * `applicants[0].applicationCode`, pick a status-specific
+   * template via STATUS_TEMPLATE_KEY (falls back to the unified
+   * `application_status_update` template if nothing matches), send
+   * to the deduped union of {portal email, every applicant email},
+   * and emit one `notification.email_sent` audit row per recipient.
    */
   private async sendStatusNotificationEmail(
     application: any,
     statusLabel: string,
     notes?: string,
   ): Promise<void> {
-    if (!application.portalIdentity?.email) {
-      this.logger.warn(`No email found for application ${application.id}`);
+    const applicationCode =
+      application.applicants?.find((a: any) => a.isMainApplicant)?.applicationCode ??
+      application.applicants?.[0]?.applicationCode ??
+      null;
+
+    if (!applicationCode) {
+      this.logger.warn(
+        `No applicationCode found for application ${application.id}; skipping status notification email`,
+      );
       return;
     }
 
-    try {
-      const applicationRef = application.code || application.id.slice(0, 8).toUpperCase();
-      await this.emailService.sendApplicationStatusEmail(
-        application.portalIdentity.email,
-        applicationRef,
-        statusLabel,
-        notes,
-      );
-      this.logger.log(`Status notification email sent for application ${application.id}`);
-    } catch (error) {
-      this.logger.error(`Failed to send status notification email: ${error}`);
+    // Status label → template key. Anything unrecognized falls back
+    // to the unified template so future statuses degrade gracefully.
+    const STATUS_TEMPLATE_KEY: Record<string, string> = {
+      Approved: 'application.approved',
+      Rejected: 'application.rejected',
+      'Additional Documents Required': 'application.need_docs',
+      'Ready to Download': 'application.ready_to_download',
+      'Documents Resubmitted': 'application.documents.resubmitted',
+    };
+    const templateKey =
+      STATUS_TEMPLATE_KEY[statusLabel] ?? 'application_status_update';
+
+    // Build recipient list: portal email + each applicant.email,
+    // case-insensitive dedup so we never double-send.
+    const recipients = new Set<string>();
+    if (application.portalIdentity?.email) {
+      recipients.add(application.portalIdentity.email.toLowerCase().trim());
+    }
+    for (const applicant of application.applicants ?? []) {
+      if (applicant.email) {
+        recipients.add(applicant.email.toLowerCase().trim());
+      }
+    }
+    if (recipients.size === 0) {
+      this.logger.warn(`No recipients found for application ${application.id}`);
+      return;
+    }
+
+    const fullName = (() => {
+      const main = application.applicants?.find((a: any) => a.isMainApplicant);
+      const data = main?.formDataJson ?? {};
+      const fn = (data.firstName ?? '').toString().trim();
+      const ln = (data.lastName ?? '').toString().trim();
+      return [fn, ln].filter(Boolean).join(' ') || 'Applicant';
+    })();
+
+    const baseUrl = (
+      this.configService.get<string>('FRONTEND_URL') ??
+      this.configService.get<string>('PUBLIC_BASE_URL') ??
+      'https://evisaglobal.com'
+    ).replace(/\/+$/, '');
+    const ctaUrl = `${baseUrl}/me`;
+
+    const variables = {
+      fullName,
+      applicationCode,
+      applicationStatus: statusLabel,
+      destinationCountry: application.destinationCountry?.name ?? '',
+      visaType: application.visaType?.label ?? '',
+      ctaUrl,
+      // Legacy template still expects `applicationRef` + `status` +
+      // `notes` — pass them so the unified-template fallback keeps
+      // rendering correctly.
+      applicationRef: applicationCode,
+      status: statusLabel,
+      notes: notes ?? '',
+    };
+
+    for (const recipient of recipients) {
+      try {
+        const result = await this.emailService.sendTemplatedEmail({
+          to: recipient,
+          templateKey,
+          variables,
+          relatedEntity: 'Application',
+          relatedEntityId: application.id,
+        });
+        this.logger.log(
+          `[ISSUE 8] notify ${recipient} for ${applicationCode} via ${templateKey} → ${result.success ? 'ok' : 'fail'}`,
+        );
+        // Audit each successful (and failed) send so the admin trail
+        // shows exactly what fired and to whom.
+        await this.auditLogsService.logSystemAction(
+          'notification.email_sent',
+          'Application',
+          application.id,
+          undefined,
+          {
+            recipient,
+            templateKey,
+            applicationCode,
+            statusLabel,
+            success: result.success,
+            messageId: result.messageId ?? null,
+            error: result.error ?? null,
+          },
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to send ${templateKey} to ${recipient} for application ${application.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
   }
 
@@ -1070,6 +1219,22 @@ export class ApplicationsService {
         formDataJson: applicant.formDataJson,
         status: applicant.status,
         applicationCode: applicant.applicationCode || undefined,
+        // M11.8 (ISSUE 7) — surface uploaded documents on the
+        // applicants payload so admin + portal detail pages can
+        // render them. Field shape mirrors the standalone Document
+        // endpoint so the frontend reuses the same renderer.
+        documents: (applicant.documents ?? []).map((doc: any) => ({
+          id: doc.id,
+          documentTypeKey: doc.documentTypeKey,
+          originalFileName: doc.originalFileName,
+          storageFileName: doc.storageFileName,
+          mimeType: doc.mimeType,
+          fileSize: doc.fileSize,
+          reviewStatus: doc.reviewStatus,
+          reviewNote: doc.reviewNote ?? undefined,
+          uploadedAt: doc.uploadedAt,
+          reviewedAt: doc.reviewedAt ?? undefined,
+        })),
         createdAt: applicant.createdAt,
         updatedAt: applicant.updatedAt,
       })),

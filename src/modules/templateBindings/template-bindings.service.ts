@@ -97,6 +97,21 @@ export class TemplateBindingsService {
           template: {
             select: { id: true, name: true, key: true },
           },
+          // M11.8 (ISSUE 6) — list view now groups bindings by
+          // (template, nationality, visaType). To do that client-side
+          // without an N+1 detail-fetch storm, we surface a lite
+          // version of the nationality fees here. Just enough to
+          // identify the nationality and render the flag.
+          nationalityFees: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              nationalityCountry: {
+                select: { id: true, name: true, isoCode: true, flagEmoji: true },
+              },
+            },
+            orderBy: { nationalityCountry: { name: 'asc' } },
+          },
           _count: {
             select: {
               nationalityFees: {
@@ -628,6 +643,20 @@ export class TemplateBindingsService {
             key: binding.template.key,
           }
         : undefined,
+      // M11.8 (ISSUE 6) — lite list of nationalities so the admin
+      // list view can group bindings by (template, nationality,
+      // visaType) without an N+1 detail fetch.
+      nationalityFees: (binding.nationalityFees ?? []).map((fee: any) => ({
+        id: fee.id,
+        nationalityCountry: fee.nationalityCountry
+          ? {
+              id: fee.nationalityCountry.id,
+              name: fee.nationalityCountry.name,
+              isoCode: fee.nationalityCountry.isoCode,
+              flagEmoji: fee.nationalityCountry.flagEmoji ?? null,
+            }
+          : undefined,
+      })),
     };
   }
 

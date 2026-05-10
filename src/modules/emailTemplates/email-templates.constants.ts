@@ -23,6 +23,21 @@ export const SYSTEM_TEMPLATE_KEYS = [
   'raw_email',
   // M11.4 — admin forgot-password flow.
   'admin_password_reset',
+  // M11.8 (ISSUE 8 EXT) — status + transactional templates rebuilt
+  // from scratch via migration 15. Treated as system so the admin
+  // delete-button silently no-ops on them; canonical content lives
+  // in the migration and re-applies via ON CONFLICT DO UPDATE on
+  // every deploy.
+  'application.created',
+  'application.submitted',
+  'application.approved',
+  'application.rejected',
+  'application.need_docs',
+  'application.ready_to_download',
+  'application.documents.resubmitted',
+  'payment.success',
+  'otp.send',
+  'document_upload_received',
 ] as const;
 
 export type SystemTemplateKey = (typeof SYSTEM_TEMPLATE_KEYS)[number];
