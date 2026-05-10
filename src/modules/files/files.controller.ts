@@ -1,15 +1,14 @@
 import {
   Controller,
   Get,
-  Param,
   Query,
+  Req,
   Res,
   HttpStatus,
   StreamableFile,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import type { Response } from 'express';
-import * as fs from 'fs';
+import type { Request, Response } from 'express';
 import { Public } from '@/common/decorators';
 import { LocalStorageProvider } from '../storage/providers/local-storage.provider';
 import { StorageService } from '../storage/storage.service';
@@ -42,7 +41,7 @@ export class FilesController {
     private readonly localProvider: LocalStorageProvider,
   ) {}
 
-  @Get('*storageKey')
+  @Get('*')
   @Public()
   @ApiOperation({
     summary: 'Serve a stored file via short-lived signed URL',
@@ -53,14 +52,27 @@ export class FilesController {
   @ApiResponse({ status: 401, description: 'Token missing / invalid / expired' })
   @ApiResponse({ status: 404, description: 'File not found' })
   async serve(
-    @Param('storageKey') storageKey: string | string[],
+    @Req() req: Request,
     @Query('token') token: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile | void> {
-    // Wildcard params come through as either a string (single
-    // segment) or an array of segments. Rejoin so we get the same
-    // path the signed URL encoded.
-    const key = Array.isArray(storageKey) ? storageKey.join('/') : storageKey;
+    // M11.11 (BUG C) — extract the storage key from the URL path
+    // directly. Nest's `@Param('storageKey')` with `@Get('*storageKey')`
+    // doesn't capture the wildcard segments cleanly across all
+    // adapters; we instead strip the route prefix from req.path.
+    // req.path here is `/api/v1/files/<key>` — slice off the prefix
+    // (note: the global API prefix `/api/v1` is stripped before
+    // controller match, so req.path is `/files/<key>`).
+    const prefixMatch = req.path.match(/^\/files\/(.+)$/);
+    const key = prefixMatch ? decodeURIComponent(prefixMatch[1]) : '';
+    if (!key) {
+      res.status(HttpStatus.NOT_FOUND).json({
+        success: false,
+        data: null,
+        error: { code: 'notFound', message: 'No storage key supplied' },
+      });
+      return;
+    }
 
     if (!token) {
       res.status(HttpStatus.UNAUTHORIZED).json({
