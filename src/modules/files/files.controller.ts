@@ -59,11 +59,11 @@ export class FilesController {
     // M11.11 (BUG C) — extract the storage key from the URL path
     // directly. Nest's `@Param('storageKey')` with `@Get('*storageKey')`
     // doesn't capture the wildcard segments cleanly across all
-    // adapters; we instead strip the route prefix from req.path.
-    // req.path here is `/api/v1/files/<key>` — slice off the prefix
-    // (note: the global API prefix `/api/v1` is stripped before
-    // controller match, so req.path is `/files/<key>`).
-    const prefixMatch = req.path.match(/^\/files\/(.+)$/);
+    // adapters. req.path inside an Express handler is the full
+    // path including the global prefix (`/api/v1/files/<key>`).
+    // The regex tolerates either form (`/files/...` or `/api/v1/files/...`)
+    // so this stays correct if the global prefix changes.
+    const prefixMatch = req.path.match(/(?:^|\/)files\/(.+)$/);
     const key = prefixMatch ? decodeURIComponent(prefixMatch[1]) : '';
     if (!key) {
       res.status(HttpStatus.NOT_FOUND).json({
