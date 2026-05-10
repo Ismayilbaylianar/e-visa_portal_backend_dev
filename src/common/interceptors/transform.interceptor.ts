@@ -1,4 +1,10 @@
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  StreamableFile,
+} from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { Request } from 'express';
@@ -24,6 +30,28 @@ export class TransformInterceptor<T> implements NestInterceptor<T, ApiSuccessRes
 
     return next.handle().pipe(
       map(response => {
+        // M11.12 (BUG K) — pass binary / streaming responses through
+        // unchanged. The /api/v1/files/* route returns a
+        // `StreamableFile`; without this guard the global wrapper
+        // would JSON-encode the StreamableFile object as
+        // `{success:true, data:{stream:..., logger:...}}`, which the
+        // browser then receives with `Content-Type: image/jpeg` and
+        // tries to render as an image — producing the long-standing
+        // "preview tab opens then closes" symptom (3 prior fix
+        // attempts patched controllers + signed URLs but never
+        // noticed this interceptor was eating the body). Guard also
+        // covers raw Buffer / ReadableStream returns so any future
+        // download endpoint can opt in by simply returning the
+        // right type.
+        if (
+          response instanceof StreamableFile ||
+          Buffer.isBuffer(response) ||
+          (response &&
+            typeof (response as { pipe?: unknown }).pipe === 'function')
+        ) {
+          return response as unknown as ApiSuccessResponse<T>;
+        }
+
         // If response is already in the correct format, return as is
         if (response && typeof response === 'object' && 'success' in response) {
           return response;
