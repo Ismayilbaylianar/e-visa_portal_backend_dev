@@ -32,9 +32,40 @@ export class PaymentPortalIdentityDto {
   email: string;
 }
 
+export class PaymentApplicantSummaryDto {
+  @ApiProperty({ description: 'Applicant ID' })
+  id: string;
+
+  @ApiPropertyOptional({
+    description: 'Per-applicant reference code (APP-YYYY-NNNNNN)',
+  })
+  applicationCode?: string | null;
+
+  @ApiProperty({ description: 'Applicant status' })
+  status: string;
+
+  @ApiProperty({ description: 'Whether this is the main applicant on the booking' })
+  isMainApplicant: boolean;
+
+  @ApiPropertyOptional({ description: 'Applicant email if collected' })
+  email?: string | null;
+
+  @ApiPropertyOptional({ description: 'Applicant phone if collected' })
+  phone?: string | null;
+
+  @ApiPropertyOptional({ description: 'Applicant full name (from formDataJson)' })
+  fullName?: string | null;
+}
+
 export class PaymentApplicationDto {
   @ApiProperty({ description: 'Application ID' })
   id: string;
+
+  @ApiPropertyOptional({
+    description:
+      'M11.10 BUG 4 — booking-level reference code (REF-YYYY-NNNNNN). Optional because legacy applications may pre-date the field.',
+  })
+  referenceCode?: string | null;
 
   @ApiProperty({ description: 'Portal identity ID' })
   portalIdentityId: string;
@@ -57,6 +88,13 @@ export class PaymentApplicationDto {
     type: () => PaymentPortalIdentityDto,
   })
   portalIdentity?: PaymentPortalIdentityDto;
+
+  @ApiPropertyOptional({
+    description:
+      'M11.11 BUG J — applicants attached to the booking, surfaced on the admin transaction detail page so the Application Reference card can show APP codes alongside the booking REF.',
+    type: () => [PaymentApplicantSummaryDto],
+  })
+  applicants?: PaymentApplicantSummaryDto[];
 }
 
 export class PaymentTransactionDto {

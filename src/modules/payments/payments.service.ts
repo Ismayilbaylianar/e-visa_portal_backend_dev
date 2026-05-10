@@ -128,6 +128,10 @@ export class PaymentsService {
           application: {
             select: {
               id: true,
+              // M11.10 BUG 4 + M11.11 BUG J — booking reference code
+              // surfaced on the list so the new Reference column
+              // (replacing the UUID slice) can render REF-YYYY-NNNNNN.
+              referenceCode: true,
               portalIdentityId: true,
               currentStatus: true,
               paymentStatus: true,
@@ -257,11 +261,30 @@ export class PaymentsService {
         application: {
           select: {
             id: true,
+            // M11.11 (BUG J) — booking ref + applicants list for the
+            // new transaction detail page (Card 3 — Applications).
+            referenceCode: true,
             portalIdentityId: true,
             currentStatus: true,
             paymentStatus: true,
             totalFeeAmount: true,
             currencyCode: true,
+            portalIdentity: {
+              select: { id: true, email: true },
+            },
+            applicants: {
+              where: { deletedAt: null },
+              orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
+              select: {
+                id: true,
+                applicationCode: true,
+                status: true,
+                isMainApplicant: true,
+                email: true,
+                phone: true,
+                formDataJson: true,
+              },
+            },
           },
         },
         transactions: {
@@ -1393,6 +1416,12 @@ export class PaymentsService {
       application: payment.application
         ? {
             id: payment.application.id,
+            // M11.10 BUG 4 + M11.11 BUG J — surface booking REF code +
+            // applicants list so the admin Transactions list / detail
+            // pages can render the new Reference column + the
+            // "Applications under this booking" card without an
+            // extra round-trip.
+            referenceCode: payment.application.referenceCode ?? null,
             portalIdentityId: payment.application.portalIdentityId,
             currentStatus: payment.application.currentStatus,
             paymentStatus: payment.application.paymentStatus,
@@ -1407,6 +1436,31 @@ export class PaymentsService {
                   email: payment.application.portalIdentity.email,
                 }
               : undefined,
+            applicants: payment.application.applicants?.map((ap: any) => {
+              // M11.11 BUG J — derive a display-ready full name from
+              // formDataJson server-side so the admin detail page
+              // doesn't have to know the form schema. Falls back to
+              // any combination of first/last that's present.
+              const fd = (ap.formDataJson ?? {}) as Record<string, any>;
+              const first =
+                fd.firstName || fd.first_name || fd.givenName || fd.given_name;
+              const last =
+                fd.lastName || fd.last_name || fd.familyName || fd.family_name || fd.surname;
+              const fullName =
+                fd.fullName ||
+                fd.full_name ||
+                [first, last].filter(Boolean).join(' ').trim() ||
+                null;
+              return {
+                id: ap.id,
+                applicationCode: ap.applicationCode ?? null,
+                status: ap.status,
+                isMainApplicant: ap.isMainApplicant,
+                email: ap.email ?? null,
+                phone: ap.phone ?? null,
+                fullName,
+              };
+            }),
           }
         : undefined,
       transactions: payment.transactions?.map((txn: any) => ({
