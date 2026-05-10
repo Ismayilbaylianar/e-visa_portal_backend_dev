@@ -2,7 +2,7 @@ import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { SettingsService } from './settings.service';
 import { UpdateSettingsDto, SettingsResponseDto } from './dto';
-import { RequirePermissions, CurrentUser } from '@/common/decorators';
+import { Public, RequirePermissions, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
 import { AuthenticatedUser } from '@/common/types';
 
@@ -61,5 +61,38 @@ export class SettingsController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<SettingsResponseDto> {
     return this.settingsService.updateSettings(dto, currentUser.id);
+  }
+}
+
+/**
+ * M11.10 (maintenance toggle) — Public read of maintenance state.
+ * Consumed by the customer /apply page (and any other surface that
+ * wants to gate flows on the toggle). Returns ONLY the maintenance
+ * fields — every other settings field stays admin-only.
+ */
+@ApiTags('System - Public')
+@Controller('public/system')
+export class PublicSystemController {
+  constructor(private readonly settingsService: SettingsService) {}
+
+  @Get('maintenance')
+  @Public()
+  @ApiOperation({
+    summary: 'Public maintenance-mode status',
+    description:
+      'Returns whether new applications are currently disabled, plus the admin-edited message to display. Cached server-side (5s TTL) so a burst of /apply page-loads only hits the DB once.',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean', example: false },
+        message: { type: 'string', nullable: true, example: 'We are upgrading the system. Service will resume at 02:00 UTC.' },
+      },
+    },
+  })
+  async getMaintenanceState(): Promise<{ enabled: boolean; message: string | null }> {
+    return this.settingsService.getMaintenanceState();
   }
 }

@@ -16,14 +16,65 @@ import { UpdateSettingsDto, SettingsResponseDto } from './dto';
  * (changes affect the entire portal), full snapshot keeps forensics
  * trivial.
  */
+/**
+ * M11.10 (maintenance toggle) — short-lived cache so the public
+ * endpoint and the submit-time guard don't hit the DB on every
+ * request. 5s TTL is short enough that admin toggling feels
+ * near-instant on the customer side, while the per-request DB load
+ * stays effectively zero during a flash of traffic.
+ */
+interface MaintenanceState {
+  enabled: boolean;
+  message: string | null;
+}
+
 @Injectable()
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
+
+  /** Last-read maintenance state + the timestamp it was cached at. */
+  private maintenanceCache: { state: MaintenanceState; cachedAtMs: number } | null = null;
+  private readonly maintenanceCacheTtlMs = 5_000;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
   ) {}
+
+  /**
+   * M11.10 — Cached maintenance-mode read used by:
+   *   • GET /public/system/maintenance (customer /apply page)
+   *   • applications.service guard (rejects submit when ON)
+   *
+   * Cache invalidates on any settings PATCH so admin toggling takes
+   * effect on the next request. 5s TTL is also a hard backstop in
+   * case the invalidation is missed (defensive — should never happen
+   * but cheap insurance).
+   */
+  async getMaintenanceState(): Promise<MaintenanceState> {
+    const now = Date.now();
+    if (
+      this.maintenanceCache &&
+      now - this.maintenanceCache.cachedAtMs < this.maintenanceCacheTtlMs
+    ) {
+      return this.maintenanceCache.state;
+    }
+    const row = await this.prisma.setting.findFirst({
+      orderBy: { createdAt: 'desc' },
+      select: { maintenanceMode: true, maintenanceMessage: true },
+    });
+    const state: MaintenanceState = {
+      enabled: row?.maintenanceMode ?? false,
+      message: row?.maintenanceMessage ?? null,
+    };
+    this.maintenanceCache = { state, cachedAtMs: now };
+    return state;
+  }
+
+  /** Force the next getMaintenanceState() call to hit the DB. */
+  invalidateMaintenanceCache(): void {
+    this.maintenanceCache = null;
+  }
 
   /**
    * Read or auto-create the singleton settings row.
@@ -141,6 +192,11 @@ export class SettingsService {
       data: updateData,
     });
 
+    // M11.10 — invalidate the maintenance cache so a toggle from
+    // the admin UI propagates immediately rather than waiting for
+    // the 5s TTL. Cheap call (just nulls the cache slot).
+    this.invalidateMaintenanceCache();
+
     if (actorUserId) {
       await this.auditLogsService.logAdminAction(
         actorUserId,
@@ -150,6 +206,21 @@ export class SettingsService {
         before,
         this.snapshot(settings),
       );
+      // M11.10 — Distinct audit row for maintenance toggle so the
+      // audit timeline highlights this customer-impacting change
+      // separate from generic settings edits.
+      const wasOn = before?.maintenanceMode ?? false;
+      const isOn = settings.maintenanceMode;
+      if (wasOn !== isOn) {
+        await this.auditLogsService.logAdminAction(
+          actorUserId,
+          'settings.maintenance_toggled',
+          'Settings',
+          settings.id,
+          { maintenanceMode: wasOn, maintenanceMessage: before?.maintenanceMessage ?? null },
+          { maintenanceMode: isOn, maintenanceMessage: settings.maintenanceMessage ?? null },
+        );
+      }
     }
 
     this.logger.log(`Settings updated: ${settings.id}`);

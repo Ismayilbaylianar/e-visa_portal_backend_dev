@@ -10,6 +10,7 @@ import { EmailModule } from '../email/email.module';
 import { ApplicantsModule } from '../applicants/applicants.module';
 import { CustomerPortalModule } from '../customerPortal/customer-portal.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
@@ -26,6 +27,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     CustomerPortalModule,
     // M11.5 — emit Telegram events on submit/approve/reject.
     NotificationsModule,
+    // M11.10 — read maintenance toggle in applications.create() guard.
+    SettingsModule,
   ],
   controllers: [ApplicationsAdminController, ApplicationsPortalController],
   providers: [ApplicationsService],

@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { EmailService } from '../email/email.service';
 import { NotificationEmitterService } from '../notifications/notification-emitter.service';
+import { SettingsService } from '../settings/settings.service';
 import {
   CreateApplicationDto,
   UpdateApplicationDto,
@@ -15,7 +16,12 @@ import {
   UpdateEstimatedTimeDto,
   EstimatedTimeChangeEntryDto,
 } from './dto';
-import { NotFoundException, BadRequestException, ForbiddenException } from '@/common/exceptions';
+import {
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import { PaginationMeta } from '@/common/types';
 import { ApplicationStatus, PaymentStatus } from '@/common/enums';
@@ -34,6 +40,8 @@ export class ApplicationsService {
     // M11.8 (ISSUE 8) — needed by sendStatusNotificationEmail to
     // build the {{ctaUrl}} variable from FRONTEND_URL.
     private readonly configService: ConfigService,
+    // M11.10 — read maintenance toggle to block create() when ON.
+    private readonly settingsService: SettingsService,
   ) {}
 
   private generateResumeToken(): string {
@@ -194,6 +202,30 @@ export class ApplicationsService {
     dto: CreateApplicationDto,
     portalIdentityId: string,
   ): Promise<ApplicationResponseDto> {
+    // M11.10 — Maintenance-mode guard. When the admin has toggled
+    // maintenance_mode ON in /admin/settings, customers see a
+    // pre-form maintenance screen on /apply (frontend gate). This
+    // guard is defence-in-depth: if a stale tab or a direct API
+    // caller tries to POST anyway, we reject with 503 so the
+    // operator's intent ("don't accept new applications right now")
+    // is preserved end-to-end. Existing applications + payments are
+    // unaffected — only fresh `create` is blocked.
+    const maintenance = await this.settingsService.getMaintenanceState();
+    if (maintenance.enabled) {
+      throw new ServiceUnavailableException(
+        maintenance.message ||
+          'New applications are temporarily unavailable. Please try again shortly.',
+        [
+          {
+            reason: 'maintenance_mode',
+            message:
+              maintenance.message ||
+              'We are temporarily not accepting new applications. Please try again later.',
+          },
+        ],
+      );
+    }
+
     const now = new Date();
 
     // Find active binding with date validity check
@@ -407,6 +439,24 @@ export class ApplicationsService {
   }
 
   async submitForReview(id: string, portalIdentityId: string): Promise<ApplicationResponseDto> {
+    // M11.10 — same maintenance guard as create(). Customer who
+    // started a draft BEFORE the toggle won't be able to push it
+    // through to SUBMITTED while maintenance is on. Their data is
+    // preserved as DRAFT and they can resume after toggle-off.
+    const maintenance = await this.settingsService.getMaintenanceState();
+    if (maintenance.enabled) {
+      throw new ServiceUnavailableException(
+        maintenance.message || 'New submissions are temporarily unavailable.',
+        [
+          {
+            reason: 'maintenance_mode',
+            message:
+              maintenance.message ||
+              'We are temporarily not accepting new submissions. Your draft is saved.',
+          },
+        ],
+      );
+    }
     const application = await this.prisma.application.findFirst({
       where: { id, deletedAt: null },
       include: {
@@ -505,6 +555,21 @@ export class ApplicationsService {
    * - This is a temporary behavior documented in README
    */
   async submit(id: string, portalIdentityId: string): Promise<ApplicationResponseDto> {
+    // M11.10 — maintenance guard (defence-in-depth, see submitForReview).
+    const maintenance = await this.settingsService.getMaintenanceState();
+    if (maintenance.enabled) {
+      throw new ServiceUnavailableException(
+        maintenance.message || 'New submissions are temporarily unavailable.',
+        [
+          {
+            reason: 'maintenance_mode',
+            message:
+              maintenance.message ||
+              'We are temporarily not accepting new submissions. Your draft is saved.',
+          },
+        ],
+      );
+    }
     const application = await this.prisma.application.findFirst({
       where: { id, deletedAt: null },
       include: {
