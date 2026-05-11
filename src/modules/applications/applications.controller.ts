@@ -87,6 +87,23 @@ export class ApplicationsAdminController {
     return this.applicationsService.findAll(query);
   }
 
+  /**
+   * M-Assign — Operator dropdown source. MUST be declared BEFORE
+   * `@Get(':applicationId')` below, otherwise Express matches the
+   * literal segment "assignable-users" as a `:applicationId` and
+   * the route never fires (it failed in the M11.14 verification
+   * pass — request returned 400 Bad Request from the UUID validator
+   * on ApplicationIdParamDto).
+   */
+  @Get('assignable-users')
+  @RequirePermissions('applications.read')
+  @ApiOperation({
+    summary: 'List users that can be assigned to applications',
+  })
+  async listAssignableUsers() {
+    return this.applicationsService.listAssignableUsers();
+  }
+
   @Get(':applicationId')
   @RequirePermissions('applications.read')
   @ApiOperation({
@@ -350,20 +367,9 @@ export class ApplicationsAdminController {
     return this.applicationsService.deleteInternalNote(noteId, user.id);
   }
 
-  /**
-   * M-Assign — Operator dropdown source. Returns every active
-   * admin user as a candidate assignee. Living under
-   * /admin/applications/assignable-users keeps it adjacent to the
-   * assign endpoint and avoids touching the users module.
-   */
-  @Get('assignable-users')
-  @RequirePermissions('applications.read')
-  @ApiOperation({
-    summary: 'List users that can be assigned to applications',
-  })
-  async listAssignableUsers() {
-    return this.applicationsService.listAssignableUsers();
-  }
+  // M-Assign assignable-users moved to the top of the controller
+  // (above `@Get(':applicationId')`) to win Express's first-match
+  // route resolution.
 
   // ========================================================
   // Module 9 — Operations Center
