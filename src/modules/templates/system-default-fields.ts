@@ -348,7 +348,12 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
         'Clear scan/photo of the page with your photo + passport number. PDF or image.',
       isRequired: true,
       validationRulesJson: {
-        accept: 'pdf,jpg,jpeg,png',
+        // Array form: the admin FieldEditorModal stores `accept` as
+        // an array (`['pdf', 'jpg', ...]`); the public dynamic
+        // renderer tolerates both forms. Storing as array means the
+        // admin editor's `accept?.join(',')` rendering doesn't crash
+        // when first opening a backfilled template.
+        accept: ['pdf', 'jpg', 'jpeg', 'png'],
         maxSizeMb: 10,
         errorMessages: {
           required: 'Passport bio page is required',
