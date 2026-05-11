@@ -26,13 +26,21 @@ export class PortalTokenService {
   constructor(private readonly configService: ConfigService) {}
 
   private getSecret(): string {
+    // Tries in order: explicit FILES_SIGNING_SECRET → generic
+    // JWT_SECRET → the existing JWT_ACCESS_SECRET (always set in
+    // prod). The last fallback means production never accidentally
+    // signs with the empty string even if the operator forgets to
+    // set a dedicated secret — JWT_ACCESS_SECRET is high-entropy
+    // and the audience guard ('t:p' field) prevents portal tokens
+    // from being confused with admin JWTs.
     const s =
       this.configService.get<string>('FILES_SIGNING_SECRET') ||
       this.configService.get<string>('JWT_SECRET') ||
+      this.configService.get<string>('JWT_ACCESS_SECRET') ||
       '';
     if (!s) {
       this.logger.error(
-        '[BUG U+T] No FILES_SIGNING_SECRET / JWT_SECRET configured — portal tokens will fail verification.',
+        '[BUG U+T] No FILES_SIGNING_SECRET / JWT_SECRET / JWT_ACCESS_SECRET configured — portal tokens will fail verification.',
       );
     }
     return s;
