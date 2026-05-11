@@ -940,17 +940,17 @@ model Document {
 /// post-launch upload page that reads accepted_formats / max_size_mb
 /// per item and auto-flips status when every item is fulfilled.
 model DocumentRequest {
-  id             String                @id @default(uuid()) @db.Uuid
-  applicationId  String                @map("application_id") @db.Uuid
-  requestedBy    String                @map("requested_by") @db.Uuid
-  status         String                @default("pending") @db.VarChar(20)
-  customMessage  String?               @map("custom_message") @db.Text
-  createdAt      DateTime              @default(now()) @map("created_at")
-  fulfilledAt    DateTime?             @map("fulfilled_at")
+  id              String                @id @default(uuid())
+  applicationId   String                @map("application_id")
+  requestedBy     String                @map("requested_by")
+  status          String                @default("pending") @db.VarChar(20)
+  customMessage   String?               @map("custom_message") @db.Text
+  createdAt       DateTime              @default(now()) @map("created_at")
+  fulfilledAt     DateTime?             @map("fulfilled_at")
 
-  application    Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  requestedByUser User                 @relation("DocumentRequestRequestedByUser", fields: [requestedBy], references: [id])
-  items          DocumentRequestItem[]
+  application     Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  requestedByUser User                  @relation("DocumentRequestRequestedByUser", fields: [requestedBy], references: [id])
+  items           DocumentRequestItem[]
 
   @@index([applicationId])
   @@index([status])
@@ -959,16 +959,16 @@ model DocumentRequest {
 }
 
 model DocumentRequestItem {
-  id                 String           @id @default(uuid()) @db.Uuid
-  requestId          String           @map("request_id") @db.Uuid
-  documentName       String           @map("document_name") @db.VarChar(200)
-  acceptedFormats    String?          @map("accepted_formats") @db.Text
-  maxSizeMb          Int              @default(10) @map("max_size_mb")
-  uploadedDocumentId String?          @map("uploaded_document_id") @db.Uuid
-  uploadedAt         DateTime?        @map("uploaded_at")
+  id                 String          @id @default(uuid())
+  requestId          String          @map("request_id")
+  documentName       String          @map("document_name") @db.VarChar(200)
+  acceptedFormats    String?         @map("accepted_formats") @db.Text
+  maxSizeMb          Int             @default(10) @map("max_size_mb")
+  uploadedDocumentId String?         @map("uploaded_document_id")
+  uploadedAt         DateTime?       @map("uploaded_at")
 
-  request            DocumentRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  uploadedDocument   Document?        @relation(fields: [uploadedDocumentId], references: [id], onDelete: SetNull)
+  request            DocumentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  uploadedDocument   Document?       @relation(fields: [uploadedDocumentId], references: [id], onDelete: SetNull)
 
   @@index([requestId])
   @@index([uploadedDocumentId])

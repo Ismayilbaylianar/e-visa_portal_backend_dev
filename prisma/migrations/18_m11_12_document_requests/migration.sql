@@ -14,10 +14,17 @@
 -- Idempotent: every CREATE uses IF NOT EXISTS, so re-applying this
 -- migration in the staging-then-prod pattern is safe.
 
+-- NOTE: Existing applications.id, users.id, documents.id are TEXT
+-- columns (Prisma `String @default(uuid())` maps to TEXT in
+-- postgres unless `@db.Uuid` is set). The first attempt used UUID
+-- here, which broke the FK constraints with "incompatible types".
+-- All ids in this migration are therefore TEXT (UUID v4 strings)
+-- to match the upstream tables.
+
 CREATE TABLE IF NOT EXISTS "document_requests" (
-  "id"             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  "application_id" UUID         NOT NULL,
-  "requested_by"   UUID         NOT NULL,
+  "id"             TEXT         PRIMARY KEY,
+  "application_id" TEXT         NOT NULL,
+  "requested_by"   TEXT         NOT NULL,
   "status"         VARCHAR(20)  NOT NULL DEFAULT 'pending',
   "custom_message" TEXT,
   "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -38,12 +45,12 @@ CREATE INDEX IF NOT EXISTS "document_requests_created_at_idx"
   ON "document_requests" ("created_at");
 
 CREATE TABLE IF NOT EXISTS "document_request_items" (
-  "id"                    UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  "request_id"            UUID         NOT NULL,
+  "id"                    TEXT         PRIMARY KEY,
+  "request_id"            TEXT         NOT NULL,
   "document_name"         VARCHAR(200) NOT NULL,
   "accepted_formats"      TEXT,
   "max_size_mb"           INT          NOT NULL DEFAULT 10,
-  "uploaded_document_id"  UUID,
+  "uploaded_document_id"  TEXT,
   "uploaded_at"           TIMESTAMP(3),
   CONSTRAINT "document_request_items_request_id_fkey"
     FOREIGN KEY ("request_id") REFERENCES "document_requests"("id")
