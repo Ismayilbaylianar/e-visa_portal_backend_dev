@@ -46,6 +46,7 @@ import { TrackingModule } from './modules/tracking/tracking.module';
 // Application domain modules
 import { ApplicationsModule } from './modules/applications/applications.module';
 import { ApplicantsModule } from './modules/applicants/applicants.module';
+import { ResultFilesModule } from './modules/resultFiles/result-files.module';
 import { FormRendererModule } from './modules/formRenderer/form-renderer.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { CustomerPortalModule } from './modules/customerPortal/customer-portal.module';
@@ -141,6 +142,7 @@ import { FilesModule } from './modules/files/files.module';
     DocumentsModule,
     CustomerPortalModule,
     StatusWorkflowModule,
+    ResultFilesModule,
 
     // Payments
     PaymentsModule,

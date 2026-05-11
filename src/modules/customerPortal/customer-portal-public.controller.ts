@@ -1,10 +1,12 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   HttpCode,
   HttpStatus,
   Param,
+  Query,
   UploadedFile,
   UseInterceptors,
   Req,
@@ -19,6 +21,7 @@ import { PortalTokenService } from '../applications/portal-token.service';
 import { StorageService } from '../storage/storage.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { NotificationEmitterService } from '../notifications/notification-emitter.service';
+import { ResultFilesService } from '../resultFiles/result-files.service';
 import { ErrorCodes } from '@/common/constants';
 import { BadRequestException, NotFoundException } from '@/common/exceptions';
 import { ApplicationStatus, ActorType } from '@prisma/client';
@@ -71,6 +74,7 @@ export class CustomerPortalPublicController {
     private readonly storage: StorageService,
     private readonly audit: AuditLogsService,
     private readonly notifications: NotificationEmitterService,
+    private readonly resultFiles: ResultFilesService,
   ) {}
 
   @Post('redeem')
@@ -501,5 +505,88 @@ export class CustomerPortalPublicController {
         .replace(/^_+|_+$/g, '')
         .slice(0, 64) || 'document'
     );
+  }
+
+  /**
+   * M11.14 (BUG FF — PART 2) — Token-authenticated customer
+   * download list. Service-layer enforces status ∈
+   * {APPROVED, READY_TO_DOWNLOAD} on the per-file URL path; the
+   * list endpoint just shows what exists so the UI can render an
+   * empty state cleanly when the visa isn't issued yet.
+   */
+  @Post('applications/:applicationId/result-files/list')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'List visa files for the customer (token-auth)',
+    description:
+      'POST (not GET) so the token travels in the body, not a query string that might appear in proxy logs.',
+  })
+  async listResultFiles(
+    @Param('applicationId') applicationId: string,
+    @Body() body: { token?: string },
+  ) {
+    if (!body.token) {
+      throw new BadRequestException('Missing token', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'Portal access token is required.' },
+      ]);
+    }
+    let payload;
+    try {
+      payload = this.portalToken.verify(body.token);
+    } catch (err) {
+      throw new BadRequestException('Invalid or expired token', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: err instanceof Error ? err.message : 'Token verification failed',
+        },
+      ]);
+    }
+    if (payload.applicationId !== applicationId) {
+      throw new BadRequestException('Token does not match this application', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'Use the link from your most recent email.' },
+      ]);
+    }
+    return this.resultFiles.listForPortal(applicationId);
+  }
+
+  @Post('applications/:applicationId/result-files/:fileId/url')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get signed download URL for a single visa file (token-auth)',
+  })
+  async resultFileUrl(
+    @Param('applicationId') applicationId: string,
+    @Param('fileId') fileId: string,
+    @Body() body: { token?: string },
+    @Req() req: Request,
+  ) {
+    if (!body.token) {
+      throw new BadRequestException('Missing token', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'Portal access token is required.' },
+      ]);
+    }
+    let payload;
+    try {
+      payload = this.portalToken.verify(body.token);
+    } catch (err) {
+      throw new BadRequestException('Invalid or expired token', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: err instanceof Error ? err.message : 'Token verification failed',
+        },
+      ]);
+    }
+    if (payload.applicationId !== applicationId) {
+      throw new BadRequestException('Token does not match this application', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'Use the link from your most recent email.' },
+      ]);
+    }
+    return this.resultFiles.getSignedUrlForPortal(applicationId, fileId, {
+      email: payload.email,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'] as string | undefined,
+    });
   }
 }

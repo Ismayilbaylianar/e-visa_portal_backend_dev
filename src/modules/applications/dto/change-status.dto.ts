@@ -80,12 +80,18 @@ export class RequestedDocumentItemDto {
 export class ChangeApplicationStatusDto {
   @ApiProperty({
     description: 'Target status for the application',
-    enum: ['APPROVED', 'REJECTED', 'NEED_DOCS', 'IN_REVIEW', 'CANCELLED'],
+    enum: ['APPROVED', 'REJECTED', 'NEED_DOCS', 'IN_REVIEW', 'READY_TO_DOWNLOAD', 'CANCELLED'],
     example: 'APPROVED',
   })
   @IsString()
-  @IsIn(['APPROVED', 'REJECTED', 'NEED_DOCS', 'IN_REVIEW', 'CANCELLED'])
-  status: 'APPROVED' | 'REJECTED' | 'NEED_DOCS' | 'IN_REVIEW' | 'CANCELLED';
+  @IsIn(['APPROVED', 'REJECTED', 'NEED_DOCS', 'IN_REVIEW', 'READY_TO_DOWNLOAD', 'CANCELLED'])
+  status:
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'NEED_DOCS'
+    | 'IN_REVIEW'
+    | 'READY_TO_DOWNLOAD'
+    | 'CANCELLED';
 
   @ApiPropertyOptional({
     description: 'Whether to send a customer notification email. Defaults to true.',

@@ -1199,6 +1199,12 @@ export class ApplicationsService {
       REJECTED: this.REJECTABLE_STATUSES,
       NEED_DOCS: this.DOCS_REQUESTABLE_STATUSES,
       IN_REVIEW: [ApplicationStatus.SUBMITTED, ApplicationStatus.NEED_DOCS],
+      // M11.14 (BUG FF) — operator must release the issued visa
+      // by transitioning APPROVED → READY_TO_DOWNLOAD. The
+      // hasPrimaryFile() gate below enforces that a primary
+      // visa file exists before the customer sees a download
+      // link in their email.
+      READY_TO_DOWNLOAD: [ApplicationStatus.APPROVED],
       CANCELLED: [
         ApplicationStatus.DRAFT,
         ApplicationStatus.UNPAID,
@@ -1234,6 +1240,28 @@ export class ApplicationsService {
           message: 'At least one requested document item is required when status=NEED_DOCS.',
         },
       ]);
+    }
+    if (dto.status === 'READY_TO_DOWNLOAD') {
+      // M11.14 (BUG FF) — must have at least one primary result
+      // file before the operator can release the visa. The
+      // admin status dialog uploads files BEFORE calling this
+      // endpoint, so by the time we hit this gate the row
+      // should already exist.
+      const primaryCount = await this.prisma.applicationResultFile.count({
+        where: { applicationId: id, isPrimary: true, deletedAt: null },
+      });
+      if (primaryCount === 0) {
+        throw new BadRequestException(
+          'A primary visa file must be uploaded before releasing the visa',
+          [
+            {
+              reason: ErrorCodes.BAD_REQUEST,
+              message:
+                'Upload at least one visa file (PDF/JPG/PNG/WEBP) and mark it as primary before changing status to READY_TO_DOWNLOAD.',
+            },
+          ],
+        );
+      }
     }
     if (dto.emailMode === 'custom' && (!dto.customSubject || !dto.customBody)) {
       throw new BadRequestException('Custom email requires subject + body', [
@@ -1692,6 +1720,9 @@ export class ApplicationsService {
       REJECTED: 'Rejected',
       NEED_DOCS: 'Additional Documents Required',
       IN_REVIEW: 'Under Review',
+      // M11.14 (BUG FF) — drives template selection +
+      // INTENT_BY_LABEL ('download') in sendStatusNotificationEmail.
+      READY_TO_DOWNLOAD: 'Ready to Download',
       CANCELLED: 'Cancelled',
     };
     const label = STATUS_LABEL[dto.status] ?? dto.status;
@@ -1848,13 +1879,21 @@ export class ApplicationsService {
       return;
     }
 
-    const fullName = (() => {
-      const main = application.applicants?.find((a: any) => a.isMainApplicant);
-      const data = main?.formDataJson ?? {};
-      const fn = (data.firstName ?? '').toString().trim();
-      const ln = (data.lastName ?? '').toString().trim();
-      return [fn, ln].filter(Boolean).join(' ') || 'Applicant';
-    })();
+    // M11.14 (BUG FF) — pull names + flag once so each per-recipient
+    // var bag below stays tidy. firstName / lastName surface
+    // separately for any template that wants finer-grained
+    // personalization than {{fullName}}.
+    const mainApplicant = application.applicants?.find(
+      (a: any) => a.isMainApplicant,
+    );
+    const mainFormData = (mainApplicant?.formDataJson ?? {}) as Record<string, unknown>;
+    const firstName = String(mainFormData.firstName ?? '').trim();
+    const lastName = String(mainFormData.lastName ?? '').trim();
+    const fullName =
+      [firstName, lastName].filter(Boolean).join(' ') || 'Applicant';
+    const destinationFlag = (application.destinationCountry as any)?.flagEmoji ?? '';
+    const supportEmail =
+      this.configService.get<string>('SUPPORT_EMAIL') ?? 'support@evisaglobal.com';
 
     const baseUrl = (
       this.configService.get<string>('FRONTEND_URL') ??
@@ -1884,15 +1923,30 @@ export class ApplicationsService {
       });
       const ctaUrl = `${baseUrl}/portal/${encodeURIComponent(deepLinkCode)}?token=${token}`;
 
+      // M11.14 (BUG FF — PART 1) — broaden the var bag so every
+      // placeholder the system templates reference resolves. The
+      // renderer (substituteVariables) now strips any leftover
+      // `{{anyVar}}` to '' AND logs the unresolved keys — but the
+      // first defense is to actually pass the values.
       const variables = {
         fullName,
+        firstName,
+        lastName,
+        email: recipient,
         applicationCode,
-        applicationStatus: statusLabel,
-        destinationCountry: application.destinationCountry?.name ?? '',
-        visaType: application.visaType?.label ?? '',
-        ctaUrl,
         applicationRef: applicationCode,
+        referenceCode: application.referenceCode ?? '',
+        applicationStatus: statusLabel,
         status: statusLabel,
+        statusLabel,
+        destinationCountry: application.destinationCountry?.name ?? '',
+        destinationFlag,
+        visaType: application.visaType?.label ?? '',
+        totalAmount: application.totalFeeAmount?.toString?.() ?? '',
+        paymentAmount: application.totalFeeAmount?.toString?.() ?? '',
+        currencyCode: application.currencyCode ?? '',
+        ctaUrl,
+        supportEmail,
         notes: notes ?? '',
       };
       try {

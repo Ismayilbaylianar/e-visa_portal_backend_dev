@@ -359,12 +359,30 @@ export class EmailTemplateService {
   }
 
   /**
-   * Simple variable substitution using {{variable}} syntax
+   * Simple variable substitution using {{variable}} syntax.
+   *
+   * M11.14 (BUG FF — PART 1): after substituting known keys, scan
+   * the result for any LEFTOVER `{{anyName}}` placeholders. The
+   * previous loop replaced only keys present in `variables`, so a
+   * template that referenced `{{firstName}}` while the caller only
+   * passed `{{fullName}}` leaked literal `{{firstName}}` into the
+   * customer's inbox. Now we:
+   *
+   *   1. Replace every leftover `{{var}}` with the empty string
+   *      (graceful default — the email reads cleanly even if a
+   *      caller forgot a key).
+   *   2. Log a warning naming every unresolved placeholder so the
+   *      operator can see in pm2 logs which templates need new
+   *      variables wired up.
+   *
+   * Conditional blocks `{{#if var}}…{{/if}}` are processed BEFORE
+   * the leftover sweep so a conditional inside an unknown branch
+   * doesn't get wiped.
    */
   private substituteVariables(template: string, variables: TemplateVariables): string {
     let result = template;
 
-    // Replace all {{variable}} patterns
+    // Replace all {{variable}} patterns from the known vars first.
     for (const [key, value] of Object.entries(variables)) {
       const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
       result = result.replace(regex, String(value ?? ''));
@@ -374,6 +392,18 @@ export class EmailTemplateService {
     result = result.replace(/\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, varName, content) => {
       return variables[varName] ? content : '';
     });
+
+    // M11.14 (BUG FF) — sweep any remaining `{{name}}` placeholders.
+    const leftover = new Set<string>();
+    result = result.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, (match, name: string) => {
+      leftover.add(name);
+      return '';
+    });
+    if (leftover.size > 0) {
+      this.logger.warn(
+        `[BUG FF] Unresolved template vars (replaced with empty string): ${Array.from(leftover).join(', ')}`,
+      );
+    }
 
     return result;
   }

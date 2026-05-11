@@ -188,6 +188,8 @@ model User {
   assignmentHistoryAsPrev   ApplicationAssignmentHistory[]   @relation("AssignmentHistoryPreviousAssignee")
   assignmentHistoryAsNew    ApplicationAssignmentHistory[]   @relation("AssignmentHistoryNewAssignee")
   assignmentHistoryChanges  ApplicationAssignmentHistory[]   @relation("AssignmentHistoryChangedBy")
+  // M11.14 (BUG FF) — operator-uploaded result files
+  uploadedResultFiles       ApplicationResultFile[]
 
   @@index([email])
   @@index([roleId])
@@ -809,6 +811,8 @@ model Application {
   assignedByUser       User?                            @relation("ApplicationAssignedBy", fields: [assignedByUserId], references: [id])
   internalNotes        ApplicationInternalNote[]
   assignmentHistory    ApplicationAssignmentHistory[]
+  // M11.14 (BUG FF — PART 2) — issued-visa + supporting-files
+  resultFiles          ApplicationResultFile[]
 
   @@index([portalIdentityId])
   @@index([nationalityCountryId])
@@ -851,6 +855,8 @@ model ApplicationApplicant {
   application   Application              @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   statusHistory ApplicantStatusHistory[]
   documents     Document[]
+  // M11.14 (BUG FF) — result files scoped to this applicant
+  resultFiles   ApplicationResultFile[]
 
   @@index([applicationId])
   @@index([applicationCode])
@@ -1028,6 +1034,36 @@ model ApplicationAssignmentHistory {
   @@index([applicationId])
   @@index([createdAt])
   @@map("application_assignment_history")
+}
+
+/// M11.14 (BUG FF) — operator-uploaded issued visa + supporting
+/// files at the application (or applicant) level. One row per file.
+/// `is_primary` marks the canonical visa PDF; partial unique index
+/// in the migration enforces at most one primary per application.
+model ApplicationResultFile {
+  id              String                @id @default(uuid())
+  applicationId   String                @map("application_id")
+  applicantId     String?               @map("applicant_id")
+  fileName        String                @map("file_name") @db.VarChar(255)
+  storageKey      String                @map("storage_key")
+  storagePath     String                @map("storage_path")
+  storageProvider String                @default("local") @map("storage_provider")
+  fileSize        Int?                  @map("file_size")
+  mimeType        String?               @map("mime_type") @db.VarChar(100)
+  description     String?               @db.Text
+  isPrimary       Boolean               @default(false) @map("is_primary")
+  uploadedBy      String                @map("uploaded_by")
+  uploadedAt      DateTime              @default(now()) @map("uploaded_at")
+  deletedAt       DateTime?             @map("deleted_at")
+
+  application     Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicant       ApplicationApplicant? @relation(fields: [applicantId], references: [id], onDelete: SetNull)
+  uploader        User                  @relation(fields: [uploadedBy], references: [id])
+
+  @@index([applicationId])
+  @@index([applicantId])
+  @@index([uploadedAt])
+  @@map("application_result_files")
 }
 
 model DocumentRequestItem {

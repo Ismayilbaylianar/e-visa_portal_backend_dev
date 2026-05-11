@@ -6,6 +6,7 @@ import { PortalAuthModule } from '../portalAuth/portal-auth.module';
 import { StorageModule } from '../storage/storage.module';
 import { AuditLogsModule } from '../auditLogs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ResultFilesModule } from '../resultFiles/result-files.module';
 import { PortalTokenService } from '../applications/portal-token.service';
 
 @Module({
@@ -20,6 +21,9 @@ import { PortalTokenService } from '../applications/portal-token.service';
     // fires app.documents_resubmitted into the notification emitter
     // (Telegram + future SSE feeds).
     NotificationsModule,
+    // M11.14 (BUG FF — PART 2) — customer visa download endpoints
+    // delegate to ResultFilesService.
+    ResultFilesModule,
   ],
   controllers: [CustomerPortalController, CustomerPortalPublicController],
   // M11.13 (BUG U + T) — PortalTokenService is also used by
