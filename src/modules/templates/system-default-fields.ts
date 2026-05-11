@@ -57,36 +57,34 @@ export interface SystemFieldSpec {
      */
     validationRulesJson: Record<string, unknown>;
     sortOrder: number;
+    /**
+     * M11.14 (BUG MM) — for `select` / `radio` system fields, the
+     * canonical options list. Backfilled into `template_fields.options_json`
+     * on first provision. Admin CAN edit the labels and order through
+     * the field editor — only the option `value` is the contract for
+     * cross-field validators and analytics.
+     */
+    optionsJson?: Array<{ value: string; label: string }>;
   };
 }
 
 export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
   // ─── Section 1: Personal Information ───
-  // M11.7 (A1): Nationality renders as a country dropdown and gets
-  // pre-filled from the IP-detected country at the start of the apply
-  // flow. Subsequent applicants in the same application inherit this
-  // value from applicant 1 (frontend-side propagation).
+  // M11.14 (BUG LL) — Section ordering, top → bottom:
+  //   1. firstName
+  //   2. lastName
+  //   3. dateOfBirth
+  //   4. gender         (M11.14 BUG MM — new system field)
+  //   5. nationality    (was #1; pushed to the bottom because it's
+  //                      pre-filled from IP detection and visually
+  //                      belongs after the identity fields admins
+  //                      review first).
+  // Existing templates: the bootstrap pass (initializeSystemFields)
+  // reconciles sortOrder on every restart so prod templates created
+  // before this rename pick up the new positions automatically.
   {
     sectionTitle: 'Personal Information',
     sectionDescription: 'Please provide your personal details',
-    sectionOrder: 1,
-    field: {
-      systemKey: 'nationality',
-      label: 'Nationality',
-      fieldType: 'country',
-      placeholder: 'Select your nationality',
-      helpText: 'The country shown on your passport',
-      isRequired: true,
-      validationRulesJson: {
-        errorMessages: {
-          required: 'Nationality is required',
-        },
-      },
-      sortOrder: 1,
-    },
-  },
-  {
-    sectionTitle: 'Personal Information',
     sectionOrder: 1,
     field: {
       systemKey: 'firstName',
@@ -103,7 +101,7 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
           maxLength: 'First name must be 50 characters or fewer',
         },
       },
-      sortOrder: 2,
+      sortOrder: 1,
     },
   },
   {
@@ -124,7 +122,7 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
           maxLength: 'Last name must be 50 characters or fewer',
         },
       },
-      sortOrder: 3,
+      sortOrder: 2,
     },
   },
   {
@@ -146,7 +144,61 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
           max: 'Date of birth cannot be in the future',
         },
       },
+      sortOrder: 3,
+    },
+  },
+  // M11.14 (BUG MM) — Gender is a system default field. Optional by
+  // default (some destinations don't require it). Admin CAN edit the
+  // label (e.g. "Cinsiyyət" for AZ), toggle required, reorder options,
+  // and change visibility — but cannot delete or change the systemKey
+  // or fieldType (locked by the field editor's isSystem guard).
+  {
+    sectionTitle: 'Personal Information',
+    sectionOrder: 1,
+    field: {
+      systemKey: 'gender',
+      label: 'Gender',
+      fieldType: 'select',
+      placeholder: 'Select gender',
+      helpText: 'Optional — select if your destination requires it.',
+      isRequired: false,
+      validationRulesJson: {
+        errorMessages: {
+          required: 'Gender is required',
+        },
+      },
       sortOrder: 4,
+      optionsJson: [
+        { value: 'male', label: 'Male' },
+        { value: 'female', label: 'Female' },
+        { value: 'other', label: 'Other' },
+      ],
+    },
+  },
+  // M11.7 (A1) → M11.14 (BUG LL): Nationality renders as a country
+  // dropdown and gets pre-filled from the IP-detected country at the
+  // start of the apply flow. Subsequent applicants in the same
+  // application inherit this value from applicant 1 (frontend-side
+  // propagation). Repositioned to the bottom of Personal Information
+  // because it's auto-detected — the admin reviewing the application
+  // wants to see name + DOB + gender first, then the (usually-correct)
+  // nationality.
+  {
+    sectionTitle: 'Personal Information',
+    sectionOrder: 1,
+    field: {
+      systemKey: 'nationality',
+      label: 'Nationality',
+      fieldType: 'country',
+      placeholder: 'Select your nationality',
+      helpText: 'The country shown on your passport',
+      isRequired: true,
+      validationRulesJson: {
+        errorMessages: {
+          required: 'Nationality is required',
+        },
+      },
+      sortOrder: 5,
     },
   },
 

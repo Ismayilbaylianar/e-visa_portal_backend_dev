@@ -60,17 +60,23 @@ export class TemplatesService implements OnApplicationBootstrap {
         select: { id: true, name: true },
       });
       let added = 0;
+      let reconciled = 0;
       let touchedTemplates = 0;
       for (const t of templates) {
         try {
           const result = await this.prisma.$transaction((tx) =>
             this.initializeSystemFields(tx, t.id),
           );
-          if (result.sectionsCreated > 0 || result.fieldsCreated > 0) {
+          if (
+            result.sectionsCreated > 0 ||
+            result.fieldsCreated > 0 ||
+            result.fieldsReconciled > 0
+          ) {
             touchedTemplates++;
             added += result.fieldsCreated;
+            reconciled += result.fieldsReconciled;
             this.logger.log(
-              `[BUG Y] Backfilled ${result.sectionsCreated} section(s) + ${result.fieldsCreated} field(s) into template "${t.name}" (${t.id})`,
+              `[BUG Y/LL/MM] Template "${t.name}" (${t.id}): +${result.sectionsCreated} section(s), +${result.fieldsCreated} new field(s), ~${result.fieldsReconciled} reconciled field(s)`,
             );
           }
         } catch (err) {
@@ -80,7 +86,7 @@ export class TemplatesService implements OnApplicationBootstrap {
         }
       }
       this.logger.log(
-        `[BUG Y] System-field backfill complete: scanned ${templates.length} template(s), updated ${touchedTemplates}, added ${added} field(s) total.`,
+        `[BUG Y/LL/MM] System-field bootstrap complete: scanned ${templates.length} template(s), touched ${touchedTemplates}, added ${added} field(s), reconciled ${reconciled} field(s).`,
       );
     } catch (err) {
       this.logger.error(
@@ -271,15 +277,34 @@ export class TemplatesService implements OnApplicationBootstrap {
 
   /**
    * Provision SYSTEM_DEFAULT_FIELDS into a template within an existing
-   * transaction. Idempotent: skips sections + fields that already
-   * exist (matched by section.key for sections and field.systemKey
-   * for fields). Reused by both `create()` (blank new template) and
-   * the M11.3 backfill (`backfillSystemFieldsIntoExistingTemplate`).
+   * transaction. Idempotent on the structural side: skips sections +
+   * fields that already exist (matched by section.key for sections
+   * and field.systemKey for fields). Reused by both `create()` (blank
+   * new template) and the M11.3 backfill
+   * (`backfillSystemFieldsIntoExistingTemplate`).
+   *
+   * M11.14 (BUG LL + BUG MM) — also reconciles two attributes on
+   * EXISTING system fields so admins automatically pick up:
+   *   • `sortOrder` changes in the spec (e.g. nationality moving to
+   *     the bottom of Personal Information)
+   *   • `optionsJson` on system option-fields that started life with
+   *     an empty array (e.g. the gender field added in this sprint —
+   *     when the row already exists but has no options yet, hydrate
+   *     them from the spec so customers see Male/Female/Other).
+   *
+   * What we DON'T overwrite: label / placeholder / helpText / isRequired
+   * / visibilityRulesJson — those are admin-editable per template and
+   * must survive a bootstrap pass. `optionsJson` is also left alone
+   * the moment it has any entries (admin may have customized them).
    */
   async initializeSystemFields(
     tx: Prisma.TransactionClient,
     templateId: string,
-  ): Promise<{ sectionsCreated: number; fieldsCreated: number }> {
+  ): Promise<{
+    sectionsCreated: number;
+    fieldsCreated: number;
+    fieldsReconciled: number;
+  }> {
     // Group specs by section identity. We use sortOrder + slugified
     // title as the section key so re-running on a partially-seeded
     // template lands on the same sections rather than spawning
@@ -309,6 +334,7 @@ export class TemplatesService implements OnApplicationBootstrap {
 
     let sectionsCreated = 0;
     let fieldsCreated = 0;
+    let fieldsReconciled = 0;
 
     for (const group of groups.values()) {
       // Look up by (templateId, sectionKey) — the unique index there
@@ -354,9 +380,44 @@ export class TemplatesService implements OnApplicationBootstrap {
             templateSection: { templateId, deletedAt: null },
             deletedAt: null,
           },
-          select: { id: true },
+          select: {
+            id: true,
+            sortOrder: true,
+            optionsJson: true,
+            isSystem: true,
+          },
         });
-        if (existing) continue;
+        if (existing) {
+          // M11.14 (BUG LL + MM) — reconcile attributes that should
+          // track the spec on every restart. We deliberately limit
+          // ourselves to two:
+          //   1. sortOrder if the row drifted from the spec
+          //   2. optionsJson if the spec has options AND the row is
+          //      still on the original empty default (`[]`). Once an
+          //      admin has saved any options of their own (or removed
+          //      one), we treat the row as customized and stop here.
+          const updates: Prisma.TemplateFieldUpdateInput = {};
+          if (existing.sortOrder !== fieldSpec.sortOrder) {
+            updates.sortOrder = fieldSpec.sortOrder;
+          }
+          if (
+            fieldSpec.optionsJson &&
+            fieldSpec.optionsJson.length > 0 &&
+            Array.isArray(existing.optionsJson) &&
+            existing.optionsJson.length === 0
+          ) {
+            updates.optionsJson =
+              fieldSpec.optionsJson as unknown as Prisma.InputJsonValue;
+          }
+          if (Object.keys(updates).length > 0) {
+            await tx.templateField.update({
+              where: { id: existing.id },
+              data: updates,
+            });
+            fieldsReconciled++;
+          }
+          continue;
+        }
 
         try {
           await tx.templateField.create({
@@ -374,7 +435,11 @@ export class TemplatesService implements OnApplicationBootstrap {
               isRequired: fieldSpec.isRequired,
               sortOrder: fieldSpec.sortOrder,
               isActive: true,
-              optionsJson: [],
+              // M11.14 (BUG MM) — option fields (e.g. gender) seed
+              // their canonical option list from the spec so customers
+              // see real choices the moment the field appears.
+              optionsJson: (fieldSpec.optionsJson ??
+                []) as unknown as Prisma.InputJsonValue,
               validationRulesJson: fieldSpec.validationRulesJson as Prisma.InputJsonValue,
               visibilityRulesJson: [],
             },
@@ -394,7 +459,7 @@ export class TemplatesService implements OnApplicationBootstrap {
       }
     }
 
-    return { sectionsCreated, fieldsCreated };
+    return { sectionsCreated, fieldsCreated, fieldsReconciled };
   }
 
   /**
