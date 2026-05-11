@@ -72,6 +72,11 @@ export class TemplateFieldsService {
     const OPTION_BEARING = new Set(['select', 'radio', 'dropdown', 'multiselect']);
     if (OPTION_BEARING.has(dto.fieldType)) {
       const raw = (dto.optionsJson ?? []) as Array<unknown>;
+      // M11.14 (BUG BB) — diagnostic so we can see exactly what the
+      // ValidationPipe handed to the service. Removed after launch.
+      this.logger.log(
+        `[BUG BB DBG] optionsJson received (len=${raw.length}): ${JSON.stringify(raw).slice(0, 500)}`,
+      );
       const cleaned: Array<{ value: string; label: string; order: number }> = [];
       raw.forEach((item, idx) => {
         if (!item || typeof item !== 'object' || Array.isArray(item)) return;

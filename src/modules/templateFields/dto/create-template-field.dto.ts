@@ -12,6 +12,7 @@ import {
   IsObject,
   ValidateIf,
   Matches,
+  Allow,
 } from 'class-validator';
 import { FIELD_TYPES } from '@/modules/templates/dto';
 
@@ -116,6 +117,14 @@ export class CreateTemplateFieldDto {
   })
   @IsOptional()
   @IsArray()
+  // M11.14 (BUG BB) — `whitelist:true` + `forbidNonWhitelisted:true`
+  // on the global ValidationPipe was stripping the nested
+  // {value, label} keys because they were a TypeScript inline type
+  // class-transformer couldn't see. @Allow() turns off the per-item
+  // whitelist enforcement so the inner properties survive into the
+  // service layer (where the new option-shape validation actually
+  // enforces the {value, label} shape semantically).
+  @Allow()
   optionsJson?: Array<{ label: string; value: string }>;
 
   @ApiPropertyOptional({
