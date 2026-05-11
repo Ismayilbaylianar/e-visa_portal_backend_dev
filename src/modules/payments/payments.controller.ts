@@ -245,6 +245,34 @@ export class PaymentsPortalController {
   ): Promise<PaymentResponseDto> {
     return this.paymentsService.findByIdForPortal(params.paymentId, portalIdentity.id);
   }
+
+  /**
+   * M11.13 (BUG S) — Confirm a mock-provider payment.
+   *
+   * Customer-side payment page calls this between `initialize` and
+   * `submit` so the payment row actually flips to PAID (and the
+   * application's paymentStatus cascades + the payment.success email
+   * fires). Real-provider integrations (Payriff) will NOT use this
+   * endpoint — they go through the proper webhook callback path.
+   * Service-layer guard enforces `paymentProviderKey === 'mockProvider'`.
+   */
+  @Post(':paymentId/confirm-mock')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Confirm mock payment',
+    description:
+      "Marks a mock-provider payment as PAID. Idempotent (returns the existing row if already PAID). Rejects when the provider isn't 'mockProvider' or the session has expired.",
+  })
+  @ApiResponse({ status: 200, description: 'Payment confirmed', type: PaymentResponseDto })
+  @ApiResponse({ status: 400, description: 'Wrong provider, wrong state, or expired session' })
+  @ApiResponse({ status: 403, description: 'Caller does not own the application' })
+  @ApiResponse({ status: 404, description: 'Payment not found' })
+  async confirmMock(
+    @Param() params: PaymentIdParamDto,
+    @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
+  ): Promise<PaymentResponseDto> {
+    return this.paymentsService.confirmMockPayment(params.paymentId, portalIdentity.id);
+  }
 }
 
 @ApiTags('Payments - Public')

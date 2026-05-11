@@ -5,6 +5,7 @@ import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { EmailService } from '../email/email.service';
 import { NotificationEmitterService } from '../notifications/notification-emitter.service';
 import { SettingsService } from '../settings/settings.service';
+import { PortalTokenService } from './portal-token.service';
 import {
   CreateApplicationDto,
   UpdateApplicationDto,
@@ -43,6 +44,9 @@ export class ApplicationsService {
     private readonly configService: ConfigService,
     // M11.10 — read maintenance toggle to block create() when ON.
     private readonly settingsService: SettingsService,
+    // M11.13 (BUG U + T) — mint signed deep-link tokens so status
+    // emails carry per-recipient one-click access to /portal/[code].
+    private readonly portalToken: PortalTokenService,
   ) {}
 
   private generateResumeToken(): string {
@@ -1605,24 +1609,40 @@ export class ApplicationsService {
       this.configService.get<string>('PUBLIC_BASE_URL') ??
       'https://evisaglobal.com'
     ).replace(/\/+$/, '');
-    const ctaUrl = `${baseUrl}/me`;
 
-    const variables = {
-      fullName,
-      applicationCode,
-      applicationStatus: statusLabel,
-      destinationCountry: application.destinationCountry?.name ?? '',
-      visaType: application.visaType?.label ?? '',
-      ctaUrl,
-      // Legacy template still expects `applicationRef` + `status` +
-      // `notes` — pass them so the unified-template fallback keeps
-      // rendering correctly.
-      applicationRef: applicationCode,
-      status: statusLabel,
-      notes: notes ?? '',
+    // M11.13 (BUG U + T) — Intent picks the right tab on the
+    // /portal/[code] page. The fallback to /me when the recipient
+    // doesn't match the audience check is gone because the token
+    // verifier itself enforces the audience match — there's no
+    // value in a stale generic /me link any more.
+    const INTENT_BY_LABEL: Record<string, 'upload' | 'download' | 'status'> = {
+      'Additional Documents Required': 'upload',
+      'Ready to Download': 'download',
     };
+    const intent = INTENT_BY_LABEL[statusLabel] ?? 'status';
+    const deepLinkCode = application.referenceCode ?? applicationCode;
 
     for (const recipient of recipients) {
+      // Per-recipient signed token, embedded in the per-recipient
+      // ctaUrl. Stateless — 24h TTL, expires on its own.
+      const token = this.portalToken.mint({
+        applicationId: application.id,
+        email: recipient,
+        intent,
+      });
+      const ctaUrl = `${baseUrl}/portal/${encodeURIComponent(deepLinkCode)}?token=${token}`;
+
+      const variables = {
+        fullName,
+        applicationCode,
+        applicationStatus: statusLabel,
+        destinationCountry: application.destinationCountry?.name ?? '',
+        visaType: application.visaType?.label ?? '',
+        ctaUrl,
+        applicationRef: applicationCode,
+        status: statusLabel,
+        notes: notes ?? '',
+      };
       try {
         const result = await this.emailService.sendTemplatedEmail({
           to: recipient,

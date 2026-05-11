@@ -14,7 +14,7 @@ import {
   PaymentCallbackDto,
   InitializePaymentResponseDto,
 } from './dto';
-import { NotFoundException, BadRequestException, ConflictException } from '@/common/exceptions';
+import { NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import { PaginationMeta } from '@/common/types';
 import { PaymentStatus, ApplicationStatus } from '@/common/enums';
@@ -828,6 +828,102 @@ export class PaymentsService {
   /**
    * Internal method to update payment status (used by system/callbacks)
    */
+  /**
+   * M11.13 (BUG S) — Confirm a mock-provider payment.
+   *
+   * Until the real Payriff integration ships, every payment is
+   * processed by the mock provider; before this endpoint existed,
+   * the customer-side payment page called `initialize` then `submit`
+   * but NEVER flipped the payment row to PAID. Admins saw the
+   * application as SUBMITTED but the underlying payment was still
+   * CREATED/PENDING — Anar's hard-test symptom.
+   *
+   * This endpoint:
+   *   1. Enforces ownership (portal identity owns the application)
+   *   2. Enforces provider is mockProvider (real providers must
+   *      go through the proper callback path; this is dev-only)
+   *   3. Enforces the session isn't expired
+   *   4. Flips payment.paymentStatus → PAID via the existing
+   *      `updatePaymentStatusInternal` helper, which also:
+   *        - writes PaymentStatusHistory
+   *        - cascades to application.paymentStatus = PAID
+   *        - fires payment.received Telegram emit (post-commit)
+   *        - sends payment.success customer email
+   */
+  async confirmMockPayment(
+    paymentId: string,
+    portalIdentityId: string,
+  ): Promise<PaymentResponseDto> {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, deletedAt: null },
+      include: {
+        application: { select: { portalIdentityId: true } },
+      },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Payment not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Payment does not exist' },
+      ]);
+    }
+    if (payment.application.portalIdentityId !== portalIdentityId) {
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not own this application' },
+      ]);
+    }
+    if (payment.paymentProviderKey !== 'mockProvider') {
+      throw new BadRequestException('Only mock provider payments can be confirmed via this endpoint', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: `Payment provider is ${payment.paymentProviderKey}; mock confirmation only applies to mockProvider.`,
+        },
+      ]);
+    }
+    if (payment.paymentStatus === PaymentStatus.PAID) {
+      // Idempotent — return the existing row so the customer-side
+      // retry path (network blip + re-click) doesn't error out.
+      return this.findByIdForPortal(paymentId, portalIdentityId);
+    }
+    if (
+      payment.paymentStatus !== PaymentStatus.CREATED &&
+      payment.paymentStatus !== PaymentStatus.PENDING &&
+      payment.paymentStatus !== PaymentStatus.PROCESSING
+    ) {
+      throw new BadRequestException('Payment cannot be confirmed', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: `Payment in ${payment.paymentStatus} status cannot be confirmed.`,
+        },
+      ]);
+    }
+    if (payment.expiresAt && new Date() > payment.expiresAt) {
+      await this.updatePaymentStatusInternal(
+        paymentId,
+        PaymentStatus.EXPIRED,
+        'Mock confirmation attempted on expired payment',
+        true,
+      );
+      throw new BadRequestException('Payment session expired', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: 'Your payment session has expired. Contact support to issue a new payment link.',
+        },
+      ]);
+    }
+
+    await this.updatePaymentStatusInternal(
+      paymentId,
+      PaymentStatus.PAID,
+      'Mock payment confirmed by customer',
+      false,
+      undefined,
+    );
+
+    this.logger.log(`[BUG S] Mock payment confirmed: ${paymentId} (application=${payment.applicationId})`);
+
+    return this.findByIdForPortal(paymentId, portalIdentityId);
+  }
+
   private async updatePaymentStatusInternal(
     paymentId: string,
     newStatus: PaymentStatus,
