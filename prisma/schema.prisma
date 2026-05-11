@@ -179,6 +179,7 @@ model User {
   applicationEstTimeChanges ApplicationEstimatedTimeChange[] @relation("EstTimeChangedBy")
   documentReviews           Document[]                       @relation("ReviewedByUser")
   paymentStatusHistory      PaymentStatusHistory[]           @relation("ChangedByUser")
+  documentRequestsCreated   DocumentRequest[]                @relation("DocumentRequestRequestedByUser")
   auditLogs                 AuditLog[]
 
   @@index([email])
@@ -778,6 +779,7 @@ model Application {
   statusHistory        ApplicationStatusHistory[]
   estimatedTimeChanges ApplicationEstimatedTimeChange[]
   payments             Payment[]
+  documentRequests     DocumentRequest[]
 
   @@index([portalIdentityId])
   @@index([nationalityCountryId])
@@ -916,8 +918,9 @@ model Document {
   updatedAt              DateTime             @updatedAt @map("updated_at")
   deletedAt              DateTime?            @map("deleted_at")
 
-  applicationApplicant ApplicationApplicant @relation(fields: [applicationApplicantId], references: [id], onDelete: Cascade)
-  reviewedByUser       User?                @relation("ReviewedByUser", fields: [reviewedByUserId], references: [id])
+  applicationApplicant ApplicationApplicant   @relation(fields: [applicationApplicantId], references: [id], onDelete: Cascade)
+  reviewedByUser       User?                  @relation("ReviewedByUser", fields: [reviewedByUserId], references: [id])
+  documentRequestItems DocumentRequestItem[]
 
   @@index([applicationApplicantId])
   @@index([documentTypeKey])
@@ -926,6 +929,50 @@ model Document {
   @@index([storageKey])
   @@index([deletedAt])
   @@map("documents")
+}
+
+/// M11.12 (BUG P) — Operator-issued additional-document request.
+/// One row per "Need Documents" status change; the items table
+/// captures the per-item asks (name + accepted formats + max size).
+/// The legacy `applications.requested_document_types` array still
+/// drives the existing customer /me upload UI for the launch
+/// (lite-shipping path); this richer model exists for audit + the
+/// post-launch upload page that reads accepted_formats / max_size_mb
+/// per item and auto-flips status when every item is fulfilled.
+model DocumentRequest {
+  id             String                @id @default(uuid()) @db.Uuid
+  applicationId  String                @map("application_id") @db.Uuid
+  requestedBy    String                @map("requested_by") @db.Uuid
+  status         String                @default("pending") @db.VarChar(20)
+  customMessage  String?               @map("custom_message") @db.Text
+  createdAt      DateTime              @default(now()) @map("created_at")
+  fulfilledAt    DateTime?             @map("fulfilled_at")
+
+  application    Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  requestedByUser User                 @relation("DocumentRequestRequestedByUser", fields: [requestedBy], references: [id])
+  items          DocumentRequestItem[]
+
+  @@index([applicationId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("document_requests")
+}
+
+model DocumentRequestItem {
+  id                 String           @id @default(uuid()) @db.Uuid
+  requestId          String           @map("request_id") @db.Uuid
+  documentName       String           @map("document_name") @db.VarChar(200)
+  acceptedFormats    String?          @map("accepted_formats") @db.Text
+  maxSizeMb          Int              @default(10) @map("max_size_mb")
+  uploadedDocumentId String?          @map("uploaded_document_id") @db.Uuid
+  uploadedAt         DateTime?        @map("uploaded_at")
+
+  request            DocumentRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  uploadedDocument   Document?        @relation(fields: [uploadedDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
+  @@index([uploadedDocumentId])
+  @@map("document_request_items")
 }
 
 // ===========================================

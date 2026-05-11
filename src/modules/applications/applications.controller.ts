@@ -33,6 +33,7 @@ import {
   RequestDocumentsDto,
   UpdateEstimatedTimeDto,
   EstimatedTimeChangeEntryDto,
+  ChangeApplicationStatusDto,
 } from './dto';
 import { IssueVisaDto, IssueVisaResponseDto, IssuedVisaResponseDto } from '../applicants/dto';
 import { ApplicationIdParamDto } from '@/common/dto';
@@ -210,6 +211,45 @@ export class ApplicationsAdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ApplicationResponseDto> {
     return this.applicationsService.startReview(params.applicationId, user.id);
+  }
+
+  /**
+   * M11.12 (BUG P) — Unified status change.
+   *
+   * One endpoint that handles every transition (APPROVED, REJECTED,
+   * NEED_DOCS, IN_REVIEW, CANCELLED) with rich body params:
+   * sendEmail toggle, emailMode (template / custom), customMessage
+   * appended block, customSubject + customBody for full override,
+   * required reason for REJECTED, requestedDocuments[] for
+   * NEED_DOCS. The legacy approve / reject / request-documents
+   * endpoints stay for back-compat.
+   *
+   * Permission: applications.update — covers every transition.
+   */
+  @Post(':applicationId/status')
+  @RequirePermissions('applications.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Change application status (unified)',
+    description:
+      'Single endpoint for every operator status change. See ChangeApplicationStatusDto for the payload contract. Sends a customer email by default; emailMode controls whether the standard template or operator-supplied subject/body is used.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Status changed successfully',
+    type: ApplicationResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid transition or missing required field for the target status',
+  })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  async changeStatus(
+    @Param() params: ApplicationIdParamDto,
+    @Body() dto: ChangeApplicationStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ApplicationResponseDto> {
+    return this.applicationsService.changeStatus(params.applicationId, dto, user.id);
   }
 
   // ========================================================

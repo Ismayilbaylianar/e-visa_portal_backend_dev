@@ -15,6 +15,7 @@ import {
   RequestDocumentsDto,
   UpdateEstimatedTimeDto,
   EstimatedTimeChangeEntryDto,
+  ChangeApplicationStatusDto,
 } from './dto';
 import {
   NotFoundException,
@@ -1150,6 +1151,322 @@ export class ApplicationsService {
 
     this.logger.log(`Application review started: ${id} by admin ${adminUserId}`);
     return this.mapToResponse(updatedApplication);
+  }
+
+  /**
+   * M11.12 (BUG P) — Unified status change.
+   *
+   * Subsumes approve / reject / requestDocuments / startReview into
+   * a single endpoint that:
+   *   1. Validates the requested transition (per-status source-state
+   *      checks reuse the existing APPROVABLE / REJECTABLE /
+   *      DOCS_REQUESTABLE / etc. constants).
+   *   2. Validates per-status required fields (reason for REJECTED,
+   *      ≥1 requestedDocuments for NEED_DOCS, custom subject + body
+   *      for emailMode='custom').
+   *   3. Updates the application + writes status history + audit log.
+   *   4. For NEED_DOCS: persists a DocumentRequest + DocumentRequestItem
+   *      rows AND populates the legacy
+   *      `applications.requested_document_types` array so the existing
+   *      customer /me upload UI keeps working without a frontend
+   *      change (lite-shipping path per the M11.12 spec).
+   *   5. If sendEmail is true (default), sends either:
+   *        - the standard template + optional "Message from our team"
+   *          custom block (template mode, the default), or
+   *        - the operator's custom subject + body verbatim
+   *          (custom mode — bypasses the template entirely).
+   *
+   * Existing approve / reject / requestDocuments endpoints stay for
+   * back-compat; new admin dialog calls this single endpoint for
+   * every transition.
+   */
+  async changeStatus(
+    id: string,
+    dto: ChangeApplicationStatusDto,
+    adminUserId: string,
+  ): Promise<ApplicationResponseDto> {
+    const application = await this.getApplicationWithRelations(id);
+    const oldStatus = application.currentStatus as ApplicationStatus;
+    const target = dto.status as unknown as ApplicationStatus;
+
+    // ── per-target transition + payload validation ──
+    const TRANSITIONS: Record<string, ApplicationStatus[]> = {
+      APPROVED: this.APPROVABLE_STATUSES,
+      REJECTED: this.REJECTABLE_STATUSES,
+      NEED_DOCS: this.DOCS_REQUESTABLE_STATUSES,
+      IN_REVIEW: [ApplicationStatus.SUBMITTED, ApplicationStatus.NEED_DOCS],
+      CANCELLED: [
+        ApplicationStatus.DRAFT,
+        ApplicationStatus.UNPAID,
+        ApplicationStatus.SUBMITTED,
+        ApplicationStatus.IN_REVIEW,
+        ApplicationStatus.NEED_DOCS,
+      ],
+    };
+    const allowedFrom = TRANSITIONS[dto.status];
+    if (!allowedFrom || !allowedFrom.includes(oldStatus)) {
+      throw new BadRequestException(`Cannot move application to ${dto.status}`, [
+        {
+          reason: ErrorCodes.INVALID_STATUS_TRANSITION,
+          message: `Application in ${oldStatus} status cannot transition to ${dto.status}. Allowed source statuses: ${(allowedFrom ?? []).join(', ') || '(none)'}.`,
+        },
+      ]);
+    }
+    if (dto.status === 'REJECTED' && (!dto.reason || dto.reason.trim().length < 10)) {
+      throw new BadRequestException('Rejection reason required', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: 'A rejection reason of at least 10 characters is required when status=REJECTED.',
+        },
+      ]);
+    }
+    if (
+      dto.status === 'NEED_DOCS' &&
+      (!dto.requestedDocuments || dto.requestedDocuments.length === 0)
+    ) {
+      throw new BadRequestException('Requested documents required', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: 'At least one requested document item is required when status=NEED_DOCS.',
+        },
+      ]);
+    }
+    if (dto.emailMode === 'custom' && (!dto.customSubject || !dto.customBody)) {
+      throw new BadRequestException('Custom email requires subject + body', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: 'When emailMode=custom, both customSubject and customBody are required.',
+        },
+      ]);
+    }
+
+    // ── apply the status change + side-effects ──
+    const newStatusEnum = target;
+    const updateData: any = {
+      currentStatus: newStatusEnum,
+    };
+    if (dto.status === 'APPROVED' || dto.status === 'REJECTED' || dto.status === 'IN_REVIEW') {
+      updateData.reviewedAt = new Date();
+      updateData.reviewedByUserId = adminUserId;
+    }
+    if (dto.status === 'REJECTED') {
+      updateData.rejectionReason = dto.reason;
+    }
+    if (dto.customMessage) {
+      updateData.adminNote = dto.customMessage;
+    }
+    if (dto.status === 'NEED_DOCS') {
+      // Populate the legacy array so the existing customer /me UI
+      // (which renders requestedDocumentTypes) just works without
+      // any frontend change. Use a derived "key" from each document
+      // name (lower-cased + space→underscore + de-symboled) so
+      // CustomerPortalService.resubmitDocuments can still match
+      // uploads against the request via a string key.
+      updateData.requestedDocumentTypes = (dto.requestedDocuments ?? []).map((d) =>
+        d.name
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .slice(0, 64) || 'document',
+      );
+    }
+
+    const updatedApplication = await this.prisma.application.update({
+      where: { id },
+      data: updateData,
+      include: this.getApplicationIncludes(),
+    });
+
+    await this.prisma.applicationStatusHistory.create({
+      data: {
+        applicationId: id,
+        oldStatus,
+        newStatus: newStatusEnum,
+        note:
+          dto.customMessage ??
+          dto.reason ??
+          (dto.status === 'NEED_DOCS'
+            ? `Requested ${dto.requestedDocuments?.length ?? 0} document(s)`
+            : `Status changed to ${dto.status}`),
+        changedByUserId: adminUserId,
+        changedBySystem: false,
+      },
+    });
+
+    // For NEED_DOCS: persist the rich DocumentRequest + items rows.
+    if (dto.status === 'NEED_DOCS' && dto.requestedDocuments?.length) {
+      await this.prisma.documentRequest.create({
+        data: {
+          applicationId: id,
+          requestedBy: adminUserId,
+          status: 'pending',
+          customMessage: dto.customMessage ?? null,
+          items: {
+            create: dto.requestedDocuments.map((d) => ({
+              documentName: d.name,
+              acceptedFormats: d.acceptedFormats ?? null,
+              maxSizeMb: d.maxSizeMb,
+            })),
+          },
+        },
+      });
+    }
+
+    await this.auditLogsService.logAdminAction(
+      adminUserId,
+      `application.status_change.${dto.status.toLowerCase()}`,
+      'Application',
+      id,
+      { status: oldStatus },
+      {
+        status: dto.status,
+        sendEmail: dto.sendEmail !== false,
+        emailMode: dto.emailMode ?? 'template',
+        hasCustomMessage: !!dto.customMessage,
+        reason: dto.reason,
+        requestedDocumentsCount: dto.requestedDocuments?.length ?? 0,
+      },
+    );
+
+    // ── send email (best-effort; never block the response) ──
+    const sendEmail = dto.sendEmail !== false;
+    if (sendEmail) {
+      try {
+        await this.sendChangeStatusEmail(updatedApplication, dto);
+      } catch (err) {
+        this.logger.error(
+          `[BUG P] sendChangeStatusEmail failed for application ${id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else {
+      this.logger.log(`[BUG P] sendEmail=false for ${id}; skipping notification`);
+    }
+
+    // Best-effort downstream notifications (Telegram, etc.).
+    if (dto.status === 'APPROVED') {
+      void this.notificationEmitter.emit('app.approved', {
+        applicationId: id,
+        applicationCode: updatedApplication.applicants?.[0]?.applicationCode,
+        actorUserId: adminUserId,
+        applicantCount: updatedApplication.applicants?.length ?? 0,
+      });
+    } else if (dto.status === 'REJECTED') {
+      void this.notificationEmitter.emit('app.rejected', {
+        applicationId: id,
+        applicationCode: updatedApplication.applicants?.[0]?.applicationCode,
+        reason: dto.reason ?? '',
+        actorUserId: adminUserId,
+      });
+    }
+
+    this.logger.log(
+      `[BUG P] Status changed: ${id}  ${oldStatus} → ${dto.status}  by admin ${adminUserId}  (email=${sendEmail}, mode=${dto.emailMode ?? 'template'})`,
+    );
+    return this.mapToResponse(updatedApplication);
+  }
+
+  /**
+   * M11.12 (BUG P) — Send the email side of `changeStatus`.
+   *
+   * `template` mode: pick the right canonical template
+   * (application.approved / .rejected / .need_docs) and pass the
+   * customMessage as a "Message from our team" block via the
+   * `notes` variable (existing templates already render
+   * `{{notes}}` in a colored callout).
+   *
+   * `custom` mode: skip the template, send the operator's
+   * customSubject + customBody verbatim via emailService.sendEmail
+   * (no variable interpolation), then audit one
+   * notification.email_sent row per recipient.
+   */
+  private async sendChangeStatusEmail(
+    application: any,
+    dto: ChangeApplicationStatusDto,
+  ): Promise<void> {
+    // Recipients: portal email + each applicant.email, deduped.
+    const recipients = new Set<string>();
+    if (application.portalIdentity?.email) {
+      recipients.add(application.portalIdentity.email.toLowerCase().trim());
+    }
+    for (const applicant of application.applicants ?? []) {
+      if (applicant.email) recipients.add(applicant.email.toLowerCase().trim());
+    }
+    if (recipients.size === 0) {
+      this.logger.warn(`[BUG P] No recipients for application ${application.id}`);
+      return;
+    }
+
+    if (dto.emailMode === 'custom') {
+      // Operator-supplied subject/body, sent verbatim. We use the
+      // 'raw_email' system template which has just {{subject}} and
+      // {{body}} placeholders — no other variables get interpolated.
+      const subject = dto.customSubject ?? '';
+      const body = dto.customBody ?? '';
+      for (const recipient of recipients) {
+        try {
+          const result = await this.emailService.sendTemplatedEmail({
+            to: recipient,
+            templateKey: 'raw_email',
+            variables: { subject, body, htmlBody: body },
+            relatedEntity: 'Application',
+            relatedEntityId: application.id,
+          });
+          await this.auditLogsService.logSystemAction(
+            'notification.email_sent',
+            'Application',
+            application.id,
+            undefined,
+            {
+              recipient,
+              templateKey: 'raw_email',
+              subject,
+              success: result.success,
+              messageId: result.messageId ?? null,
+              error: result.error ?? null,
+              custom: true,
+            },
+          );
+        } catch (err) {
+          this.logger.error(
+            `[BUG P] custom email to ${recipient} failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      return;
+    }
+
+    // Template mode — reuse sendStatusNotificationEmail's mapping
+    // logic but drop in the custom message + (for NEED_DOCS) a
+    // bullet list of requested items.
+    const STATUS_LABEL: Record<string, string> = {
+      APPROVED: 'Approved',
+      REJECTED: 'Rejected',
+      NEED_DOCS: 'Additional Documents Required',
+      IN_REVIEW: 'Under Review',
+      CANCELLED: 'Cancelled',
+    };
+    const label = STATUS_LABEL[dto.status] ?? dto.status;
+
+    let composedNote = dto.customMessage ?? '';
+    if (dto.status === 'REJECTED' && dto.reason) {
+      composedNote = composedNote
+        ? `${composedNote}\n\nReason: ${dto.reason}`
+        : `Reason: ${dto.reason}`;
+    }
+    if (dto.status === 'NEED_DOCS' && dto.requestedDocuments?.length) {
+      const items = dto.requestedDocuments
+        .map(
+          (d) =>
+            `• ${d.name}${d.acceptedFormats ? ` (${d.acceptedFormats})` : ''}${d.maxSizeMb ? `, max ${d.maxSizeMb} MB` : ''}`,
+        )
+        .join('\n');
+      composedNote = composedNote
+        ? `${composedNote}\n\nWhat we need:\n${items}`
+        : `What we need:\n${items}`;
+    }
+
+    await this.sendStatusNotificationEmail(application, label, composedNote || undefined);
   }
 
   /**
