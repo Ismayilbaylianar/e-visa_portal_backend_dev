@@ -1190,27 +1190,35 @@ async function main() {
     },
   ];
   for (const f of FIELD_DATA) {
-    await prisma.templateField.upsert({
+    // M11.13 (BUG Z) — partial unique index replaces the compound
+    // `@@unique`, so Prisma no longer exposes
+    // `templateSectionId_fieldKey` as a where-unique. Manual upsert
+    // via findFirst (scoped to deletedAt: null) keeps the seed
+    // idempotent.
+    const existingSeedField = await prisma.templateField.findFirst({
       where: {
-        templateSectionId_fieldKey: {
-          templateSectionId: templateSection.id,
-          fieldKey: f.fieldKey,
-        },
-      },
-      update: {},
-      create: {
         templateSectionId: templateSection.id,
         fieldKey: f.fieldKey,
-        fieldType: f.fieldType,
-        label: f.label,
-        isRequired: f.isRequired,
-        sortOrder: f.sortOrder,
-        isActive: true,
-        ...(f.validationRulesJson
-          ? { validationRulesJson: f.validationRulesJson }
-          : {}),
+        deletedAt: null,
       },
+      select: { id: true },
     });
+    if (!existingSeedField) {
+      await prisma.templateField.create({
+        data: {
+          templateSectionId: templateSection.id,
+          fieldKey: f.fieldKey,
+          fieldType: f.fieldType,
+          label: f.label,
+          isRequired: f.isRequired,
+          sortOrder: f.sortOrder,
+          isActive: true,
+          ...(f.validationRulesJson
+            ? { validationRulesJson: f.validationRulesJson }
+            : {}),
+        },
+      });
+    }
     console.log(`  ✅ ${f.fieldKey} (${f.fieldType})`);
   }
 
@@ -1555,40 +1563,53 @@ async function main() {
         // Fields: composite unique (templateSectionId, fieldKey).
         // Update path refreshes label / help / validation / visibility
         // / options / required so the spec tree is the source of truth.
-        const existingField = await prisma.templateField.findUnique({
-          where: { templateSectionId_fieldKey: { templateSectionId: section.id, fieldKey: f.fieldKey } },
-        });
-        await prisma.templateField.upsert({
-          where: { templateSectionId_fieldKey: { templateSectionId: section.id, fieldKey: f.fieldKey } },
-          update: {
-            fieldType: f.fieldType,
-            label: f.label,
-            placeholder: f.placeholder ?? null,
-            helpText: f.helpText ?? null,
-            isRequired: f.isRequired,
-            sortOrder: f.sortOrder,
-            isActive: true,
-            optionsJson: (f.optionsJson as any) ?? null,
-            validationRulesJson: (f.validationRulesJson as any) ?? null,
-            visibilityRulesJson: (f.visibilityRulesJson as any) ?? null,
-          },
-          create: {
+        // M11.13 (BUG Z) — partial unique index replaces @@unique;
+        // upsert via findFirst + manual create/update, matching the
+        // pattern used in templates.service.ts.
+        const existingField = await prisma.templateField.findFirst({
+          where: {
             templateSectionId: section.id,
             fieldKey: f.fieldKey,
-            fieldType: f.fieldType,
-            label: f.label,
-            placeholder: f.placeholder,
-            helpText: f.helpText,
-            isRequired: f.isRequired,
-            sortOrder: f.sortOrder,
-            isActive: true,
-            optionsJson: (f.optionsJson as any) ?? undefined,
-            validationRulesJson: (f.validationRulesJson as any) ?? undefined,
-            visibilityRulesJson: (f.visibilityRulesJson as any) ?? undefined,
+            deletedAt: null,
           },
+          select: { id: true },
         });
-        if (existingField) skippedFields++;
-        else createdFields++;
+        if (existingField) {
+          await prisma.templateField.update({
+            where: { id: existingField.id },
+            data: {
+              fieldType: f.fieldType,
+              label: f.label,
+              placeholder: f.placeholder ?? null,
+              helpText: f.helpText ?? null,
+              isRequired: f.isRequired,
+              sortOrder: f.sortOrder,
+              isActive: true,
+              optionsJson: (f.optionsJson as any) ?? null,
+              validationRulesJson: (f.validationRulesJson as any) ?? null,
+              visibilityRulesJson: (f.visibilityRulesJson as any) ?? null,
+            },
+          });
+          skippedFields++;
+        } else {
+          await prisma.templateField.create({
+            data: {
+              templateSectionId: section.id,
+              fieldKey: f.fieldKey,
+              fieldType: f.fieldType,
+              label: f.label,
+              placeholder: f.placeholder,
+              helpText: f.helpText,
+              isRequired: f.isRequired,
+              sortOrder: f.sortOrder,
+              isActive: true,
+              optionsJson: (f.optionsJson as any) ?? undefined,
+              validationRulesJson: (f.validationRulesJson as any) ?? undefined,
+              visibilityRulesJson: (f.visibilityRulesJson as any) ?? undefined,
+            },
+          });
+          createdFields++;
+        }
       }
     }
     console.log(

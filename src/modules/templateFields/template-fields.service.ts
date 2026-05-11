@@ -61,23 +61,55 @@ export class TemplateFieldsService {
       ]);
     }
 
-    const field = await this.prisma.templateField.create({
-      data: {
-        templateSectionId: sectionId,
-        fieldKey: dto.fieldKey,
-        fieldType: dto.fieldType,
-        label: dto.label,
-        placeholder: dto.placeholder,
-        helpText: dto.helpText,
-        defaultValue: dto.defaultValue,
-        isRequired: dto.isRequired ?? false,
-        sortOrder: dto.sortOrder ?? 0,
-        isActive: dto.isActive ?? true,
-        optionsJson: dto.optionsJson ?? [],
-        validationRulesJson: dto.validationRulesJson ?? undefined,
-        visibilityRulesJson: dto.visibilityRulesJson ?? [],
-      },
-    });
+    // M11.13 (BUG Z) — wrap the INSERT in a try/catch so a P2002
+    // (unique violation) on the partial index surfaces as a
+    // friendly ConflictException instead of leaking a raw Prisma
+    // error to the admin. The pre-check above already covers the
+    // common case, but a concurrent admin save (two admins adding
+    // the same field key at the same time) is still possible and
+    // should fail cleanly.
+    let field;
+    try {
+      field = await this.prisma.templateField.create({
+        data: {
+          templateSectionId: sectionId,
+          fieldKey: dto.fieldKey,
+          fieldType: dto.fieldType,
+          label: dto.label,
+          placeholder: dto.placeholder,
+          helpText: dto.helpText,
+          defaultValue: dto.defaultValue,
+          isRequired: dto.isRequired ?? false,
+          sortOrder: dto.sortOrder ?? 0,
+          isActive: dto.isActive ?? true,
+          optionsJson: dto.optionsJson ?? [],
+          validationRulesJson: dto.validationRulesJson ?? undefined,
+          visibilityRulesJson: dto.visibilityRulesJson ?? [],
+        },
+      });
+    } catch (err) {
+      // Prisma P2002 = unique constraint violation. Code lives on
+      // the error object as `code`. We accept either the typed
+      // shape or a duck-typed `message includes` fallback so we
+      // don't have to import Prisma's error namespace.
+      const isUnique =
+        (err as { code?: string })?.code === 'P2002' ||
+        (err instanceof Error && /unique constraint/i.test(err.message));
+      if (isUnique) {
+        throw new ConflictException(
+          `Field key "${dto.fieldKey}" is already used in this section`,
+          [
+            {
+              field: 'fieldKey',
+              reason: ErrorCodes.CONFLICT,
+              message:
+                'A field with this key already exists in this section. Pick a different key or rename the existing field first.',
+            },
+          ],
+        );
+      }
+      throw err;
+    }
 
     if (actorUserId) {
       await this.auditLogsService.logAdminAction(

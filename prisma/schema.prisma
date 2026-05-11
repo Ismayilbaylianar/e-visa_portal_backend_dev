@@ -543,7 +543,17 @@ model TemplateField {
 
   templateSection TemplateSection @relation(fields: [templateSectionId], references: [id], onDelete: Cascade)
 
-  @@unique([templateSectionId, fieldKey])
+  // M11.13 (BUG Z) — uniqueness on (templateSectionId, fieldKey) is
+  // enforced by a PARTIAL UNIQUE INDEX scoped to `deleted_at IS NULL`
+  // rows (see migration 19_m11_13_template_fields_partial_unique).
+  // Soft-deleting a field frees its (section_id, field_key) slot so
+  // admins can re-add a previously-deleted key. Prisma's schema
+  // DSL can't express partial unique indexes, so we drop @@unique
+  // here and rely on the migration; a non-unique compound index
+  // keeps the lookup fast. Anything that needs guaranteed-unique
+  // active rows pre-checks via the service layer
+  // (TemplateFieldsService.create) before INSERT.
+  @@index([templateSectionId, fieldKey])
   @@index([templateSectionId])
   @@index([fieldKey])
   @@index([sortOrder])
