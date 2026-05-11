@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import {
@@ -30,8 +30,64 @@ import {
  * second section) roll back the whole tree.
  */
 @Injectable()
-export class TemplatesService {
+export class TemplatesService implements OnApplicationBootstrap {
   private readonly logger = new Logger(TemplatesService.name);
+
+  /**
+   * M11.13 (BUG Y) — On every backend start, re-run
+   * `initializeSystemFields` against every non-boilerplate
+   * template. The helper is idempotent (matches existing sections
+   * by key, existing fields by systemKey OR fieldKey) so it only
+   * INSERTS missing rows — admin renames + custom field reorders
+   * survive untouched.
+   *
+   * This is how new entries added to `SYSTEM_DEFAULT_FIELDS`
+   * (contactEmail / contactPhone / passportPhoto in this sprint)
+   * make their way into templates that were created before those
+   * specs existed. Boilerplates are skipped per the M11.3
+   * boilerplate convention.
+   *
+   * Best-effort: a single template's backfill failure logs + moves
+   * on rather than blocking app startup.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    const env = process.env.NODE_ENV;
+    // Skip during tests so jest doesn't have to mock prisma.
+    if (env === 'test') return;
+    try {
+      const templates = await this.prisma.template.findMany({
+        where: { deletedAt: null, isBoilerplate: false },
+        select: { id: true, name: true },
+      });
+      let added = 0;
+      let touchedTemplates = 0;
+      for (const t of templates) {
+        try {
+          const result = await this.prisma.$transaction((tx) =>
+            this.initializeSystemFields(tx, t.id),
+          );
+          if (result.sectionsCreated > 0 || result.fieldsCreated > 0) {
+            touchedTemplates++;
+            added += result.fieldsCreated;
+            this.logger.log(
+              `[BUG Y] Backfilled ${result.sectionsCreated} section(s) + ${result.fieldsCreated} field(s) into template "${t.name}" (${t.id})`,
+            );
+          }
+        } catch (err) {
+          this.logger.error(
+            `[BUG Y] Backfill failed for template ${t.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      this.logger.log(
+        `[BUG Y] System-field backfill complete: scanned ${templates.length} template(s), updated ${touchedTemplates}, added ${added} field(s) total.`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `[BUG Y] Bootstrap system-field backfill aborted: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   constructor(
     private readonly prisma: PrismaService,

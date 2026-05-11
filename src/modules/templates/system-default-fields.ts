@@ -34,7 +34,19 @@ export interface SystemFieldSpec {
     systemKey: string;
     label: string;
     /** Lowercase to match the existing renderer enum (text/date/email/...). */
-    fieldType: 'text' | 'textarea' | 'date' | 'email' | 'phone' | 'select' | 'radio' | 'checkbox' | 'country';
+    fieldType:
+      | 'text'
+      | 'textarea'
+      | 'date'
+      | 'email'
+      | 'phone'
+      | 'select'
+      | 'radio'
+      | 'checkbox'
+      | 'country'
+      // M11.13 (BUG Y) — `file` joins the union so contact/document
+      // system fields can backfill into every template.
+      | 'file';
     placeholder?: string;
     helpText?: string;
     isRequired: boolean;
@@ -268,6 +280,81 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
         },
       },
       sortOrder: 2,
+    },
+  },
+
+  // ─── Section 4: Contact Information ───
+  // M11.13 (BUG Y) — these used to live as a HARDCODED block in the
+  // legacy /apply form (ApplicantSection.tsx) so admins couldn't
+  // control them from the template editor. Promoted to system fields
+  // so the editor (which already renders isSystem fields with the
+  // 🔒 indicator) gives admins reorder + label + visibility control,
+  // and the dynamic form renders them from the same template the
+  // editor sees. The legacy ApplicantSection is no longer the
+  // default path on /apply (flipped in the same sprint).
+  {
+    sectionTitle: 'Contact Information',
+    sectionDescription:
+      'How we should reach you about your application',
+    sectionOrder: 4,
+    field: {
+      systemKey: 'contactEmail',
+      label: 'Email',
+      fieldType: 'email',
+      placeholder: 'you@example.com',
+      helpText: 'We send application updates to this address',
+      isRequired: true,
+      validationRulesJson: {
+        errorMessages: {
+          required: 'Email is required',
+          pattern: 'Enter a valid email address',
+        },
+      },
+      sortOrder: 1,
+    },
+  },
+  {
+    sectionTitle: 'Contact Information',
+    sectionOrder: 4,
+    field: {
+      systemKey: 'contactPhone',
+      label: 'Phone',
+      fieldType: 'phone',
+      placeholder: '+994 50 123 45 67',
+      helpText: 'Optional — used if we need to reach you urgently',
+      isRequired: false,
+      validationRulesJson: {
+        errorMessages: {
+          pattern: 'Enter a valid phone number',
+        },
+      },
+      sortOrder: 2,
+    },
+  },
+
+  // ─── Section 5: Documents ───
+  // M11.13 (BUG Y) — passport photo upload, previously hardcoded in
+  // the legacy applicant form. accept/maxSizeMb are read by the
+  // dynamic renderer's `file` case (DynamicFieldRenderer.tsx).
+  {
+    sectionTitle: 'Documents',
+    sectionDescription: 'Upload the documents we need to process your application',
+    sectionOrder: 5,
+    field: {
+      systemKey: 'passportPhoto',
+      label: 'Passport bio page',
+      fieldType: 'file',
+      helpText:
+        'Clear scan/photo of the page with your photo + passport number. PDF or image.',
+      isRequired: true,
+      validationRulesJson: {
+        accept: 'pdf,jpg,jpeg,png',
+        maxSizeMb: 10,
+        errorMessages: {
+          required: 'Passport bio page is required',
+        },
+      },
+      sortOrder: 1,
     },
   },
 ];
