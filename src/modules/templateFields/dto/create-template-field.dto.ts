@@ -117,15 +117,16 @@ export class CreateTemplateFieldDto {
   })
   @IsOptional()
   @IsArray()
-  // M11.14 (BUG BB) — `whitelist:true` + `forbidNonWhitelisted:true`
-  // on the global ValidationPipe was stripping the nested
-  // {value, label} keys because they were a TypeScript inline type
-  // class-transformer couldn't see. @Allow() turns off the per-item
-  // whitelist enforcement so the inner properties survive into the
-  // service layer (where the new option-shape validation actually
-  // enforces the {value, label} shape semantically).
-  @Allow()
-  optionsJson?: Array<{ label: string; value: string }>;
+  // M11.14 (BUG BB) — type widened from
+  //   Array<{ label: string; value: string }>
+  // to `any[]` so class-transformer's `transform:true` doesn't
+  // try to coerce each inline-typed inner object into something it
+  // can't reflect on. The previous inline type made plainToInstance
+  // produce `[[],[],[]]` at the service layer, which the new
+  // service-side validation then rejected ("no options"). Service
+  // owns the semantic shape check; DTO just guards that this is
+  // an array.
+  optionsJson?: any[];
 
   @ApiPropertyOptional({
     description:
