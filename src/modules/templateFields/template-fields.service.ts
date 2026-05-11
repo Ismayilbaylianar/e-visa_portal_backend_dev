@@ -61,6 +61,69 @@ export class TemplateFieldsService {
       ]);
     }
 
+    // M11.14 (BUG BB) — validate + normalize optionsJson for
+    // option-bearing types. The DTO only enforces `@IsArray()` so
+    // junk shapes like `[[], [], []]` (Anar's hard test caught
+    // this) slip through and render as 3 invisible/unclickable
+    // SelectItems on the public form. We require ≥2 options for
+    // select/radio/dropdown, each with non-empty trimmed
+    // `value` + `label`, and re-shape the array to drop anything
+    // bogus.
+    const OPTION_BEARING = new Set(['select', 'radio', 'dropdown', 'multiselect']);
+    if (OPTION_BEARING.has(dto.fieldType)) {
+      const raw = (dto.optionsJson ?? []) as Array<unknown>;
+      const cleaned: Array<{ value: string; label: string; order: number }> = [];
+      raw.forEach((item, idx) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+        const opt = item as Record<string, unknown>;
+        const value = typeof opt.value === 'string' ? opt.value.trim() : '';
+        const label = typeof opt.label === 'string' ? opt.label.trim() : '';
+        if (!value || !label) return;
+        cleaned.push({
+          value,
+          label,
+          order:
+            typeof opt.order === 'number' && Number.isFinite(opt.order)
+              ? opt.order
+              : idx + 1,
+        });
+      });
+      if (cleaned.length < 2) {
+        throw new BadRequestException(
+          `Field type "${dto.fieldType}" requires at least 2 options`,
+          [
+            {
+              field: 'optionsJson',
+              reason: ErrorCodes.BAD_REQUEST,
+              message:
+                'Each option must be an object like { "value": "male", "label": "Male" } with both fields non-empty. Add at least two such options.',
+            },
+          ],
+        );
+      }
+      // De-dup by value (case-insensitive) so admins can't ship
+      // ambiguous selects that all submit the same value.
+      const seen = new Set<string>();
+      const deduped = cleaned.filter((o) => {
+        const k = o.value.toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      if (deduped.length < cleaned.length) {
+        this.logger.warn(
+          `[BUG BB] Dropped ${cleaned.length - deduped.length} duplicate option(s) from field ${dto.fieldKey}`,
+        );
+      }
+      // Stamp the normalized list back onto the DTO so downstream
+      // INSERT writes exactly what we validated.
+      dto.optionsJson = deduped.map(({ value, label }) => ({ value, label }));
+    } else {
+      // Non-option types must NEVER carry options — clear so the
+      // DB column doesn't grow stale junk.
+      dto.optionsJson = [];
+    }
+
     // M11.13 (BUG Z) — wrap the INSERT in a try/catch so a P2002
     // (unique violation) on the partial index surfaces as a
     // friendly ConflictException instead of leaking a raw Prisma
@@ -223,6 +286,54 @@ export class TemplateFieldsService {
           },
         ]);
       }
+    }
+
+    // M11.14 (BUG BB) — same options validation as create. Use the
+    // post-update fieldType (dto.fieldType ?? field.fieldType) so
+    // a type-change-from-text-to-select still gets validated.
+    const effectiveType = (dto.fieldType ?? field.fieldType) as string;
+    const OPTION_BEARING_UPDATE = new Set([
+      'select',
+      'radio',
+      'dropdown',
+      'multiselect',
+    ]);
+    if (dto.optionsJson !== undefined && OPTION_BEARING_UPDATE.has(effectiveType)) {
+      const raw = (dto.optionsJson ?? []) as Array<unknown>;
+      const cleaned: Array<{ value: string; label: string }> = [];
+      raw.forEach((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+        const opt = item as Record<string, unknown>;
+        const value = typeof opt.value === 'string' ? opt.value.trim() : '';
+        const label = typeof opt.label === 'string' ? opt.label.trim() : '';
+        if (!value || !label) return;
+        cleaned.push({ value, label });
+      });
+      if (cleaned.length < 2) {
+        throw new BadRequestException(
+          `Field type "${effectiveType}" requires at least 2 options`,
+          [
+            {
+              field: 'optionsJson',
+              reason: ErrorCodes.BAD_REQUEST,
+              message:
+                'Each option must be an object like { "value": "male", "label": "Male" } with both fields non-empty. Add at least two such options.',
+            },
+          ],
+        );
+      }
+      const seen = new Set<string>();
+      dto.optionsJson = cleaned.filter((o) => {
+        const k = o.value.toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+    } else if (
+      dto.optionsJson !== undefined &&
+      !OPTION_BEARING_UPDATE.has(effectiveType)
+    ) {
+      dto.optionsJson = [];
     }
 
     const updateData: any = {};

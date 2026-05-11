@@ -617,7 +617,7 @@ export class TemplatesService implements OnApplicationBootstrap {
   /**
    * Soft delete template and all its sections and fields
    */
-  async delete(id: string, actorUserId?: string): Promise<void> {
+  async delete(id: string, actorUserId?: string, force = false): Promise<void> {
     const template = await this.prisma.template.findFirst({
       where: { id, deletedAt: null },
       include: {
@@ -637,10 +637,55 @@ export class TemplatesService implements OnApplicationBootstrap {
       ]);
     }
 
+    // M11.14 (BUG AA) — Cascade-aware delete.
+    //
+    // Before this fix, soft-deleting a template left active
+    // `template_bindings` (and their `binding_nationality_fees`)
+    // pointing at it — admins saw "orphan" bindings in
+    // /admin/template-bindings that referenced a deleted template.
+    //
+    // New behavior:
+    //   - If active bindings exist AND !force → 409 with a
+    //     count so the frontend can ask "delete X bindings too?"
+    //   - If force=true → cascade-soft-delete the bindings AND
+    //     their nationality fees in the same transaction.
+    const activeBindings = await this.prisma.templateBinding.findMany({
+      where: { templateId: id, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (activeBindings.length > 0 && !force) {
+      throw new ConflictException(
+        `Cannot delete: template has ${activeBindings.length} active binding(s)`,
+        [
+          {
+            reason: ErrorCodes.CONFLICT,
+            field: 'bindings',
+            message: `Delete or migrate the ${activeBindings.length} binding(s) first, or call this endpoint with ?force=true to cascade-delete them.`,
+          },
+        ],
+      );
+    }
+
     const now = new Date();
     const sectionIds = template.sections.map(s => s.id);
+    const bindingIds = activeBindings.map(b => b.id);
 
     await this.prisma.$transaction([
+      // Cascade soft-delete bindings + their nationality fees when
+      // force=true. updateMany is no-op when bindingIds is empty.
+      ...(bindingIds.length > 0
+        ? [
+            this.prisma.bindingNationalityFee.updateMany({
+              where: { templateBindingId: { in: bindingIds }, deletedAt: null },
+              data: { deletedAt: now },
+            }),
+            this.prisma.templateBinding.updateMany({
+              where: { id: { in: bindingIds }, deletedAt: null },
+              data: { deletedAt: now },
+            }),
+          ]
+        : []),
       // Soft delete all fields in all sections
       ...(sectionIds.length > 0
         ? [
@@ -674,11 +719,16 @@ export class TemplatesService implements OnApplicationBootstrap {
           version: template.version,
           sectionCount: sectionIds.length,
         },
-        undefined,
+        {
+          force,
+          cascadedBindings: bindingIds.length,
+        },
       );
     }
 
-    this.logger.log(`Template soft deleted: ${id} (with ${sectionIds.length} sections)`);
+    this.logger.log(
+      `[BUG AA] Template soft deleted: ${id} (sections=${sectionIds.length}, bindings_cascaded=${bindingIds.length}, force=${force})`,
+    );
   }
 
   /**

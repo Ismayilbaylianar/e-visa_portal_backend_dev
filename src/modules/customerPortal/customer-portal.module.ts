@@ -5,6 +5,7 @@ import { CustomerPortalService } from './customer-portal.service';
 import { PortalAuthModule } from '../portalAuth/portal-auth.module';
 import { StorageModule } from '../storage/storage.module';
 import { AuditLogsModule } from '../auditLogs/audit-logs.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PortalTokenService } from '../applications/portal-token.service';
 
 @Module({
@@ -15,6 +16,10 @@ import { PortalTokenService } from '../applications/portal-token.service';
     // import line is needed for it here.
     StorageModule,
     AuditLogsModule,
+    // M11.14 (BUG DD) — public token-authenticated upload endpoint
+    // fires app.documents_resubmitted into the notification emitter
+    // (Telegram + future SSE feeds).
+    NotificationsModule,
   ],
   controllers: [CustomerPortalController, CustomerPortalPublicController],
   // M11.13 (BUG U + T) — PortalTokenService is also used by

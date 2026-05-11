@@ -240,21 +240,24 @@ export class TemplatesController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete template',
-    description: 'Soft delete a template and all its sections and fields',
+    description:
+      'M11.14 (BUG AA) — Soft delete a template + sections + fields. When the template still has active bindings, returns 409; pass ?force=true to cascade-soft-delete the bindings + their nationality fees in the same transaction.',
   })
   @ApiParam({ name: 'templateId', description: 'Template UUID' })
+  @ApiResponse({ status: 204, description: 'Template deleted successfully' })
   @ApiResponse({
-    status: 204,
-    description: 'Template deleted successfully',
+    status: 409,
+    description: 'Template has active bindings — pass ?force=true to cascade',
   })
-  @ApiResponse({
-    status: 404,
-    description: 'Template not found',
-  })
+  @ApiResponse({ status: 404, description: 'Template not found' })
   async delete(
     @Param() params: TemplateIdParamDto,
+    @Query('force') force: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
-    return this.templatesService.delete(params.templateId, user.id);
+    // M11.14 (BUG AA) — string→bool coercion matches Nest's
+    // standard pattern; `force=true` or `force=1` opt in.
+    const cascade = force === 'true' || force === '1';
+    return this.templatesService.delete(params.templateId, user.id, cascade);
   }
 }
