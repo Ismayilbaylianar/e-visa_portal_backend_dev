@@ -14,6 +14,7 @@ import {
   Matches,
   Allow,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { FIELD_TYPES } from '@/modules/templates/dto';
 
 /**
@@ -117,15 +118,16 @@ export class CreateTemplateFieldDto {
   })
   @IsOptional()
   @IsArray()
-  // M11.14 (BUG BB) — type widened from
-  //   Array<{ label: string; value: string }>
-  // to `any[]` so class-transformer's `transform:true` doesn't
-  // try to coerce each inline-typed inner object into something it
-  // can't reflect on. The previous inline type made plainToInstance
-  // produce `[[],[],[]]` at the service layer, which the new
-  // service-side validation then rejected ("no options"). Service
-  // owns the semantic shape check; DTO just guards that this is
-  // an array.
+  // M11.14 (BUG BB) — Tell class-transformer to keep each inner
+  // entry as a plain Object. Without @Type, the inline inline
+  // shape `{label, value}` was making class-transformer (via
+  // plainToInstance + transform:true) coerce each object into
+  // an empty array — the service then received `[[],[],[]]` and
+  // (correctly, semantically) rejected the field for having no
+  // valid options. With `@Type(() => Object)` the inner records
+  // pass through unchanged; the service's option-shape check
+  // does the real validation.
+  @Type(() => Object)
   optionsJson?: any[];
 
   @ApiPropertyOptional({
