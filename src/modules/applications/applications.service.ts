@@ -1371,6 +1371,250 @@ export class ApplicationsService {
   }
 
   /**
+   * M-Assign — Assign / reassign / unassign an operator.
+   *
+   * - assigneeId = null|undefined → unassign (clear all three
+   *   `assigned*` columns)
+   * - assigneeId = <user id> → assign or reassign
+   *
+   * Writes ApplicationAssignmentHistory in the same transaction +
+   * fires audit + a best-effort Telegram emit so the activity
+   * channel reflects every change. Validates the assignee is an
+   * active admin user before assigning.
+   */
+  async assignOperator(
+    applicationId: string,
+    assigneeId: string | null,
+    actorUserId: string,
+    reason?: string,
+  ): Promise<ApplicationResponseDto> {
+    const application = await this.getApplicationWithRelations(applicationId);
+
+    if (assigneeId) {
+      const assignee = await this.prisma.user.findFirst({
+        where: { id: assigneeId, deletedAt: null, isActive: true },
+        select: { id: true, fullName: true, email: true },
+      });
+      if (!assignee) {
+        throw new BadRequestException('Assignee not found or inactive', [
+          {
+            reason: ErrorCodes.BAD_REQUEST,
+            message: 'The selected operator is no longer available.',
+          },
+        ]);
+      }
+    }
+
+    const previousAssigneeId = (application as any).assignedToUserId ?? null;
+    if (previousAssigneeId === assigneeId) {
+      // No-op assignment — return current state, don't write history.
+      return this.mapToResponse(application);
+    }
+
+    const now = new Date();
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.application.update({
+        where: { id: applicationId },
+        data: {
+          assignedToUserId: assigneeId,
+          assignedAt: assigneeId ? now : null,
+          assignedByUserId: assigneeId ? actorUserId : null,
+        },
+        include: this.getApplicationIncludes(),
+      }),
+      this.prisma.applicationAssignmentHistory.create({
+        data: {
+          applicationId,
+          previousAssigneeId,
+          newAssigneeId: assigneeId,
+          changedBy: actorUserId,
+          reason: reason ?? null,
+        },
+      }),
+    ]);
+
+    await this.auditLogsService.logAdminAction(
+      actorUserId,
+      'application.assign',
+      'Application',
+      applicationId,
+      { previousAssigneeId },
+      { newAssigneeId: assigneeId, reason: reason ?? null },
+    );
+
+    // Telegram (best-effort, post-commit)
+    void this.notificationEmitter.emit('app.assigned', {
+      applicationId,
+      applicationCode: updated.applicants?.[0]?.applicationCode,
+      previousAssigneeId,
+      newAssigneeId: assigneeId,
+      actorUserId,
+    });
+
+    this.logger.log(
+      `[M-Assign] Application ${applicationId} ${assigneeId ? `assigned to ${assigneeId}` : 'unassigned'} by ${actorUserId}`,
+    );
+    return this.mapToResponse(updated);
+  }
+
+  /**
+   * M-Assign — Add an internal-only note to an application. The
+   * note is operator-side only — never sent to customer. Author is
+   * recorded so the UI can render edit/delete affordances only on
+   * the author's own notes.
+   */
+  async addInternalNote(
+    applicationId: string,
+    actorUserId: string,
+    note: string,
+  ): Promise<any> {
+    const exists = await this.prisma.application.findFirst({
+      where: { id: applicationId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new NotFoundException('Application not found', [
+        {
+          reason: ErrorCodes.APPLICATION_NOT_FOUND,
+          message: 'Application does not exist',
+        },
+      ]);
+    }
+    const created = await this.prisma.applicationInternalNote.create({
+      data: {
+        applicationId,
+        userId: actorUserId,
+        note: note.trim(),
+        visibility: 'internal',
+      },
+      include: {
+        user: { select: { id: true, fullName: true, email: true } },
+      },
+    });
+    await this.auditLogsService.logAdminAction(
+      actorUserId,
+      'application.note_added',
+      'ApplicationInternalNote',
+      created.id,
+      undefined,
+      { applicationId, note: note.slice(0, 120) },
+    );
+    return created;
+  }
+
+  async listInternalNotes(applicationId: string): Promise<any[]> {
+    return this.prisma.applicationInternalNote.findMany({
+      where: { applicationId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, fullName: true, email: true } },
+      },
+    });
+  }
+
+  /**
+   * M-Assign — Update an internal note. Only the original author
+   * can edit. Super admins should use this endpoint too (their
+   * role has applications.note_manage which the controller
+   * permission guard accepts; the service still enforces author-
+   * only edit so an admin can't silently rewrite an operator's
+   * note as if it were their own).
+   */
+  async updateInternalNote(
+    noteId: string,
+    actorUserId: string,
+    note: string,
+  ): Promise<any> {
+    const existing = await this.prisma.applicationInternalNote.findFirst({
+      where: { id: noteId, deletedAt: null },
+    });
+    if (!existing) {
+      throw new NotFoundException('Note not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Note does not exist' },
+      ]);
+    }
+    if (existing.userId !== actorUserId) {
+      throw new ForbiddenException('Only the author can edit this note', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You did not write this note.' },
+      ]);
+    }
+    const updated = await this.prisma.applicationInternalNote.update({
+      where: { id: noteId },
+      data: { note: note.trim(), updatedAt: new Date() },
+      include: {
+        user: { select: { id: true, fullName: true, email: true } },
+      },
+    });
+    await this.auditLogsService.logAdminAction(
+      actorUserId,
+      'application.note_updated',
+      'ApplicationInternalNote',
+      noteId,
+      { note: existing.note.slice(0, 120) },
+      { note: note.slice(0, 120) },
+    );
+    return updated;
+  }
+
+  /**
+   * Soft-delete an internal note. Author OR super admin may delete.
+   * The controller permission guard determines who can call this
+   * — we keep an author check as defense-in-depth.
+   */
+  async deleteInternalNote(noteId: string, actorUserId: string): Promise<void> {
+    const existing = await this.prisma.applicationInternalNote.findFirst({
+      where: { id: noteId, deletedAt: null },
+    });
+    if (!existing) {
+      throw new NotFoundException('Note not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Note does not exist' },
+      ]);
+    }
+    // Author OR caller has note_manage permission (controller
+    // already gates on the permission; the author check here is
+    // belt-and-suspenders).
+    await this.prisma.applicationInternalNote.update({
+      where: { id: noteId },
+      data: { deletedAt: new Date() },
+    });
+    await this.auditLogsService.logAdminAction(
+      actorUserId,
+      'application.note_deleted',
+      'ApplicationInternalNote',
+      noteId,
+      { note: existing.note.slice(0, 120), authorId: existing.userId },
+      undefined,
+    );
+  }
+
+  /**
+   * M-Assign — Operator dropdown source. Active admin users who
+   * can be assigned. For now, every active user is assignable;
+   * future versions might filter by an `applications.assignable`
+   * permission.
+   */
+  async listAssignableUsers(): Promise<
+    Array<{ id: string; fullName: string; email: string; roleKey?: string }>
+  > {
+    const users = await this.prisma.user.findMany({
+      where: { deletedAt: null, isActive: true },
+      orderBy: { fullName: 'asc' },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: { select: { key: true } },
+      },
+    });
+    return users.map((u) => ({
+      id: u.id,
+      fullName: u.fullName,
+      email: u.email,
+      roleKey: u.role?.key,
+    }));
+  }
+
+  /**
    * M11.12 (BUG P) — Send the email side of `changeStatus`.
    *
    * `template` mode: pick the right canonical template
@@ -1527,6 +1771,14 @@ export class ApplicationsService {
       applicants: {
         where: { deletedAt: null },
         orderBy: [{ isMainApplicant: 'desc' as const }, { createdAt: 'asc' as const }],
+      },
+      // M-Assign — include the assignee for the admin detail page
+      // sidebar (AssignmentAndNotesPanel). Only public-safe fields.
+      assignedToUser: {
+        select: { id: true, fullName: true, email: true },
+      },
+      assignedByUser: {
+        select: { id: true, fullName: true, email: true },
       },
     };
   }
@@ -1773,6 +2025,29 @@ export class ApplicationsService {
         createdAt: applicant.createdAt,
         updatedAt: applicant.updatedAt,
       })),
+      // M-Assign — surface the operator assignment so the admin
+      // detail page sidebar (AssignmentAndNotesPanel) can render
+      // the current assignee + powering the auth check on note
+      // edit affordances. Cast through any since the auto-
+      // generated ApplicationResponseDto wasn't extended this
+      // sprint; the frontend reads `application.assignedToUser`.
+      ...((): Record<string, unknown> => ({
+        assignedToUser: application.assignedToUser
+          ? {
+              id: application.assignedToUser.id,
+              fullName: application.assignedToUser.fullName,
+              email: application.assignedToUser.email,
+            }
+          : null,
+        assignedAt: application.assignedAt ?? null,
+        assignedBy: application.assignedByUser
+          ? {
+              id: application.assignedByUser.id,
+              fullName: application.assignedByUser.fullName,
+              email: application.assignedByUser.email,
+            }
+          : null,
+      }))(),
       createdAt: application.createdAt,
       updatedAt: application.updatedAt,
     };

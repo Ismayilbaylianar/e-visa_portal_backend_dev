@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -34,6 +35,9 @@ import {
   UpdateEstimatedTimeDto,
   EstimatedTimeChangeEntryDto,
   ChangeApplicationStatusDto,
+  AssignApplicationDto,
+  CreateInternalNoteDto,
+  UpdateInternalNoteDto,
 } from './dto';
 import { IssueVisaDto, IssueVisaResponseDto, IssuedVisaResponseDto } from '../applicants/dto';
 import { ApplicationIdParamDto } from '@/common/dto';
@@ -250,6 +254,115 @@ export class ApplicationsAdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ApplicationResponseDto> {
     return this.applicationsService.changeStatus(params.applicationId, dto, user.id);
+  }
+
+  // ========================================================
+  // M-Assign — Operator assignment + internal notes
+  // ========================================================
+
+  /**
+   * M-Assign — Assign / reassign / unassign an operator.
+   *
+   * Body:
+   *   { assigneeId: <user id> | null, reason?: string }
+   *
+   * Permission: applications.update (existing). When M-Assign
+   * adds the dedicated `applications.assign` permission to the
+   * seed, swap to that key.
+   */
+  @Post(':applicationId/assign')
+  @RequirePermissions('applications.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Assign or unassign an operator',
+    description:
+      'Set or clear the assigned operator on an application. Writes assignment history + audit log + Telegram notification.',
+  })
+  @ApiResponse({ status: 200, description: 'Assignment updated', type: ApplicationResponseDto })
+  @ApiResponse({ status: 400, description: 'Inactive or unknown assignee' })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  async assign(
+    @Param() params: ApplicationIdParamDto,
+    @Body() dto: AssignApplicationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ApplicationResponseDto> {
+    return this.applicationsService.assignOperator(
+      params.applicationId,
+      dto.assigneeId ?? null,
+      user.id,
+      dto.reason,
+    );
+  }
+
+  @Get(':applicationId/notes')
+  @RequirePermissions('applications.read')
+  @ApiOperation({
+    summary: 'List internal notes',
+    description:
+      'Operator-only notes attached to the application. Newest first. Soft-deleted notes are excluded.',
+  })
+  async listNotes(
+    @Param() params: ApplicationIdParamDto,
+  ): Promise<any[]> {
+    return this.applicationsService.listInternalNotes(params.applicationId);
+  }
+
+  @Post(':applicationId/notes')
+  @RequirePermissions('applications.update')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Add an internal note',
+    description:
+      'Captures an operator-only note on the application. Never sent to the customer.',
+  })
+  async addNote(
+    @Param() params: ApplicationIdParamDto,
+    @Body() dto: CreateInternalNoteDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<any> {
+    return this.applicationsService.addInternalNote(
+      params.applicationId,
+      user.id,
+      dto.note,
+    );
+  }
+
+  @Patch(':applicationId/notes/:noteId')
+  @RequirePermissions('applications.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Edit an internal note (author only)' })
+  async updateNote(
+    @Param('noteId') noteId: string,
+    @Body() dto: UpdateInternalNoteDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<any> {
+    return this.applicationsService.updateInternalNote(noteId, user.id, dto.note);
+  }
+
+  @Delete(':applicationId/notes/:noteId')
+  @RequirePermissions('applications.update')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Soft-delete an internal note' })
+  async deleteNote(
+    @Param('noteId') noteId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.applicationsService.deleteInternalNote(noteId, user.id);
+  }
+
+  /**
+   * M-Assign — Operator dropdown source. Returns every active
+   * admin user as a candidate assignee. Living under
+   * /admin/applications/assignable-users keeps it adjacent to the
+   * assign endpoint and avoids touching the users module.
+   */
+  @Get('assignable-users')
+  @RequirePermissions('applications.read')
+  @ApiOperation({
+    summary: 'List users that can be assigned to applications',
+  })
+  async listAssignableUsers() {
+    return this.applicationsService.listAssignableUsers();
   }
 
   // ========================================================

@@ -181,6 +181,13 @@ model User {
   paymentStatusHistory      PaymentStatusHistory[]           @relation("ChangedByUser")
   documentRequestsCreated   DocumentRequest[]                @relation("DocumentRequestRequestedByUser")
   auditLogs                 AuditLog[]
+  // M-Assign — operator-side relations
+  assignedApplications      Application[]                    @relation("ApplicationAssignedTo")
+  assignmentsMade           Application[]                    @relation("ApplicationAssignedBy")
+  internalNotesAuthored     ApplicationInternalNote[]
+  assignmentHistoryAsPrev   ApplicationAssignmentHistory[]   @relation("AssignmentHistoryPreviousAssignee")
+  assignmentHistoryAsNew    ApplicationAssignmentHistory[]   @relation("AssignmentHistoryNewAssignee")
+  assignmentHistoryChanges  ApplicationAssignmentHistory[]   @relation("AssignmentHistoryChangedBy")
 
   @@index([email])
   @@index([roleId])
@@ -785,11 +792,23 @@ model Application {
   template             Template                         @relation(fields: [templateId], references: [id])
   templateBinding      TemplateBinding                  @relation(fields: [templateBindingId], references: [id])
   reviewedByUser       User?                            @relation("ApplicationReviewedByUser", fields: [reviewedByUserId], references: [id])
+  // M-Assign — operator assignment columns. All nullable so
+  // existing rows stay valid; assignment is opt-in by an
+  // admin/super-admin.
+  assignedToUserId        String?           @map("assigned_to")
+  assignedAt              DateTime?         @map("assigned_at")
+  assignedByUserId        String?           @map("assigned_by")
+
   applicants           ApplicationApplicant[]
   statusHistory        ApplicationStatusHistory[]
   estimatedTimeChanges ApplicationEstimatedTimeChange[]
   payments             Payment[]
   documentRequests     DocumentRequest[]
+  // M-Assign relations
+  assignedToUser       User?                            @relation("ApplicationAssignedTo", fields: [assignedToUserId], references: [id])
+  assignedByUser       User?                            @relation("ApplicationAssignedBy", fields: [assignedByUserId], references: [id])
+  internalNotes        ApplicationInternalNote[]
+  assignmentHistory    ApplicationAssignmentHistory[]
 
   @@index([portalIdentityId])
   @@index([nationalityCountryId])
@@ -966,6 +985,49 @@ model DocumentRequest {
   @@index([status])
   @@index([createdAt])
   @@map("document_requests")
+}
+
+/// M-Assign — Internal operator-only note attached to an application.
+/// Visible only to admin / operator roles; never sent to the customer.
+/// Author can edit; super admin can delete. Soft-deletable.
+model ApplicationInternalNote {
+  id            String       @id @default(uuid())
+  applicationId String       @map("application_id")
+  userId        String       @map("user_id")
+  note          String       @db.Text
+  visibility    String       @default("internal") @db.VarChar(20)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at")
+  deletedAt     DateTime?    @map("deleted_at")
+
+  application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  user          User         @relation(fields: [userId], references: [id])
+
+  @@index([applicationId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("application_internal_notes")
+}
+
+/// M-Assign — Append-only assignment audit. Lets the admin UI show
+/// "X reassigned from Y to Z, reason: …" trails.
+model ApplicationAssignmentHistory {
+  id                 String   @id @default(uuid())
+  applicationId      String   @map("application_id")
+  previousAssigneeId String?  @map("previous_assignee_id")
+  newAssigneeId      String?  @map("new_assignee_id")
+  changedBy          String   @map("changed_by")
+  reason             String?
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  application       Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  previousAssignee  User?       @relation("AssignmentHistoryPreviousAssignee", fields: [previousAssigneeId], references: [id])
+  newAssignee       User?       @relation("AssignmentHistoryNewAssignee", fields: [newAssigneeId], references: [id])
+  changedByUser     User        @relation("AssignmentHistoryChangedBy", fields: [changedBy], references: [id])
+
+  @@index([applicationId])
+  @@index([createdAt])
+  @@map("application_assignment_history")
 }
 
 model DocumentRequestItem {

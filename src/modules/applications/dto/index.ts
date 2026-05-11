@@ -5,3 +5,4 @@ export * from './get-applications-query.dto';
 export * from './admin-review.dto';
 export * from './update-estimated-time.dto';
 export * from './change-status.dto';
+export * from './assign-application.dto';
