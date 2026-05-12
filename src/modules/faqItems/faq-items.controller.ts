@@ -23,7 +23,9 @@ import {
 import type { Request } from 'express';
 import { FaqItemsService } from './faq-items.service';
 import {
+  CreateFaqCategoryDto,
   CreateFaqItemDto,
+  FaqCategoryDeleteResultDto,
   FaqCategoryListResponseDto,
   FaqCategoryResponseDto,
   FaqGroupedResponseDto,
@@ -151,10 +153,37 @@ export class FaqCategoriesAdminController {
 
   @Get()
   @RequirePermissions('content.read')
-  @ApiOperation({ summary: 'List FAQ categories (rename / reorder targets)' })
+  @ApiOperation({ summary: 'List FAQ categories with usage counts + system flag' })
   @ApiResponse({ status: 200, type: FaqCategoryListResponseDto })
-  async list(): Promise<FaqCategoryListResponseDto> {
-    return this.service.listCategories();
+  async list(
+    @Query('includeFaqCount') includeFaqCount?: string,
+  ): Promise<FaqCategoryListResponseDto> {
+    // Default ON — the admin page renders the count column. Callers
+    // that don't need it can pass ?includeFaqCount=false.
+    return this.service.listCategories(includeFaqCount !== 'false');
+  }
+
+  @Post()
+  @RequirePermissions('content.update')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Create a new FAQ category',
+    description:
+      'M11.14 (BUG SS) — admins need to extend the seeded category set without a migration. The endpoint enforces slug uniqueness + revives soft-deleted rows with the same key instead of erroring.',
+  })
+  @ApiResponse({ status: 201, type: FaqCategoryResponseDto })
+  @ApiResponse({ status: 409, description: 'Slug already in use' })
+  async create(
+    @Body() dto: CreateFaqCategoryDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<FaqCategoryResponseDto> {
+    return this.service.createCategory(
+      dto,
+      user.id,
+      req.ip,
+      req.get('user-agent') ?? undefined,
+    );
   }
 
   @Patch(':id')
@@ -171,6 +200,35 @@ export class FaqCategoriesAdminController {
     return this.service.updateCategory(
       id,
       dto,
+      user.id,
+      req.ip,
+      req.get('user-agent') ?? undefined,
+    );
+  }
+
+  @Delete(':id')
+  @RequirePermissions('content.update')
+  @ApiOperation({
+    summary: 'Soft-delete a FAQ category (with force-reassign option)',
+    description:
+      'M11.14 (BUG SS) — system categories are read-only; user-created categories with attached FAQs require ?force=true to reassign items to "general" before deletion.',
+  })
+  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, type: FaqCategoryDeleteResultDto })
+  @ApiResponse({ status: 403, description: 'System category cannot be deleted' })
+  @ApiResponse({
+    status: 409,
+    description: 'Category has FAQs — use ?force=true to reassign',
+  })
+  async remove(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query('force') force: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<FaqCategoryDeleteResultDto> {
+    return this.service.deleteCategory(
+      id,
+      force === 'true',
       user.id,
       req.ip,
       req.get('user-agent') ?? undefined,

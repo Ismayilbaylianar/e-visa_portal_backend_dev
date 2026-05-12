@@ -2,10 +2,17 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ActorType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
-import { NotFoundException } from '@/common/exceptions';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import {
+  CreateFaqCategoryDto,
   CreateFaqItemDto,
+  FaqCategoryDeleteResultDto,
   FaqCategoryListResponseDto,
   FaqCategoryResponseDto,
   FaqGroupedResponseDto,
@@ -15,6 +22,19 @@ import {
   UpdateFaqCategoryDto,
   UpdateFaqItemDto,
 } from './dto';
+
+// M11.14 (BUG SS) — the categories seeded by migrations 14 + 24 are
+// system-protected: rename + reorder allowed, delete blocked. Keep
+// this list in sync with the migration's INSERT VALUES.
+const SYSTEM_CATEGORY_KEYS = new Set<string>([
+  'general',
+  'visa',
+  'application',
+  'payment',
+  'support',
+  'other',
+]);
+const RESCUE_CATEGORY_KEY = 'general';
 
 /**
  * Module 11.B — FAQ items.
@@ -305,15 +325,203 @@ export class FaqItemsService {
   // category they can edit one of the seeded slots.
   // =========================================================
 
-  async listCategories(): Promise<FaqCategoryListResponseDto> {
+  async listCategories(
+    includeFaqCount = true,
+  ): Promise<FaqCategoryListResponseDto> {
     const items = await this.prisma.faqCategory.findMany({
       where: { deletedAt: null },
       orderBy: { displayOrder: 'asc' },
     });
+
+    // M11.14 (BUG SS) — one aggregate query for all categories,
+    // grouped by faq_items.category. Cheaper than a count-per-row N+1
+    // and the result map is tiny (one entry per active category).
+    const faqCounts = includeFaqCount
+      ? await this.prisma.faqItem.groupBy({
+          by: ['category'],
+          where: { deletedAt: null },
+          _count: { _all: true },
+        })
+      : [];
+    const countByKey = new Map<string, number>(
+      faqCounts
+        .filter((row): row is typeof row & { category: string } => !!row.category)
+        .map((row) => [row.category, row._count._all]),
+    );
+
     return {
-      items: items.map((row) => this.toCategoryResponse(row)),
+      items: items.map((row) =>
+        this.toCategoryResponse(row, countByKey.get(row.key) ?? 0),
+      ),
       total: items.length,
     };
+  }
+
+  /**
+   * M11.14 (BUG SS) — create a new FAQ category. Slug uniqueness is
+   * enforced both by the schema's unique index on `key` and by a
+   * pre-check here so the response is a clean 409 instead of a P2002.
+   */
+  async createCategory(
+    dto: CreateFaqCategoryDto,
+    adminUserId: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<FaqCategoryResponseDto> {
+    const key = dto.key.toLowerCase().trim();
+    const existing = await this.prisma.faqCategory.findFirst({
+      where: { key },
+    });
+    if (existing && existing.deletedAt === null) {
+      throw new ConflictException('FAQ category already exists', [
+        {
+          field: 'key',
+          reason: ErrorCodes.CONFLICT,
+          message: `A FAQ category with key "${key}" already exists.`,
+        },
+      ]);
+    }
+
+    // If a soft-deleted row exists with the same key, revive it
+    // (the unique index on `key` is global, not deleted-aware, so we
+    // can't INSERT another row with the same key).
+    const created = existing
+      ? await this.prisma.faqCategory.update({
+          where: { id: existing.id },
+          data: {
+            deletedAt: null,
+            displayName: dto.displayName,
+            displayOrder: dto.displayOrder ?? 999,
+            isActive: dto.isActive ?? true,
+          },
+        })
+      : await this.prisma.faqCategory.create({
+          data: {
+            key,
+            displayName: dto.displayName,
+            displayOrder: dto.displayOrder ?? 999,
+            isActive: dto.isActive ?? true,
+          },
+        });
+
+    await this.auditLogsService.create({
+      actorUserId: adminUserId,
+      actorType: ActorType.USER,
+      actionKey: existing ? 'faqCategory.revive' : 'faqCategory.create',
+      entityType: 'FaqCategory',
+      entityId: created.id,
+      newValue: {
+        key: created.key,
+        displayName: created.displayName,
+        displayOrder: created.displayOrder,
+        isActive: created.isActive,
+      },
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return this.toCategoryResponse(created, 0);
+  }
+
+  /**
+   * M11.14 (BUG SS) — soft-delete a FAQ category. Three guards:
+   *   1. System categories (the seeded canonical set) can never be
+   *      deleted, regardless of force. Admins rely on these always
+   *      existing for the public /faq page.
+   *   2. Without `force`, categories with attached FAQs are blocked
+   *      so the admin doesn't accidentally orphan content.
+   *   3. With `force`, attached FAQs are reassigned to the "general"
+   *      rescue category in the same transaction. If general is
+   *      somehow gone, we surface a 400 instead of orphaning.
+   */
+  async deleteCategory(
+    id: string,
+    force: boolean,
+    adminUserId: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<FaqCategoryDeleteResultDto> {
+    const category = await this.prisma.faqCategory.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!category) {
+      throw new NotFoundException('FAQ category not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: `No FAQ category with id "${id}"` },
+      ]);
+    }
+
+    if (SYSTEM_CATEGORY_KEYS.has(category.key)) {
+      throw new ForbiddenException('System FAQ category', [
+        {
+          field: 'id',
+          reason: ErrorCodes.FORBIDDEN,
+          message: `"${category.displayName}" is a system category and cannot be deleted. Rename or hide it instead.`,
+        },
+      ]);
+    }
+
+    const usageCount = await this.prisma.faqItem.count({
+      where: { category: category.key, deletedAt: null },
+    });
+    if (usageCount > 0 && !force) {
+      throw new ConflictException('Category has FAQ items', [
+        {
+          field: 'id',
+          reason: ErrorCodes.CONFLICT,
+          message: `${usageCount} FAQ item(s) reference this category. Move them to another category or use force=true to reassign them to "General".`,
+        },
+      ]);
+    }
+
+    if (usageCount > 0 && force) {
+      const rescue = await this.prisma.faqCategory.findFirst({
+        where: { key: RESCUE_CATEGORY_KEY, deletedAt: null },
+        select: { key: true },
+      });
+      if (!rescue) {
+        throw new BadRequestException('Rescue category missing', [
+          {
+            reason: ErrorCodes.BAD_REQUEST,
+            message:
+              'The "General" rescue category is missing — reseed it before force-deleting.',
+          },
+        ]);
+      }
+    }
+
+    await this.prisma.$transaction([
+      ...(usageCount > 0 && force
+        ? [
+            this.prisma.faqItem.updateMany({
+              where: { category: category.key, deletedAt: null },
+              data: { category: RESCUE_CATEGORY_KEY },
+            }),
+          ]
+        : []),
+      this.prisma.faqCategory.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      }),
+    ]);
+
+    await this.auditLogsService.create({
+      actorUserId: adminUserId,
+      actorType: ActorType.USER,
+      actionKey: 'faqCategory.delete',
+      entityType: 'FaqCategory',
+      entityId: id,
+      oldValue: {
+        key: category.key,
+        displayName: category.displayName,
+        displayOrder: category.displayOrder,
+        isActive: category.isActive,
+      },
+      newValue: { force, reassignedFaqs: force ? usageCount : 0 },
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return { success: true, reassignedFaqs: force ? usageCount : 0 };
   }
 
   async updateCategory(
@@ -362,15 +570,18 @@ export class FaqItemsService {
     return this.toCategoryResponse(updated);
   }
 
-  private toCategoryResponse(row: {
-    id: string;
-    key: string;
-    displayName: string;
-    displayOrder: number;
-    isActive: boolean;
-    createdAt: Date;
-    updatedAt: Date;
-  }): FaqCategoryResponseDto {
+  private toCategoryResponse(
+    row: {
+      id: string;
+      key: string;
+      displayName: string;
+      displayOrder: number;
+      isActive: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    faqCount?: number,
+  ): FaqCategoryResponseDto {
     return {
       id: row.id,
       key: row.key,
@@ -379,6 +590,9 @@ export class FaqItemsService {
       isActive: row.isActive,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      // M11.14 (BUG SS) — admin UI surfaces.
+      faqCount,
+      isSystem: SYSTEM_CATEGORY_KEYS.has(row.key),
     };
   }
 

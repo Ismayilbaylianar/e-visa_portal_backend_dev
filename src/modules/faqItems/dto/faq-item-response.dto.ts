@@ -79,6 +79,23 @@ export class FaqCategoryResponseDto {
   @ApiProperty() isActive: boolean;
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;
+  /**
+   * M11.14 (BUG SS) — number of FAQ items that currently reference
+   * this category via `faq_items.category = key`. Only populated on
+   * the list endpoint (the admin page renders it; the customer-form
+   * dropdown ignores it).
+   */
+  @ApiPropertyOptional()
+  faqCount?: number;
+  /**
+   * M11.14 (BUG SS) — the seeded canonical categories
+   * (general, visa, application, payment, support, other) are
+   * system-protected: rename + reorder allowed, delete blocked.
+   * Computed by the service from the migration's seed list — there's
+   * no DB column for it because the seed is the source of truth.
+   */
+  @ApiPropertyOptional()
+  isSystem?: boolean;
 }
 
 export class FaqCategoryListResponseDto {
@@ -87,4 +104,14 @@ export class FaqCategoryListResponseDto {
 
   @ApiProperty()
   total: number;
+}
+
+/** M11.14 (BUG SS) — Delete result with reassignment count. */
+export class FaqCategoryDeleteResultDto {
+  @ApiProperty() success: boolean;
+  @ApiProperty({
+    description:
+      'Number of FAQ items that were moved to the "general" category as part of a force-delete.',
+  })
+  reassignedFaqs: number;
 }
