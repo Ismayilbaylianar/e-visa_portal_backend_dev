@@ -226,6 +226,27 @@ export class TemplateBindingsService {
 
     await this.validateRelations(dto);
 
+    // M11.14 (BUG OO) — cross-field check on creation: min ≤ max.
+    // Both default to 7 / 14 if omitted, which already satisfies the
+    // invariant, so we only need to validate when at least one was
+    // explicitly supplied.
+    if (
+      dto.processingTimeMin !== undefined ||
+      dto.processingTimeMax !== undefined
+    ) {
+      const nextMin = dto.processingTimeMin ?? 7;
+      const nextMax = dto.processingTimeMax ?? 14;
+      if (nextMin > nextMax) {
+        throw new BadRequestException('Processing window invalid', [
+          {
+            field: 'processingTimeMin',
+            reason: ErrorCodes.BAD_REQUEST,
+            message: `processingTimeMin (${nextMin}) cannot exceed processingTimeMax (${nextMax}).`,
+          },
+        ]);
+      }
+    }
+
     const includeShape = {
       destinationCountry: {
         select: { id: true, name: true, isoCode: true },
@@ -264,6 +285,9 @@ export class TemplateBindingsService {
               dto.expeditedFeeAmount !== undefined ? dto.expeditedFeeAmount : null,
             // M11.3 — per-binding arrival lead time. Default 3.
             minArrivalDaysAdvance: dto.minArrivalDaysAdvance ?? 3,
+            // M11.14 (BUG OO) — processing window shown to customers.
+            processingTimeMin: dto.processingTimeMin ?? 7,
+            processingTimeMax: dto.processingTimeMax ?? 14,
           },
           include: includeShape,
         })
@@ -280,6 +304,9 @@ export class TemplateBindingsService {
             expeditedFeeAmount: dto.expeditedFeeAmount,
             // M11.3 — per-binding arrival lead time. Default 3.
             minArrivalDaysAdvance: dto.minArrivalDaysAdvance ?? 3,
+            // M11.14 (BUG OO) — processing window shown to customers.
+            processingTimeMin: dto.processingTimeMin ?? 7,
+            processingTimeMax: dto.processingTimeMax ?? 14,
           },
           include: includeShape,
         });
@@ -378,6 +405,28 @@ export class TemplateBindingsService {
       updateData.expeditedFeeAmount = dto.expeditedFeeAmount;
     if (dto.minArrivalDaysAdvance !== undefined)
       updateData.minArrivalDaysAdvance = dto.minArrivalDaysAdvance;
+    // M11.14 (BUG OO) — processing window edits.
+    if (dto.processingTimeMin !== undefined)
+      updateData.processingTimeMin = dto.processingTimeMin;
+    if (dto.processingTimeMax !== undefined)
+      updateData.processingTimeMax = dto.processingTimeMax;
+
+    // M11.14 (BUG OO) — Cross-field invariant: min ≤ max. Compose the
+    // pending values from `dto` if supplied, otherwise the existing
+    // binding's column, so a partial PATCH that updates only one of
+    // the two is still validated. Matches the CHECK constraint added
+    // in migration 22 so DB + service reject the same shapes.
+    const nextMin = updateData.processingTimeMin ?? binding.processingTimeMin;
+    const nextMax = updateData.processingTimeMax ?? binding.processingTimeMax;
+    if (nextMin > nextMax) {
+      throw new BadRequestException('Processing window invalid', [
+        {
+          field: 'processingTimeMin',
+          reason: ErrorCodes.BAD_REQUEST,
+          message: `processingTimeMin (${nextMin}) cannot exceed processingTimeMax (${nextMax}).`,
+        },
+      ]);
+    }
 
     const updatedBinding = await this.prisma.templateBinding.update({
       where: { id },
@@ -628,6 +677,11 @@ export class TemplateBindingsService {
       expeditedFeeAmount: binding.expeditedFeeAmount?.toString() ?? null,
       // M11.3 — per-destination minimum arrival lead time.
       minArrivalDaysAdvance: binding.minArrivalDaysAdvance ?? 3,
+      // M11.14 (BUG OO) — processing window. Defaults mirror the
+      // column defaults so an old client that never set these still
+      // gets sensible values.
+      processingTimeMin: binding.processingTimeMin ?? 7,
+      processingTimeMax: binding.processingTimeMax ?? 14,
       createdAt: binding.createdAt,
       updatedAt: binding.updatedAt,
       destinationCountry: binding.destinationCountry
@@ -691,6 +745,9 @@ export class TemplateBindingsService {
       expeditedFeeAmount: binding.expeditedFeeAmount?.toString() ?? null,
       // M11.3 — per-destination minimum arrival lead time.
       minArrivalDaysAdvance: binding.minArrivalDaysAdvance ?? 3,
+      // M11.14 (BUG OO) — processing window.
+      processingTimeMin: binding.processingTimeMin ?? 7,
+      processingTimeMax: binding.processingTimeMax ?? 14,
       createdAt: binding.createdAt,
       updatedAt: binding.updatedAt,
       destinationCountry: binding.destinationCountry

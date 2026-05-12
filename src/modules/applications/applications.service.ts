@@ -121,17 +121,24 @@ export class ApplicationsService {
   }
 
   async findById(id: string): Promise<ApplicationResponseDto> {
+    // M11.14 (BUG QQ) — Previously this method used a hand-rolled
+    // `include` that omitted `assignedToUser` / `assignedByUser`. The
+    // POST /assign endpoint USES `getApplicationIncludes()` (which
+    // DOES include them) and its response shows the assignment
+    // correctly — but the very next GET on the same row went through
+    // findById, hit the lean include, and surfaced `assignedToUser:
+    // null` even though `assigned_to` was set in DB. Frontend looked
+    // like a silent failure. Switch to the shared include helper so
+    // there's one source of truth, then layer the per-applicant
+    // documents extension on top (only this code path needs that —
+    // the helper omits it because it'd over-fetch on list views).
     const application = await this.prisma.application.findFirst({
       where: { id, deletedAt: null },
       include: {
-        portalIdentity: true,
-        nationalityCountry: true,
-        destinationCountry: true,
-        visaType: true,
-        template: true,
+        ...this.getApplicationIncludes(),
         applicants: {
           where: { deletedAt: null },
-          orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
+          orderBy: [{ isMainApplicant: 'desc' as const }, { createdAt: 'asc' as const }],
           include: {
             // M11.8 (ISSUE 7) — admin + portal detail pages render
             // an Applicants → Documents section. Without this include
@@ -139,7 +146,7 @@ export class ApplicationsService {
             // existed in the documents table, so admins saw nothing.
             documents: {
               where: { deletedAt: null },
-              orderBy: { uploadedAt: 'desc' },
+              orderBy: { uploadedAt: 'desc' as const },
             },
           },
         },
@@ -1811,6 +1818,17 @@ export class ApplicationsService {
       assignedByUser: {
         select: { id: true, fullName: true, email: true },
       },
+      // M11.14 (BUG OO) — eager-load the binding so emails + the
+      // admin/detail page can quote the processing window (e.g.
+      // "5-10 business days") without an extra round-trip.
+      templateBinding: {
+        select: {
+          id: true,
+          processingTimeMin: true,
+          processingTimeMax: true,
+          minArrivalDaysAdvance: true,
+        },
+      },
     };
   }
 
@@ -1928,6 +1946,15 @@ export class ApplicationsService {
       // renderer (substituteVariables) now strips any leftover
       // `{{anyVar}}` to '' AND logs the unresolved keys — but the
       // first defense is to actually pass the values.
+      // M11.14 (BUG OO) — processing window for the "Your application
+      // was received in {{processingTimeMin}}-{{processingTimeMax}}
+      // business days" copy. Templates that don't reference the new
+      // variables stay unaffected (the renderer just doesn't substitute
+      // them and the sweep won't trigger). Falls back to a safe 7-14
+      // window when the binding wasn't included in the eager load.
+      const procMin = (application as any).templateBinding?.processingTimeMin ?? 7;
+      const procMax = (application as any).templateBinding?.processingTimeMax ?? 14;
+
       const variables = {
         fullName,
         firstName,
@@ -1948,6 +1975,10 @@ export class ApplicationsService {
         ctaUrl,
         supportEmail,
         notes: notes ?? '',
+        // M11.14 (BUG OO) — processing window.
+        processingTimeMin: String(procMin),
+        processingTimeMax: String(procMax),
+        processingTimeRange: `${procMin}-${procMax}`,
       };
       try {
         const result = await this.emailService.sendTemplatedEmail({

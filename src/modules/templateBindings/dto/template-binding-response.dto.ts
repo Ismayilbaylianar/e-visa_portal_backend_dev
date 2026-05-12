@@ -192,6 +192,15 @@ export class TemplateBindingResponseDto {
   })
   minArrivalDaysAdvance: number;
 
+  // M11.14 (BUG OO) — processing window in business days. Rendered to
+  // customers as "{min}-{max} business days" on /apply/success and in
+  // status emails (template variables {{processingTimeMin}}/{{Max}}).
+  @ApiProperty({ description: 'Lower bound of processing window (business days).', example: 7, default: 7 })
+  processingTimeMin: number;
+
+  @ApiProperty({ description: 'Upper bound of processing window (business days).', example: 14, default: 14 })
+  processingTimeMax: number;
+
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
 
@@ -269,6 +278,13 @@ export class TemplateBindingListItemResponseDto {
     default: 3,
   })
   minArrivalDaysAdvance: number;
+
+  // M11.14 (BUG OO) — processing window, summary view.
+  @ApiProperty({ description: 'Lower bound of processing window (business days).', example: 7, default: 7 })
+  processingTimeMin: number;
+
+  @ApiProperty({ description: 'Upper bound of processing window (business days).', example: 14, default: 14 })
+  processingTimeMax: number;
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;

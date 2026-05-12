@@ -90,4 +90,34 @@ export class CreateTemplateBindingDto {
   @Min(0)
   @Max(365)
   minArrivalDaysAdvance?: number;
+
+  /**
+   * M11.14 (BUG OO) — processing window shown to customers as
+   * "{min}-{max} business days". Min must be >= 1 and <= max; max
+   * <= 365. Cross-field check enforced in the service layer
+   * (validateProcessingWindow) so create + update share one rule.
+   */
+  @ApiPropertyOptional({
+    description: 'Lower bound of the processing window, in business days. Default 7.',
+    example: 7,
+    default: 7,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  processingTimeMin?: number;
+
+  @ApiPropertyOptional({
+    description: 'Upper bound of the processing window, in business days. Default 14.',
+    example: 14,
+    default: 14,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  processingTimeMax?: number;
 }

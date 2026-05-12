@@ -111,6 +111,22 @@ export class PreviewBindingContextDto {
     default: 3,
   })
   minArrivalDaysAdvance: number;
+
+  // M11.14 (BUG OO) — processing window the customer sees on the
+  // success page and inside status emails.
+  @ApiProperty({
+    description: 'Lower bound of processing window (business days).',
+    example: 7,
+    default: 7,
+  })
+  processingTimeMin: number;
+
+  @ApiProperty({
+    description: 'Upper bound of processing window (business days).',
+    example: 14,
+    default: 14,
+  })
+  processingTimeMax: number;
 }
 
 /**

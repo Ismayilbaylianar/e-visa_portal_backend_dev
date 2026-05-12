@@ -216,8 +216,12 @@ export class PublicSelectionService {
       // M11.3 — surface per-binding context the dynamic-form renderer
       // needs for cross-field date validation (`$bindingMinArrivalDays`)
       // and the native picker `min` attribute on the arrival date input.
+      // M11.14 (BUG OO) — processing window so the success page can
+      // render "5-10 business days" instead of the legacy "0 days".
       binding: {
         minArrivalDaysAdvance: templateBinding.minArrivalDaysAdvance ?? 3,
+        processingTimeMin: templateBinding.processingTimeMin ?? 7,
+        processingTimeMax: templateBinding.processingTimeMax ?? 14,
       },
     };
   }

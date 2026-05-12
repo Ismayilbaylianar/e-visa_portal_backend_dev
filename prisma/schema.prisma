@@ -597,6 +597,15 @@ model TemplateBinding {
   // applies it as the native `min` attribute on the arrival date
   // input + the `$bindingMinArrivalDays` cross-field validator token.
   minArrivalDaysAdvance Int      @default(3) @map("min_arrival_days_advance")
+  // M11.14 (BUG OO) — admin-configurable processing window in BUSINESS
+  // days, rendered to customers as "{min}-{max} business days" on the
+  // /apply/success page and inside status emails. Defaults are
+  // intentionally non-zero so a template that's never had these
+  // edited never shows "0 days". Per-nationality overrides could
+  // live on BindingNationalityFee in a later sprint — for now the
+  // binding's window applies to all nationalities sharing it.
+  processingTimeMin     Int      @default(7)  @map("processing_time_min")
+  processingTimeMax     Int      @default(14) @map("processing_time_max")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   deletedAt            DateTime? @map("deleted_at")
