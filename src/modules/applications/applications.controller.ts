@@ -283,9 +283,20 @@ export class ApplicationsAdminController {
    * Body:
    *   { assigneeId: <user id> | null, reason?: string }
    *
-   * Permission: applications.update (existing). When M-Assign
-   * adds the dedicated `applications.assign` permission to the
-   * seed, swap to that key.
+   * M11.14 (RBAC audit) — Two-tier permission:
+   *   • `applications.update` (held by operator, admin, super) is
+   *     enough to assign-to-self or unassign-self. That's the
+   *     "claim my own work" flow operators run every day.
+   *   • `applications.assign` (held by admin + super only) is
+   *     required to assign the application to ANYONE ELSE — the
+   *     "delegate to John" flow. The service layer applies the
+   *     extra check after parsing the request so the guard here
+   *     stays at the wider applications.update level.
+   *
+   * Without that split, an operator with applications.update could
+   * reassign any application to any user — confirmed in the RBAC
+   * audit. Now an operator hitting the same endpoint with a
+   * non-self assigneeId gets a clean 403.
    */
   @Post(':applicationId/assign')
   @RequirePermissions('applications.update')
@@ -293,10 +304,11 @@ export class ApplicationsAdminController {
   @ApiOperation({
     summary: 'Assign or unassign an operator',
     description:
-      'Set or clear the assigned operator on an application. Writes assignment history + audit log + Telegram notification.',
+      'Set or clear the assigned operator on an application. Writes assignment history + audit log + Telegram notification. Cross-user assignment requires applications.assign (admin+); self-assign / self-unassign needs only applications.update.',
   })
   @ApiResponse({ status: 200, description: 'Assignment updated', type: ApplicationResponseDto })
   @ApiResponse({ status: 400, description: 'Inactive or unknown assignee' })
+  @ApiResponse({ status: 403, description: 'Operator may only self-assign' })
   @ApiResponse({ status: 404, description: 'Application not found' })
   async assign(
     @Param() params: ApplicationIdParamDto,
@@ -308,6 +320,8 @@ export class ApplicationsAdminController {
       dto.assigneeId ?? null,
       user.id,
       dto.reason,
+      // M11.14 (RBAC audit) — service does the cross-user check.
+      user.permissions ?? [],
     );
   }
 

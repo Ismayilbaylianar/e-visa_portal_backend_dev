@@ -1422,8 +1422,36 @@ export class ApplicationsService {
     assigneeId: string | null,
     actorUserId: string,
     reason?: string,
+    actorPermissions?: string[],
   ): Promise<ApplicationResponseDto> {
     const application = await this.getApplicationWithRelations(applicationId);
+
+    // M11.14 (RBAC audit) — Cross-user assignment requires the dedicated
+    // `applications.assign` permission. Operators (who hold
+    // `applications.update`) can still self-assign or self-unassign,
+    // which is the daily "claim my own work" flow. Any attempt to
+    // assign to another user — or unassign someone else's claim —
+    // fails closed with 403 unless the actor has applications.assign.
+    if (actorPermissions !== undefined) {
+      const canAssignOthers = actorPermissions.includes('applications.assign');
+      const previousAssigneeId =
+        (application as any).assignedToUserId ?? null;
+      const isSelfAssign = assigneeId === actorUserId;
+      const isSelfUnassign =
+        assigneeId === null && previousAssigneeId === actorUserId;
+      if (!canAssignOthers && !isSelfAssign && !isSelfUnassign) {
+        throw new ForbiddenException(
+          'You may only self-assign or unassign yourself.',
+          [
+            {
+              reason: ErrorCodes.FORBIDDEN,
+              message:
+                'Cross-user assignment requires the applications.assign permission. Operators can only assign or unassign themselves.',
+            },
+          ],
+        );
+      }
+    }
 
     if (assigneeId) {
       const assignee = await this.prisma.user.findFirst({
