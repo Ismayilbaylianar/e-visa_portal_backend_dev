@@ -549,8 +549,116 @@ export class ApplicantsService {
       { status: dto.status, note: dto.note },
     );
 
+    // M11.14 (BUG UU) — When ONE applicant changes status, recompute
+    // the booking's aggregate `currentStatus` so the admin list, the
+    // customer /track page, and the dashboard tiles all reflect the
+    // mixed-state correctly. Logic: if every applicant agrees, the
+    // application takes that status verbatim. If anyone is still
+    // waiting on docs, NEED_DOCS wins (the most urgent state).
+    // Otherwise: APPROVED if everyone is at or past APPROVED, else
+    // IN_REVIEW for any other mixed state. The recompute is wrapped
+    // in best-effort try/catch so a downstream Prisma error never
+    // unwinds the user-facing status change.
+    try {
+      await this.recomputeApplicationStatus(applicant.applicationId, userId);
+    } catch (err) {
+      this.logger.error(
+        `[BUG UU] recompute failed for application ${applicant.applicationId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // M11.14 (BUG UU) — Telegram activity ping per applicant. Distinct
+    // from the application-level event so the channel reflects the
+    // mixed-decision case (e.g. main applicant approved, co-applicant
+    // rejected). Best-effort, post-commit.
+    void this.notificationEmitter.emit('app.event', {
+      kind: 'applicant.status_changed',
+      applicationId: applicant.applicationId,
+      applicantId,
+      applicationCode: applicant.applicationCode,
+      previousStatus: oldStatus,
+      newStatus: dto.status,
+      actorUserId: userId,
+    });
+
     this.logger.log(`Applicant status updated: ${applicantId} from ${oldStatus} to ${dto.status}`);
     return this.mapToResponse(updatedApplicant);
+  }
+
+  /**
+   * M11.14 (BUG UU) — derive the booking-level `currentStatus` from
+   * the union of its applicants. Called after every per-applicant
+   * status change so a mixed-decision booking surfaces the right
+   * label without forcing the operator to manage two statuses.
+   *
+   * Rules, in priority order:
+   *   1. If every applicant has the same status → that status wins.
+   *   2. Any applicant in NEED_DOCS → application = NEED_DOCS
+   *      (the customer-facing urgency state).
+   *   3. Every applicant is in {APPROVED, READY_TO_DOWNLOAD} →
+   *      application = APPROVED (ready to issue).
+   *   4. Otherwise → IN_REVIEW (mixed states still under operator
+   *      decision).
+   *
+   * The application is left alone (no-op) when its currentStatus is
+   * already the computed value, so the recompute is cheap to call
+   * even on bulk transitions where all applicants land on the same
+   * status one after another.
+   */
+  private async recomputeApplicationStatus(
+    applicationId: string,
+    actorUserId: string,
+  ): Promise<void> {
+    const applicants = await this.prisma.applicationApplicant.findMany({
+      where: { applicationId, deletedAt: null },
+      select: { status: true },
+    });
+    if (applicants.length === 0) return;
+
+    const statuses = applicants.map((a) => a.status);
+    const unique = Array.from(new Set(statuses));
+    let aggregate: ApplicantStatus;
+    if (unique.length === 1) {
+      aggregate = unique[0];
+    } else if (statuses.includes(ApplicantStatus.NEED_DOCS)) {
+      aggregate = ApplicantStatus.NEED_DOCS;
+    } else if (
+      statuses.every(
+        (s) => s === ApplicantStatus.APPROVED || s === ApplicantStatus.READY_TO_DOWNLOAD,
+      )
+    ) {
+      aggregate = ApplicantStatus.APPROVED;
+    } else {
+      aggregate = ApplicantStatus.IN_REVIEW;
+    }
+
+    const application = await this.prisma.application.findFirst({
+      where: { id: applicationId, deletedAt: null },
+      select: { currentStatus: true },
+    });
+    if (!application) return;
+    // ApplicantStatus is a strict subset of ApplicationStatus for the
+    // values we use here; a cast through string keeps Prisma happy.
+    const aggregateAsApp = aggregate as unknown as ApplicationStatus;
+    if (application.currentStatus === aggregateAsApp) return;
+
+    await this.prisma.application.update({
+      where: { id: applicationId },
+      data: { currentStatus: aggregateAsApp },
+    });
+    await this.prisma.applicationStatusHistory.create({
+      data: {
+        applicationId,
+        oldStatus: application.currentStatus,
+        newStatus: aggregateAsApp,
+        note: '[BUG UU] aggregate recomputed from applicant statuses',
+        changedByUserId: actorUserId,
+        changedBySystem: true,
+      },
+    });
+    this.logger.log(
+      `[BUG UU] application ${applicationId} aggregate: ${application.currentStatus} → ${aggregateAsApp}`,
+    );
   }
 
   /**
