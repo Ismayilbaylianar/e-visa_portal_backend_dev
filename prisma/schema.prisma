@@ -153,21 +153,21 @@ enum ReconciliationStatus {
 // ===========================================
 
 model User {
-  id           String    @id @default(uuid())
-  fullName     String    @map("full_name")
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  roleId       String?   @map("role_id")
-  isActive     Boolean   @default(true) @map("is_active")
-  lastLoginAt  DateTime? @map("last_login_at")
+  id                    String    @id @default(uuid())
+  fullName              String    @map("full_name")
+  email                 String    @unique
+  passwordHash          String    @map("password_hash")
+  roleId                String?   @map("role_id")
+  isActive              Boolean   @default(true) @map("is_active")
+  lastLoginAt           DateTime? @map("last_login_at")
   // M11.4 — first-login forced password change. Seeded super admins
   // start with this flag true; the change-password endpoint flips it
   // false and stamps `lastPasswordChangedAt`.
-  mustChangePassword     Boolean   @default(false) @map("must_change_password")
-  lastPasswordChangedAt  DateTime? @map("last_password_changed_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-  deletedAt    DateTime? @map("deleted_at")
+  mustChangePassword    Boolean   @default(false) @map("must_change_password")
+  lastPasswordChangedAt DateTime? @map("last_password_changed_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  deletedAt             DateTime? @map("deleted_at")
 
   role                      Role?                            @relation(fields: [roleId], references: [id])
   sessions                  Session[]
@@ -190,6 +190,9 @@ model User {
   assignmentHistoryChanges  ApplicationAssignmentHistory[]   @relation("AssignmentHistoryChangedBy")
   // M11.14 (BUG FF) — operator-uploaded result files
   uploadedResultFiles       ApplicationResultFile[]
+  // M11.15 (HELP) — help-article authoring back-relations
+  helpArticlesCreated       HelpArticle[]                    @relation("HelpArticleCreator")
+  helpArticlesUpdated       HelpArticle[]                    @relation("HelpArticleUpdater")
 
   @@index([email])
   @@index([roleId])
@@ -290,14 +293,14 @@ model Session {
 /// `tokenHash` is sha256(plainToken) so a leaked DB dump cannot be
 /// replayed. `usedAt` flips on consumption so a token is single-use.
 model PasswordResetToken {
-  id         String    @id @default(uuid())
-  userId     String    @map("user_id")
-  tokenHash  String    @unique @map("token_hash")
-  expiresAt  DateTime  @map("expires_at")
-  usedAt     DateTime? @map("used_at")
-  ipAddress  String?   @map("ip_address")
-  userAgent  String?   @map("user_agent")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  ipAddress String?   @map("ip_address")
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -475,19 +478,19 @@ model VisaType {
 }
 
 model Template {
-  id          String    @id @default(uuid())
-  name        String
-  key         String    @unique
-  description String?
-  version     Int       @default(1)
-  isActive    Boolean   @default(true) @map("is_active")
+  id            String    @id @default(uuid())
+  name          String
+  key           String    @unique
+  description   String?
+  version       Int       @default(1)
+  isActive      Boolean   @default(true) @map("is_active")
   // M11.2 — boilerplates can be cloned but not bound to live
   // (nationality, destination, visaType) combos. Admin clones from a
   // boilerplate via POST /admin/templates/clone to start a real form.
-  isBoilerplate Boolean @default(false) @map("is_boilerplate")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  deletedAt   DateTime? @map("deleted_at")
+  isBoilerplate Boolean   @default(false) @map("is_boilerplate")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
 
   sections         TemplateSection[]
   templateBindings TemplateBinding[]
@@ -574,13 +577,13 @@ model TemplateField {
 }
 
 model TemplateBinding {
-  id                   String    @id @default(uuid())
-  destinationCountryId String    @map("destination_country_id")
-  visaTypeId           String    @map("visa_type_id")
-  templateId           String    @map("template_id")
-  isActive             Boolean   @default(true) @map("is_active")
-  validFrom            DateTime? @map("valid_from")
-  validTo              DateTime? @map("valid_to")
+  id                    String    @id @default(uuid())
+  destinationCountryId  String    @map("destination_country_id")
+  visaTypeId            String    @map("visa_type_id")
+  templateId            String    @map("template_id")
+  isActive              Boolean   @default(true) @map("is_active")
+  validFrom             DateTime? @map("valid_from")
+  validTo               DateTime? @map("valid_to")
   // M11.2 — per-binding expedited config. Pre-M11.2 the expedited
   // fields lived on each BindingNationalityFee — they still do for
   // backwards compat — but the binding-level values are now the
@@ -588,15 +591,15 @@ model TemplateBinding {
   // once per (template, destination, visaType) combo via the bulk
   // destination manager. Migration backfills these from any existing
   // BindingNationalityFee that had expeditedEnabled=true.
-  expeditedEnabled     Boolean   @default(false) @map("expedited_enabled")
-  expeditedFeeAmount   Decimal?  @map("expedited_fee_amount") @db.Decimal(10, 2)
+  expeditedEnabled      Boolean   @default(false) @map("expedited_enabled")
+  expeditedFeeAmount    Decimal?  @map("expedited_fee_amount") @db.Decimal(10, 2)
   // M11.3 — minimum number of days between today and the earliest
   // arrival date a customer is allowed to pick. Per-destination
   // business rule (Türkiye 3, USA 14, Egypt 1, etc.). The dynamic
   // form renderer reads this off the public preview response and
   // applies it as the native `min` attribute on the arrival date
   // input + the `$bindingMinArrivalDays` cross-field validator token.
-  minArrivalDaysAdvance Int      @default(3) @map("min_arrival_days_advance")
+  minArrivalDaysAdvance Int       @default(3) @map("min_arrival_days_advance")
   // M11.14 (BUG OO) — admin-configurable processing window in BUSINESS
   // days, rendered to customers as "{min}-{max} business days" on the
   // /apply/success page and inside status emails. Defaults are
@@ -604,11 +607,11 @@ model TemplateBinding {
   // edited never shows "0 days". Per-nationality overrides could
   // live on BindingNationalityFee in a later sprint — for now the
   // binding's window applies to all nationalities sharing it.
-  processingTimeMin     Int      @default(7)  @map("processing_time_min")
-  processingTimeMax     Int      @default(14) @map("processing_time_max")
-  createdAt            DateTime  @default(now()) @map("created_at")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
-  deletedAt            DateTime? @map("deleted_at")
+  processingTimeMin     Int       @default(7) @map("processing_time_min")
+  processingTimeMax     Int       @default(14) @map("processing_time_max")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  deletedAt             DateTime? @map("deleted_at")
 
   destinationCountry Country                 @relation("DestinationCountry", fields: [destinationCountryId], references: [id])
   visaType           VisaType                @relation(fields: [visaTypeId], references: [id])
@@ -796,19 +799,19 @@ model Application {
   updatedAt               DateTime          @updatedAt @map("updated_at")
   deletedAt               DateTime?         @map("deleted_at")
 
-  portalIdentity       PortalIdentity                   @relation(fields: [portalIdentityId], references: [id])
-  nationalityCountry   Country                          @relation("NationalityCountry", fields: [nationalityCountryId], references: [id])
-  destinationCountry   Country                          @relation("DestinationCountry", fields: [destinationCountryId], references: [id])
-  visaType             VisaType                         @relation(fields: [visaTypeId], references: [id])
-  template             Template                         @relation(fields: [templateId], references: [id])
-  templateBinding      TemplateBinding                  @relation(fields: [templateBindingId], references: [id])
-  reviewedByUser       User?                            @relation("ApplicationReviewedByUser", fields: [reviewedByUserId], references: [id])
+  portalIdentity     PortalIdentity  @relation(fields: [portalIdentityId], references: [id])
+  nationalityCountry Country         @relation("NationalityCountry", fields: [nationalityCountryId], references: [id])
+  destinationCountry Country         @relation("DestinationCountry", fields: [destinationCountryId], references: [id])
+  visaType           VisaType        @relation(fields: [visaTypeId], references: [id])
+  template           Template        @relation(fields: [templateId], references: [id])
+  templateBinding    TemplateBinding @relation(fields: [templateBindingId], references: [id])
+  reviewedByUser     User?           @relation("ApplicationReviewedByUser", fields: [reviewedByUserId], references: [id])
   // M-Assign — operator assignment columns. All nullable so
   // existing rows stay valid; assignment is opt-in by an
   // admin/super-admin.
-  assignedToUserId        String?           @map("assigned_to")
-  assignedAt              DateTime?         @map("assigned_at")
-  assignedByUserId        String?           @map("assigned_by")
+  assignedToUserId   String?         @map("assigned_to")
+  assignedAt         DateTime?       @map("assigned_at")
+  assignedByUserId   String?         @map("assigned_by")
 
   applicants           ApplicationApplicant[]
   statusHistory        ApplicationStatusHistory[]
@@ -962,8 +965,8 @@ model Document {
   updatedAt              DateTime             @updatedAt @map("updated_at")
   deletedAt              DateTime?            @map("deleted_at")
 
-  applicationApplicant ApplicationApplicant   @relation(fields: [applicationApplicantId], references: [id], onDelete: Cascade)
-  reviewedByUser       User?                  @relation("ReviewedByUser", fields: [reviewedByUserId], references: [id])
+  applicationApplicant ApplicationApplicant  @relation(fields: [applicationApplicantId], references: [id], onDelete: Cascade)
+  reviewedByUser       User?                 @relation("ReviewedByUser", fields: [reviewedByUserId], references: [id])
   documentRequestItems DocumentRequestItem[]
 
   @@index([applicationApplicantId])
@@ -984,13 +987,13 @@ model Document {
 /// post-launch upload page that reads accepted_formats / max_size_mb
 /// per item and auto-flips status when every item is fulfilled.
 model DocumentRequest {
-  id              String                @id @default(uuid())
-  applicationId   String                @map("application_id")
-  requestedBy     String                @map("requested_by")
-  status          String                @default("pending") @db.VarChar(20)
-  customMessage   String?               @map("custom_message") @db.Text
-  createdAt       DateTime              @default(now()) @map("created_at")
-  fulfilledAt     DateTime?             @map("fulfilled_at")
+  id            String    @id @default(uuid())
+  applicationId String    @map("application_id")
+  requestedBy   String    @map("requested_by")
+  status        String    @default("pending") @db.VarChar(20)
+  customMessage String?   @map("custom_message") @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at")
+  fulfilledAt   DateTime? @map("fulfilled_at")
 
   application     Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   requestedByUser User                  @relation("DocumentRequestRequestedByUser", fields: [requestedBy], references: [id])
@@ -1006,17 +1009,17 @@ model DocumentRequest {
 /// Visible only to admin / operator roles; never sent to the customer.
 /// Author can edit; super admin can delete. Soft-deletable.
 model ApplicationInternalNote {
-  id            String       @id @default(uuid())
-  applicationId String       @map("application_id")
-  userId        String       @map("user_id")
-  note          String       @db.Text
-  visibility    String       @default("internal") @db.VarChar(20)
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at")
-  deletedAt     DateTime?    @map("deleted_at")
+  id            String    @id @default(uuid())
+  applicationId String    @map("application_id")
+  userId        String    @map("user_id")
+  note          String    @db.Text
+  visibility    String    @default("internal") @db.VarChar(20)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
 
-  application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  user          User         @relation(fields: [userId], references: [id])
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id])
 
   @@index([applicationId])
   @@index([userId])
@@ -1035,10 +1038,10 @@ model ApplicationAssignmentHistory {
   reason             String?
   createdAt          DateTime @default(now()) @map("created_at")
 
-  application       Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  previousAssignee  User?       @relation("AssignmentHistoryPreviousAssignee", fields: [previousAssigneeId], references: [id])
-  newAssignee       User?       @relation("AssignmentHistoryNewAssignee", fields: [newAssigneeId], references: [id])
-  changedByUser     User        @relation("AssignmentHistoryChangedBy", fields: [changedBy], references: [id])
+  application      Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  previousAssignee User?       @relation("AssignmentHistoryPreviousAssignee", fields: [previousAssigneeId], references: [id])
+  newAssignee      User?       @relation("AssignmentHistoryNewAssignee", fields: [newAssigneeId], references: [id])
+  changedByUser    User        @relation("AssignmentHistoryChangedBy", fields: [changedBy], references: [id])
 
   @@index([applicationId])
   @@index([createdAt])
@@ -1050,24 +1053,24 @@ model ApplicationAssignmentHistory {
 /// `is_primary` marks the canonical visa PDF; partial unique index
 /// in the migration enforces at most one primary per application.
 model ApplicationResultFile {
-  id              String                @id @default(uuid())
-  applicationId   String                @map("application_id")
-  applicantId     String?               @map("applicant_id")
-  fileName        String                @map("file_name") @db.VarChar(255)
-  storageKey      String                @map("storage_key")
-  storagePath     String                @map("storage_path")
-  storageProvider String                @default("local") @map("storage_provider")
-  fileSize        Int?                  @map("file_size")
-  mimeType        String?               @map("mime_type") @db.VarChar(100)
-  description     String?               @db.Text
-  isPrimary       Boolean               @default(false) @map("is_primary")
-  uploadedBy      String                @map("uploaded_by")
-  uploadedAt      DateTime              @default(now()) @map("uploaded_at")
-  deletedAt       DateTime?             @map("deleted_at")
+  id              String    @id @default(uuid())
+  applicationId   String    @map("application_id")
+  applicantId     String?   @map("applicant_id")
+  fileName        String    @map("file_name") @db.VarChar(255)
+  storageKey      String    @map("storage_key")
+  storagePath     String    @map("storage_path")
+  storageProvider String    @default("local") @map("storage_provider")
+  fileSize        Int?      @map("file_size")
+  mimeType        String?   @map("mime_type") @db.VarChar(100)
+  description     String?   @db.Text
+  isPrimary       Boolean   @default(false) @map("is_primary")
+  uploadedBy      String    @map("uploaded_by")
+  uploadedAt      DateTime  @default(now()) @map("uploaded_at")
+  deletedAt       DateTime? @map("deleted_at")
 
-  application     Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  applicant       ApplicationApplicant? @relation(fields: [applicantId], references: [id], onDelete: SetNull)
-  uploader        User                  @relation(fields: [uploadedBy], references: [id])
+  application Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicant   ApplicationApplicant? @relation(fields: [applicantId], references: [id], onDelete: SetNull)
+  uploader    User                  @relation(fields: [uploadedBy], references: [id])
 
   @@index([applicationId])
   @@index([applicantId])
@@ -1076,16 +1079,16 @@ model ApplicationResultFile {
 }
 
 model DocumentRequestItem {
-  id                 String          @id @default(uuid())
-  requestId          String          @map("request_id")
-  documentName       String          @map("document_name") @db.VarChar(200)
-  acceptedFormats    String?         @map("accepted_formats") @db.Text
-  maxSizeMb          Int             @default(10) @map("max_size_mb")
-  uploadedDocumentId String?         @map("uploaded_document_id")
-  uploadedAt         DateTime?       @map("uploaded_at")
+  id                 String    @id @default(uuid())
+  requestId          String    @map("request_id")
+  documentName       String    @map("document_name") @db.VarChar(200)
+  acceptedFormats    String?   @map("accepted_formats") @db.Text
+  maxSizeMb          Int       @default(10) @map("max_size_mb")
+  uploadedDocumentId String?   @map("uploaded_document_id")
+  uploadedAt         DateTime? @map("uploaded_at")
 
-  request            DocumentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  uploadedDocument   Document?       @relation(fields: [uploadedDocumentId], references: [id], onDelete: SetNull)
+  request          DocumentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  uploadedDocument Document?       @relation(fields: [uploadedDocumentId], references: [id], onDelete: SetNull)
 
   @@index([requestId])
   @@index([uploadedDocumentId])
@@ -1441,17 +1444,17 @@ model ContentPage {
 /// social-link info shown in the footer + on /contact. Service layer
 /// auto-creates on first read so no NPE if the seed hasn't run yet.
 model ContactInfo {
-  id               String   @id @default(uuid())
-  email            String
-  phone            String?
-  whatsapp         String?
-  address          String?
-  city             String?
-  country          String?
-  businessHours    String?  @map("business_hours")
-  supportHours     String?  @map("support_hours")
+  id              String   @id @default(uuid())
+  email           String
+  phone           String?
+  whatsapp        String?
+  address         String?
+  city            String?
+  country         String?
+  businessHours   String?  @map("business_hours")
+  supportHours    String?  @map("support_hours")
   // socialLinks shape: { facebook?, twitter?, instagram?, linkedin?, ... }
-  socialLinksJson  Json?    @map("social_links_json")
+  socialLinksJson Json?    @map("social_links_json")
   // M11.10 (BUG 7) — Secondary contact channels. Pragmatic scope cut
   // vs the full dynamic-channels feature in the brief: covers the
   // actual reported pain ("I want a Phone 2 / Email 2 / Telegram /
@@ -1459,15 +1462,15 @@ model ContactInfo {
   // the M11.7 hide-when-blank behavior on the public /contact page.
   // Full dynamic channel-types (CRUD-able list per type) is queued
   // for post-launch.
-  email2           String?  @map("email_2")
-  phone2           String?  @map("phone_2")
-  whatsapp2        String?  @map("whatsapp_2")
-  telegram         String?
+  email2          String?  @map("email_2")
+  phone2          String?  @map("phone_2")
+  whatsapp2       String?  @map("whatsapp_2")
+  telegram        String?
   /// Free-form copy block surfaced under contact entries on /contact —
   /// e.g. "Sales: anar@... · Emergency: +994 XX XXX..."
-  customNote       String?  @map("custom_note") @db.Text
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  updatedByUserId  String?  @map("updated_by_user_id")
+  customNote      String?  @map("custom_note") @db.Text
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  updatedByUserId String?  @map("updated_by_user_id")
 
   @@map("contact_info")
 }
@@ -1533,17 +1536,17 @@ model FaqItem {
 /// flow if needed, or treats it as a relative path under the storage
 /// CDN base URL.
 model CountryPageImage {
-  id              String      @id @default(uuid())
-  countryPageId   String      @map("country_page_id")
-  imageUrl        String      @map("image_url")
-  altText         String?     @map("alt_text")
-  displayOrder    Int         @default(0) @map("display_order")
-  isPublished     Boolean     @default(true) @map("is_published")
-  createdAt       DateTime    @default(now()) @map("created_at")
-  updatedAt       DateTime    @updatedAt @map("updated_at")
-  createdByUserId String?     @map("created_by_user_id")
-  updatedByUserId String?     @map("updated_by_user_id")
-  deletedAt       DateTime?   @map("deleted_at")
+  id              String    @id @default(uuid())
+  countryPageId   String    @map("country_page_id")
+  imageUrl        String    @map("image_url")
+  altText         String?   @map("alt_text")
+  displayOrder    Int       @default(0) @map("display_order")
+  isPublished     Boolean   @default(true) @map("is_published")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdByUserId String?   @map("created_by_user_id")
+  updatedByUserId String?   @map("updated_by_user_id")
+  deletedAt       DateTime? @map("deleted_at")
 
   countryPage CountryPage @relation(fields: [countryPageId], references: [id], onDelete: Cascade)
 
@@ -1557,19 +1560,19 @@ model CountryPageImage {
 /// `/country/{country.page.slug}` and falls back to the country flag
 /// when no `imageUrl` is uploaded.
 model HomepageSlide {
-  id              String   @id @default(uuid())
-  countryId       String?  @map("country_id")
-  imageUrl        String?  @map("image_url")
+  id              String    @id @default(uuid())
+  countryId       String?   @map("country_id")
+  imageUrl        String?   @map("image_url")
   title           String
   subtitle        String?
-  ctaText         String   @default("Apply Now") @map("cta_text")
-  ctaUrl          String?  @map("cta_url")
-  displayOrder    Int      @default(0) @map("display_order")
-  isPublished     Boolean  @default(true) @map("is_published")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-  createdByUserId String?  @map("created_by_user_id")
-  updatedByUserId String?  @map("updated_by_user_id")
+  ctaText         String    @default("Apply Now") @map("cta_text")
+  ctaUrl          String?   @map("cta_url")
+  displayOrder    Int       @default(0) @map("display_order")
+  isPublished     Boolean   @default(true) @map("is_published")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdByUserId String?   @map("created_by_user_id")
+  updatedByUserId String?   @map("updated_by_user_id")
   deletedAt       DateTime? @map("deleted_at")
 
   country Country? @relation(fields: [countryId], references: [id], onDelete: SetNull)
@@ -1577,4 +1580,81 @@ model HomepageSlide {
   @@index([displayOrder])
   @@index([isPublished, deletedAt])
   @@map("homepage_slides")
+}
+
+// =====================================================================
+// M11.15 (HELP) — Operator help / training articles
+// =====================================================================
+
+/// A workflow-grouped bucket for help articles (e.g. "Applications",
+/// "Users & Roles"). Mirrors the FAQ-categories pattern from BUG SS —
+/// the canonical seeded set is system-protected and can't be deleted,
+/// new ones can be added by an admin.
+model HelpCategory {
+  id          String    @id @default(uuid())
+  key         String
+  name        String    @db.VarChar(100)
+  description String?
+  iconName    String?   @map("icon_name") @db.VarChar(50)
+  sortOrder   Int       @default(0) @map("sort_order")
+  isSystem    Boolean   @default(false) @map("is_system")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  articles HelpArticle[]
+
+  @@map("help_categories")
+}
+
+/// One help article. The authoring editor sends Markdown which the
+/// service renders to HTML server-side; both stay on the row so a
+/// later edit round-trips without re-rendering and so the read view
+/// ships static HTML directly.
+model HelpArticle {
+  id              String    @id @default(uuid())
+  slug            String    @db.VarChar(150)
+  title           String    @db.VarChar(200)
+  categoryId      String?   @map("category_id")
+  summary         String?
+  contentHtml     String?   @map("content_html")
+  contentMarkdown String?   @map("content_markdown")
+  videoUrl        String?   @map("video_url") @db.VarChar(500)
+  videoProvider   String?   @map("video_provider") @db.VarChar(20)
+  sortOrder       Int       @default(0) @map("sort_order")
+  isPublished     Boolean   @default(false) @map("is_published")
+  tags            String[]  @default([])
+  viewCount       Int       @default(0) @map("view_count")
+  visibleToRoles  String[]  @default(["operator", "admin", "superAdmin"]) @map("visible_to_roles")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  createdBy       String?   @map("created_by")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  updatedBy       String?   @map("updated_by")
+  deletedAt       DateTime? @map("deleted_at")
+
+  category HelpCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  creator  User?              @relation("HelpArticleCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  updater  User?              @relation("HelpArticleUpdater", fields: [updatedBy], references: [id], onDelete: SetNull)
+  images   HelpArticleImage[]
+
+  @@map("help_articles")
+}
+
+/// Per-article screenshot gallery. Files live under
+/// uploads/help/{articleId}/ via the shared StorageService.
+model HelpArticleImage {
+  id         String    @id @default(uuid())
+  articleId  String    @map("article_id")
+  storageKey String    @map("storage_key")
+  fileSize   Int?      @map("file_size")
+  mimeType   String?   @map("mime_type") @db.VarChar(60)
+  caption    String?
+  altText    String?   @map("alt_text")
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  article HelpArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@map("help_article_images")
 }

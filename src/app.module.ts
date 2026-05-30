@@ -74,6 +74,8 @@ import { FaqItemsModule } from './modules/faqItems/faq-items.module';
 import { CountryPageImagesModule } from './modules/countryPageImages/country-page-images.module';
 import { HomepageSlidesModule } from './modules/homepageSlides/homepage-slides.module';
 import { FilesModule } from './modules/files/files.module';
+// M11.15 (HELP) — operator help / training articles
+import { HelpArticlesModule } from './modules/helpArticles/help-articles.module';
 
 @Module({
   imports: [
@@ -174,6 +176,9 @@ import { FilesModule } from './modules/files/files.module';
     // M11.1 — Carousel + country page images
     CountryPageImagesModule,
     HomepageSlidesModule,
+
+    // M11.15 — operator help / training articles
+    HelpArticlesModule,
   ],
   providers: [
     // Global rate limiting guard
