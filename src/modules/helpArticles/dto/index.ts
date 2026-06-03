@@ -138,9 +138,19 @@ export class CreateHelpArticleDto {
   @IsString()
   contentHtml?: string;
 
-  @ApiPropertyOptional({ example: 'https://www.youtube.com/watch?v=abc123' })
+  @ApiPropertyOptional({
+    example: 'https://www.youtube.com/watch?v=abc123',
+    description:
+      'YouTube / Vimeo URL. Pass an empty string to clear the field (e.g. when switching the article to a self-hosted upload).',
+  })
   @IsOptional()
-  @IsUrl({ require_protocol: true })
+  @IsString()
+  // M11.15-HELP-V2 — allow empty string as an explicit "clear it" signal
+  // from the editor when the radio flips from URL → upload / none. Real
+  // URL validity is enforced inside the service's parseVideoUrl.
+  @Matches(/^(?:|https?:\/\/.+)$/, {
+    message: 'videoUrl must be either empty or start with http:// or https://',
+  })
   videoUrl?: string;
 
   @ApiPropertyOptional({ minimum: 0 })
@@ -275,6 +285,12 @@ export class HelpArticleDetailDto extends HelpArticleListItemDto {
   @ApiPropertyOptional() contentMarkdown?: string | null;
   @ApiPropertyOptional() videoUrl?: string | null;
   @ApiPropertyOptional() videoProvider?: string | null;
+  // M11.15-HELP-V2 — uploaded-video metadata. Frontend uses
+  // videoStorageType to branch between Plyr (upload) and iframe (url).
+  @ApiPropertyOptional() videoStorageType?: string | null;
+  @ApiPropertyOptional() videoMimeType?: string | null;
+  @ApiPropertyOptional() videoSizeBytes?: number | null;
+  @ApiPropertyOptional() videoDurationSeconds?: number | null;
   @ApiProperty({ type: [HelpArticleImageResponseDto] }) images!: HelpArticleImageResponseDto[];
   @ApiPropertyOptional() createdBy?: string | null;
   @ApiPropertyOptional() updatedBy?: string | null;

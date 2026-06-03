@@ -1,8 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { exec as execCb } from 'child_process';
+import { promisify } from 'util';
+import { promises as fsp, createReadStream } from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
+import type { Request, Response } from 'express';
 import { ActorType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
+
+const execAsync = promisify(execCb);
 import {
   BadRequestException,
   ConflictException,
@@ -50,7 +60,321 @@ export class HelpArticlesService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly audit: AuditLogsService,
+    private readonly config: ConfigService,
+    private readonly jwt: JwtService,
   ) {}
+
+  // ============================================================
+  // M11.15-HELP-V2 — video upload + signed-URL streaming.
+  // ============================================================
+
+  /** Root on disk where uploads live (mirror what LocalStorageProvider reads). */
+  private get uploadsRoot(): string {
+    return (
+      this.config.get<string>('STORAGE_LOCAL_PATH') ||
+      this.config.get<string>('UPLOAD_PATH') ||
+      './uploads'
+    );
+  }
+
+  /** Dedicated 64-char secret for help-video signed URLs. Distinct from
+   * the JWT_ACCESS_SECRET so a token leak on this surface cannot be
+   * replayed against the admin login API.  */
+  private get videoSecret(): string {
+    const v = this.config.get<string>('HELP_VIDEO_JWT_SECRET');
+    if (!v) {
+      throw new Error(
+        '[M11.15-HELP-V2] HELP_VIDEO_JWT_SECRET is not configured; refusing to mint stream tokens.',
+      );
+    }
+    return v;
+  }
+
+  private static readonly ALLOWED_VIDEO_MIME = [
+    'video/mp4',
+    'video/webm',
+    'video/quicktime',
+  ];
+  private static readonly MAX_VIDEO_BYTES = 500 * 1024 * 1024;
+
+  async uploadVideo(
+    articleId: string,
+    file: {
+      buffer: Buffer;
+      mimetype: string;
+      originalname: string;
+      size: number;
+    },
+    actorUserId: string,
+  ): Promise<{
+    sizeBytes: number;
+    durationSeconds: number | null;
+    mimeType: string;
+  }> {
+    const article = await this.prisma.helpArticle.findFirst({
+      where: { id: articleId, deletedAt: null },
+    });
+    if (!article) {
+      throw new NotFoundException('Article not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: `No article with id "${articleId}"` },
+      ]);
+    }
+    if (!HelpArticlesService.ALLOWED_VIDEO_MIME.includes(file.mimetype)) {
+      throw new BadRequestException('Unsupported video type', [
+        {
+          field: 'file',
+          reason: ErrorCodes.BAD_REQUEST,
+          message: `Only mp4 / webm / mov accepted, got ${file.mimetype}.`,
+        },
+      ]);
+    }
+    if (file.size > HelpArticlesService.MAX_VIDEO_BYTES) {
+      throw new BadRequestException('Video too large', [
+        {
+          field: 'file',
+          reason: ErrorCodes.BAD_REQUEST,
+          message: 'Maximum video size is 500 MB.',
+        },
+      ]);
+    }
+
+    // Remove any previous upload — one video per article. The DB XOR
+    // constraint enforces this too, but we clear disk first so a
+    // half-failed save never leaves a stale file behind.
+    if (article.videoFilePath) {
+      await this.tryDeleteFile(article.videoFilePath);
+    }
+
+    const ext = (path.extname(file.originalname).toLowerCase() || '.mp4').slice(0, 8);
+    const filename = `${crypto.randomUUID()}${ext}`;
+    const relativePath = path.posix.join('help-videos', articleId, filename);
+    const absoluteDir = path.resolve(this.uploadsRoot, 'help-videos', articleId);
+    const absolutePath = path.resolve(absoluteDir, filename);
+
+    await fsp.mkdir(absoluteDir, { recursive: true });
+    await fsp.writeFile(absolutePath, file.buffer);
+
+    // Best-effort ffprobe for duration. Never blocks the upload — if
+    // ffprobe isn't installed (or the binary is unhappy), we record
+    // null duration and move on. The streaming endpoint doesn't need
+    // duration, it's purely a UX label for the player.
+    const durationSeconds = await this.probeDuration(absolutePath).catch(
+      () => null,
+    );
+
+    await this.prisma.helpArticle.update({
+      where: { id: articleId },
+      data: {
+        videoFilePath: relativePath,
+        videoStorageType: 'upload',
+        videoSizeBytes: BigInt(file.size),
+        videoDurationSeconds: durationSeconds,
+        videoMimeType: file.mimetype,
+        // XOR — clear the URL fields so only one source is live.
+        videoUrl: null,
+        videoProvider: null,
+        updatedBy: actorUserId,
+      },
+    });
+
+    await this.audit.create({
+      actorUserId,
+      actorType: ActorType.USER,
+      actionKey: 'helpArticle.video.upload',
+      entityType: 'HelpArticle',
+      entityId: articleId,
+      newValue: {
+        path: relativePath,
+        size: file.size,
+        mime: file.mimetype,
+        duration: durationSeconds,
+      },
+    });
+
+    return {
+      sizeBytes: file.size,
+      durationSeconds,
+      mimeType: file.mimetype,
+    };
+  }
+
+  async deleteVideo(articleId: string, actorUserId: string): Promise<void> {
+    const article = await this.prisma.helpArticle.findFirst({
+      where: { id: articleId, deletedAt: null },
+    });
+    if (!article) {
+      throw new NotFoundException('Article not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: `No article with id "${articleId}"` },
+      ]);
+    }
+    if (!article.videoFilePath) return; // idempotent
+    const old = article.videoFilePath;
+    await this.prisma.helpArticle.update({
+      where: { id: articleId },
+      data: {
+        videoFilePath: null,
+        videoStorageType: null,
+        videoSizeBytes: null,
+        videoDurationSeconds: null,
+        videoMimeType: null,
+        updatedBy: actorUserId,
+      },
+    });
+    await this.tryDeleteFile(old);
+    await this.audit.create({
+      actorUserId,
+      actorType: ActorType.USER,
+      actionKey: 'helpArticle.video.delete',
+      entityType: 'HelpArticle',
+      entityId: articleId,
+      oldValue: { path: old },
+    });
+  }
+
+  /**
+   * Issue a short-lived JWT scoped specifically to one article's video.
+   * Verifies role visibility BEFORE minting — so an operator who can't
+   * see the article gets a 403 here and never receives a usable token.
+   */
+  async mintVideoStreamToken(
+    articleId: string,
+    roleKey: string,
+    userId: string,
+    canManage: boolean,
+  ): Promise<{ streamUrl: string; expiresInSec: number }> {
+    const where: Prisma.HelpArticleWhereInput = {
+      id: articleId,
+      deletedAt: null,
+      visibleToRoles: { has: roleKey },
+    };
+    if (!canManage) where.isPublished = true;
+    const article = await this.prisma.helpArticle.findFirst({
+      where,
+      select: { id: true, videoFilePath: true },
+    });
+    if (!article) {
+      throw new NotFoundException('Article not visible', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: 'No accessible article with that id.',
+        },
+      ]);
+    }
+    if (!article.videoFilePath) {
+      throw new NotFoundException('No uploaded video on this article', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Bu məqalənin yüklənmiş videosu yoxdur.' },
+      ]);
+    }
+    const ttl =
+      Number(this.config.get<string>('HELP_VIDEO_TOKEN_TTL_SEC')) || 86400;
+    const token = this.jwt.sign(
+      { articleId, userId, scope: 'help_video' },
+      { secret: this.videoSecret, expiresIn: ttl, noTimestamp: false },
+    );
+    return {
+      streamUrl: `/api/v1/admin/help/video-stream/${token}`,
+      expiresInSec: ttl,
+    };
+  }
+
+  async streamVideoByToken(
+    token: string,
+    req: Request,
+    res: Response,
+  ): Promise<void> {
+    let payload: { articleId: string; userId: string; scope: string };
+    try {
+      payload = this.jwt.verify(token, { secret: this.videoSecret });
+    } catch {
+      throw new ForbiddenException('Token expired or invalid', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'Stream token rejected.' },
+      ]);
+    }
+    if (payload.scope !== 'help_video') {
+      throw new ForbiddenException('Token scope mismatch', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'Wrong scope.' },
+      ]);
+    }
+    const article = await this.prisma.helpArticle.findFirst({
+      where: { id: payload.articleId, deletedAt: null },
+      select: { videoFilePath: true, videoMimeType: true },
+    });
+    if (!article || !article.videoFilePath) {
+      throw new NotFoundException('Video not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'No video on this article.' },
+      ]);
+    }
+    const absolute = path.resolve(this.uploadsRoot, article.videoFilePath);
+    // Defense-in-depth: ensure the resolved path is still inside the
+    // uploads root, in case a future bug lets a `..` slip through.
+    const uploadsAbs = path.resolve(this.uploadsRoot);
+    if (!absolute.startsWith(uploadsAbs + path.sep) && absolute !== uploadsAbs) {
+      throw new ForbiddenException('Bad path');
+    }
+    const stat = await fsp.stat(absolute).catch(() => null);
+    if (!stat) {
+      throw new NotFoundException('File missing on disk');
+    }
+    const fileSize = stat.size;
+    const mime = article.videoMimeType || 'video/mp4';
+    const range = req.headers.range;
+    if (range) {
+      const m = /bytes=(\d+)-(\d+)?/.exec(range);
+      if (!m) {
+        res.status(416).end();
+        return;
+      }
+      const start = parseInt(m[1], 10);
+      const end = m[2] ? parseInt(m[2], 10) : fileSize - 1;
+      const chunk = end - start + 1;
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunk,
+        'Content-Type': mime,
+        'Cache-Control': 'private, max-age=3600',
+      });
+      createReadStream(absolute, { start, end }).pipe(res);
+    } else {
+      res.writeHead(200, {
+        'Content-Length': fileSize,
+        'Content-Type': mime,
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'private, max-age=3600',
+      });
+      createReadStream(absolute).pipe(res);
+    }
+  }
+
+  /** Returns duration in seconds (rounded) or null if ffprobe is missing. */
+  private async probeDuration(absPath: string): Promise<number | null> {
+    try {
+      const { stdout } = await execAsync(
+        `ffprobe -v quiet -print_format json -show_format "${absPath.replace(/"/g, '\\"')}"`,
+        { timeout: 15000 },
+      );
+      const parsed = JSON.parse(stdout);
+      const raw = parsed?.format?.duration;
+      if (raw == null) return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return null;
+      return Math.round(n);
+    } catch (err) {
+      this.logger.warn(
+        `[M11.15-HELP-V2] ffprobe failed for ${absPath}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
+  }
+
+  private async tryDeleteFile(relativePath: string): Promise<void> {
+    const abs = path.resolve(this.uploadsRoot, relativePath);
+    await fsp.unlink(abs).catch((err) => {
+      this.logger.warn(
+        `[M11.15-HELP-V2] could not unlink ${abs}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+  }
 
   // =========================================================
   // Categories
@@ -913,6 +1237,7 @@ export class HelpArticlesService {
     tags: string[];
     viewCount: number;
     videoUrl: string | null;
+    videoFilePath?: string | null;
     visibleToRoles: string[];
     updatedAt: Date;
     category: { key: string; name: string; sortOrder: number } | null;
@@ -929,7 +1254,7 @@ export class HelpArticlesService {
       sortOrder: row.sortOrder,
       tags: row.tags,
       viewCount: row.viewCount,
-      hasVideo: !!row.videoUrl,
+      hasVideo: !!(row.videoUrl || row.videoFilePath),
       imageCount: row._count.images,
       visibleToRoles: row.visibleToRoles,
       updatedAt: row.updatedAt,
@@ -952,6 +1277,11 @@ export class HelpArticlesService {
     contentMarkdown: string | null;
     videoUrl: string | null;
     videoProvider: string | null;
+    videoFilePath?: string | null;
+    videoStorageType?: string | null;
+    videoMimeType?: string | null;
+    videoSizeBytes?: bigint | null;
+    videoDurationSeconds?: number | null;
     createdBy: string | null;
     updatedBy: string | null;
     category: { key: string; name: string } | null;
@@ -976,13 +1306,19 @@ export class HelpArticlesService {
       sortOrder: row.sortOrder,
       tags: row.tags,
       viewCount: row.viewCount,
-      hasVideo: !!row.videoUrl,
+      // M11.15-HELP-V2 — hasVideo now covers BOTH external URL and
+      // uploaded file so the read-side list/admin badges work.
+      hasVideo: !!(row.videoUrl || row.videoFilePath),
       imageCount: row._count.images,
       visibleToRoles: row.visibleToRoles,
       contentHtml: row.contentHtml,
       contentMarkdown: row.contentMarkdown,
       videoUrl: row.videoUrl,
       videoProvider: row.videoProvider,
+      videoStorageType: row.videoStorageType ?? null,
+      videoMimeType: row.videoMimeType ?? null,
+      videoSizeBytes: row.videoSizeBytes != null ? Number(row.videoSizeBytes) : null,
+      videoDurationSeconds: row.videoDurationSeconds ?? null,
       images: row.images.map((img) => this.toImage(img)),
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,

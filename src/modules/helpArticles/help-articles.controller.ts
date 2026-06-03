@@ -11,6 +11,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -25,7 +26,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { HelpArticlesService } from './help-articles.service';
 import {
   CreateHelpArticleDto,
@@ -41,7 +42,7 @@ import {
   UpdateHelpCategoryDto,
   UpdateHelpImageDto,
 } from './dto';
-import { CurrentUser, RequirePermissions } from '@/common/decorators';
+import { CurrentUser, Public, RequirePermissions } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
 import type { AuthenticatedUser } from '@/common/types';
 
@@ -343,5 +344,85 @@ export class HelpArticlesAdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.service.deleteImage(id, imageId, user.id);
+  }
+
+  // ───────────── Video (M11.15-HELP-V2 PART 2) ─────────────
+
+  /**
+   * Upload the article's video file. One video per article — uploading
+   * again replaces the previous file (the service deletes the old one
+   * before writing the new). 500 MB upper limit + mp4/webm/mov MIME
+   * filter applied by the FileInterceptor below.
+   */
+  @Post('articles/:id/video')
+  @RequirePermissions('help.manage')
+  @UseInterceptors(
+    FileInterceptor('video', {
+      limits: { fileSize: 500 * 1024 * 1024 },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { video: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201 })
+  @HttpCode(HttpStatus.CREATED)
+  async uploadVideo(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @UploadedFile() file: MulterFile,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ sizeBytes: number; durationSeconds: number | null; mimeType: string }> {
+    return this.service.uploadVideo(id, file, user.id);
+  }
+
+  @Delete('articles/:id/video')
+  @RequirePermissions('help.manage')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteVideo(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    await this.service.deleteVideo(id, user.id);
+  }
+
+  /**
+   * Mint a short-lived signed URL the Plyr player loads from. The
+   * service performs the per-article role check BEFORE signing — an
+   * operator who can't see the article gets a 404 here and never
+   * receives a usable token.
+   */
+  @Post('articles/:id/video-stream-token')
+  @RequirePermissions('help.read')
+  @HttpCode(HttpStatus.OK)
+  async videoStreamToken(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ streamUrl: string; expiresInSec: number }> {
+    const roleKey = user.roleKey ?? 'operator';
+    const canManage = (user.permissions ?? []).includes('help.manage');
+    return this.service.mintVideoStreamToken(id, roleKey, user.id, canManage);
+  }
+
+  /**
+   * Serve the video bytes. The token IS the auth — we mark this route
+   * @Public so the JwtAuthGuard skips it (an authenticated session is
+   * not required because the signed token already carries the per-
+   * article authorization). The service verifies the token + scope +
+   * file existence on every request.
+   *
+   * Range support means the Plyr player can seek freely; without it
+   * Safari refuses to play.
+   */
+  @Get('video-stream/:token')
+  @Public()
+  async streamVideo(
+    @Param('token') token: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.service.streamVideoByToken(token, req, res);
   }
 }
