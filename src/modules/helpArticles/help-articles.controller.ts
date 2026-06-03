@@ -245,6 +245,37 @@ export class HelpArticlesAdminController {
 
   // ───────────── Images ─────────────
 
+  /**
+   * M11.15-HELP-V2 — Inline image upload for the TipTap editor. The
+   * editor calls this from its toolbar / drag-drop / paste handlers
+   * and inserts the returned `url` directly into the article HTML;
+   * no row in help_article_images is created.
+   *
+   * `id` may be the article uuid OR the literal string `draft` when
+   * the editor is on the "new article" page and hasn't created the
+   * row yet — both shapes are accepted so the editor doesn't have
+   * to save a placeholder first.
+   */
+  @Post('articles/:id/inline-images')
+  @RequirePermissions('help.manage')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201 })
+  @HttpCode(HttpStatus.CREATED)
+  async uploadInlineImage(
+    @Param('id') id: string,
+    @UploadedFile() file: MulterFile,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ url: string; alt: string }> {
+    return this.service.uploadInlineImage(id, file, user.id);
+  }
+
   @Post('articles/:id/images')
   @RequirePermissions('help.manage')
   @ApiParam({ name: 'id' })

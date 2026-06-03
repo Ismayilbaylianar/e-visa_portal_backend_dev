@@ -535,6 +535,62 @@ export class HelpArticlesService {
   // Images
   // =========================================================
 
+  /**
+   * M11.15-HELP-V2 — Inline image upload for the TipTap editor.
+   *
+   * Unlike `uploadImage` below, this DOESN'T link to the
+   * help_article_images table. The editor inserts the returned URL
+   * directly into the article HTML; the image lives at
+   *   uploads/help/inline/<articleId>/<storage-key>
+   * so a future "delete article" cron can clean both the gallery
+   * folder AND this folder in one sweep.
+   *
+   * articleId is optional — on the "new article" page we don't have
+   * one yet, so the editor passes 'draft' and the file lands in
+   * uploads/help/inline/draft/. Drafts can be moved during the
+   * first save if we ever wire that up; for now the path stays.
+   */
+  async uploadInlineImage(
+    articleId: string,
+    file: {
+      buffer: Buffer;
+      mimetype: string;
+      originalname: string;
+      size: number;
+    },
+    actorUserId: string,
+  ): Promise<{ url: string; alt: string }> {
+    if (!/^image\//i.test(file.mimetype)) {
+      throw new BadRequestException('Unsupported image type', [
+        {
+          field: 'file',
+          reason: ErrorCodes.BAD_REQUEST,
+          message: `Expected image/*, got ${file.mimetype}.`,
+        },
+      ]);
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      throw new BadRequestException('Image too large', [
+        {
+          field: 'file',
+          reason: ErrorCodes.BAD_REQUEST,
+          message: 'Maximum image size is 10 MB.',
+        },
+      ]);
+    }
+    const safeArticle = /^[a-z0-9-]+$/i.test(articleId) ? articleId : 'draft';
+    const upload = await this.storage.upload(file.buffer, {
+      contentType: file.mimetype,
+      prefix: `help/inline/${safeArticle}`,
+      originalFilename: file.originalname,
+      metadata: { articleId: safeArticle, inline: 'true', uploader: actorUserId },
+    });
+    return {
+      url: this.toPublicUrl(upload.storageKey),
+      alt: file.originalname.replace(/\.[^.]+$/, ''),
+    };
+  }
+
   async uploadImage(
     articleId: string,
     file: {
