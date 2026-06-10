@@ -17,8 +17,11 @@ import { TemplatesService } from './templates.service';
 // through the bindings service.
 import { TemplateBindingsService } from '../templateBindings/template-bindings.service';
 import {
-  BulkUpsertDestinationsDto,
-  BulkUpsertDestinationsResponseDto,
+  // Flip-binding-flow — renamed from BulkUpsertDestinations*. The
+  // endpoint URL stays the same so existing /admin/templates/:id/
+  // destinations/bulk-upsert callers still land here.
+  BulkUpsertNationalitiesDto,
+  BulkUpsertNationalitiesResponseDto,
 } from '../templateBindings/dto';
 import {
   CreateTemplateDto,
@@ -85,28 +88,34 @@ export class TemplatesController {
   ) {}
 
   /**
-   * M11.2 — Bulk-upsert destinations for one (template, nationality,
-   * visaType) combo. Atomic — all-or-nothing. Returns counts
-   * (created/updated/deleted/skipped).
+   * Flip-binding-flow — Bulk-upsert per-nationality fees for one
+   * (template, destination, visaType) scope. The envelope now carries
+   * the destination + visa type and each row is one nationality.
+   * Atomic — all-or-nothing.
+   *
+   * The URL `:templateId/destinations/bulk-upsert` is preserved
+   * intentionally — it's the same "bind a template to a trip" intent,
+   * and we don't want admins who refresh stale tabs to hit 404. Body
+   * shape is the breaking change, not the URL.
    */
   @Post(':templateId/destinations/bulk-upsert')
   @RequirePermissions('templateBindings.update')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Bulk upsert destinations for a (template, nationality, visa type) scope',
+    summary: 'Bulk upsert nationality fees for a (template, destination, visa type) scope',
     description:
-      'Atomic — every binding row created/updated/deleted in a single transaction. Boilerplate templates rejected with 400.',
+      'Flip-binding-flow — atomic per-nationality upsert. Each row in `nationalities[]` either upserts or soft-deletes the per-nationality fee row under the (destination, visaType) binding. Boilerplate templates rejected with 400.',
   })
   @ApiParam({ name: 'templateId', description: 'Template UUID' })
-  @ApiResponse({ status: 200, type: BulkUpsertDestinationsResponseDto })
+  @ApiResponse({ status: 200, type: BulkUpsertNationalitiesResponseDto })
   @ApiResponse({ status: 400, description: 'Validation failed or boilerplate template' })
   @ApiResponse({ status: 404, description: 'Template not found' })
   async bulkUpsertDestinations(
     @Param() params: TemplateIdParamDto,
-    @Body() dto: BulkUpsertDestinationsDto,
+    @Body() dto: BulkUpsertNationalitiesDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<BulkUpsertDestinationsResponseDto> {
-    return this.templateBindingsService.bulkUpsertDestinations(
+  ): Promise<BulkUpsertNationalitiesResponseDto> {
+    return this.templateBindingsService.bulkUpsertNationalities(
       params.templateId,
       dto,
       user.id,

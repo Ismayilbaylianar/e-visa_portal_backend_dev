@@ -98,33 +98,51 @@ export class SelectionPreviewSuccessDto {
 }
 
 /**
- * M11.3 — per-binding context surfaced on the preview so the
- * dynamic-form renderer can hydrate cross-field validators
- * (`$bindingMinArrivalDays`) and the native arrival date input's
- * `min` attribute without an extra round-trip to /admin/template-bindings.
+ * Flip-binding-flow — per-binding context surfaced on the preview so
+ * the dynamic-form renderer can hydrate cross-field validators
+ * (`$bindingMinArrivalDays`) and the native arrival date input's `min`
+ * attribute without an extra round-trip. After the flip, the customer
+ * sees a SINGLE processing-days number that comes from their
+ * nationality's fee row, not a range on the binding. Legacy
+ * `minArrivalDaysAdvance` / `processingTimeMin` / `processingTimeMax`
+ * fields are kept (all pointing at the same `processingDays`) so old
+ * frontends + email templates still render until the public site cuts
+ * over.
  */
 export class PreviewBindingContextDto {
   @ApiProperty({
     description:
-      'Minimum advance days for arrival date on this destination (today + N).',
+      'Processing days for this nationality on this destination (today + N earliest arrival).',
     example: 3,
     default: 3,
   })
+  processingDays: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Express processing days (only set when the binding offers Express AND this nationality has an express override).',
+    example: 1,
+  })
+  expeditedProcessingDays?: number | null;
+
+  @ApiProperty({
+    description: 'Legacy alias of `processingDays`. Use `processingDays`.',
+    example: 3,
+    deprecated: true,
+  })
   minArrivalDaysAdvance: number;
 
-  // M11.14 (BUG OO) — processing window the customer sees on the
-  // success page and inside status emails.
   @ApiProperty({
-    description: 'Lower bound of processing window (business days).',
-    example: 7,
-    default: 7,
+    description: 'Legacy alias of `processingDays`. Use `processingDays`.',
+    example: 3,
+    deprecated: true,
   })
   processingTimeMin: number;
 
   @ApiProperty({
-    description: 'Upper bound of processing window (business days).',
-    example: 14,
-    default: 14,
+    description: 'Legacy alias of `processingDays`. Use `processingDays`.',
+    example: 3,
+    deprecated: true,
   })
   processingTimeMax: number;
 }

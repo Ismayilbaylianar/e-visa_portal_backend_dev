@@ -7,8 +7,8 @@ import {
   TemplateBindingResponseDto,
   TemplateBindingListItemResponseDto,
   GetTemplateBindingsQueryDto,
-  BulkUpsertDestinationsDto,
-  BulkUpsertDestinationsResponseDto,
+  BulkUpsertNationalitiesDto,
+  BulkUpsertNationalitiesResponseDto,
 } from './dto';
 import { BadRequestException, NotFoundException, ConflictException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
@@ -225,27 +225,10 @@ export class TemplateBindingsService {
     }
 
     await this.validateRelations(dto);
-
-    // M11.14 (BUG OO) — cross-field check on creation: min ≤ max.
-    // Both default to 7 / 14 if omitted, which already satisfies the
-    // invariant, so we only need to validate when at least one was
-    // explicitly supplied.
-    if (
-      dto.processingTimeMin !== undefined ||
-      dto.processingTimeMax !== undefined
-    ) {
-      const nextMin = dto.processingTimeMin ?? 7;
-      const nextMax = dto.processingTimeMax ?? 14;
-      if (nextMin > nextMax) {
-        throw new BadRequestException('Processing window invalid', [
-          {
-            field: 'processingTimeMin',
-            reason: ErrorCodes.BAD_REQUEST,
-            message: `processingTimeMin (${nextMin}) cannot exceed processingTimeMax (${nextMax}).`,
-          },
-        ]);
-      }
-    }
+    // Flip-binding-flow — processing window + min-arrival-days no
+    // longer live on the binding, so the cross-field check that used
+    // to validate min ≤ max here is gone. The equivalent rule lives
+    // per-nationality in the bulk-upsert (expedited < standard).
 
     const includeShape = {
       destinationCountry: {
@@ -283,11 +266,9 @@ export class TemplateBindingsService {
             expeditedEnabled: dto.expeditedEnabled ?? false,
             expeditedFeeAmount:
               dto.expeditedFeeAmount !== undefined ? dto.expeditedFeeAmount : null,
-            // M11.3 — per-binding arrival lead time. Default 3.
-            minArrivalDaysAdvance: dto.minArrivalDaysAdvance ?? 3,
-            // M11.14 (BUG OO) — processing window shown to customers.
-            processingTimeMin: dto.processingTimeMin ?? 7,
-            processingTimeMax: dto.processingTimeMax ?? 14,
+            // Flip-binding-flow — `minArrivalDaysAdvance` /
+            // `processingTimeMin` / `processingTimeMax` moved to
+            // BindingNationalityFee; nothing else to set here.
           },
           include: includeShape,
         })
@@ -302,11 +283,6 @@ export class TemplateBindingsService {
             // M11.2 — per-binding expedited config.
             expeditedEnabled: dto.expeditedEnabled ?? false,
             expeditedFeeAmount: dto.expeditedFeeAmount,
-            // M11.3 — per-binding arrival lead time. Default 3.
-            minArrivalDaysAdvance: dto.minArrivalDaysAdvance ?? 3,
-            // M11.14 (BUG OO) — processing window shown to customers.
-            processingTimeMin: dto.processingTimeMin ?? 7,
-            processingTimeMax: dto.processingTimeMax ?? 14,
           },
           include: includeShape,
         });
@@ -403,30 +379,11 @@ export class TemplateBindingsService {
       updateData.expeditedEnabled = dto.expeditedEnabled;
     if (dto.expeditedFeeAmount !== undefined)
       updateData.expeditedFeeAmount = dto.expeditedFeeAmount;
-    if (dto.minArrivalDaysAdvance !== undefined)
-      updateData.minArrivalDaysAdvance = dto.minArrivalDaysAdvance;
-    // M11.14 (BUG OO) — processing window edits.
-    if (dto.processingTimeMin !== undefined)
-      updateData.processingTimeMin = dto.processingTimeMin;
-    if (dto.processingTimeMax !== undefined)
-      updateData.processingTimeMax = dto.processingTimeMax;
-
-    // M11.14 (BUG OO) — Cross-field invariant: min ≤ max. Compose the
-    // pending values from `dto` if supplied, otherwise the existing
-    // binding's column, so a partial PATCH that updates only one of
-    // the two is still validated. Matches the CHECK constraint added
-    // in migration 22 so DB + service reject the same shapes.
-    const nextMin = updateData.processingTimeMin ?? binding.processingTimeMin;
-    const nextMax = updateData.processingTimeMax ?? binding.processingTimeMax;
-    if (nextMin > nextMax) {
-      throw new BadRequestException('Processing window invalid', [
-        {
-          field: 'processingTimeMin',
-          reason: ErrorCodes.BAD_REQUEST,
-          message: `processingTimeMin (${nextMin}) cannot exceed processingTimeMax (${nextMax}).`,
-        },
-      ]);
-    }
+    // Flip-binding-flow — `minArrivalDaysAdvance` / `processingTimeMin`
+    // / `processingTimeMax` no longer exist on TemplateBinding. The
+    // per-nationality `BindingNationalityFee.processingDays` is the
+    // canonical processing window now; the bulk-upsert endpoint is
+    // the only writer.
 
     const updatedBinding = await this.prisma.templateBinding.update({
       where: { id },
@@ -675,13 +632,9 @@ export class TemplateBindingsService {
       nationalityFeesCount: binding._count?.nationalityFees ?? 0,
       expeditedEnabled: binding.expeditedEnabled ?? false,
       expeditedFeeAmount: binding.expeditedFeeAmount?.toString() ?? null,
-      // M11.3 — per-destination minimum arrival lead time.
-      minArrivalDaysAdvance: binding.minArrivalDaysAdvance ?? 3,
-      // M11.14 (BUG OO) — processing window. Defaults mirror the
-      // column defaults so an old client that never set these still
-      // gets sensible values.
-      processingTimeMin: binding.processingTimeMin ?? 7,
-      processingTimeMax: binding.processingTimeMax ?? 14,
+      // Flip-binding-flow — `minArrivalDaysAdvance` /
+      // `processingTimeMin/Max` are gone; processing days live per
+      // nationality on the detail response.
       createdAt: binding.createdAt,
       updatedAt: binding.updatedAt,
       destinationCountry: binding.destinationCountry
@@ -718,6 +671,9 @@ export class TemplateBindingsService {
         serviceFeeAmount: fee.serviceFeeAmount?.toString() ?? '0',
         expeditedEnabled: fee.expeditedEnabled ?? false,
         expeditedFeeAmount: fee.expeditedFeeAmount?.toString() ?? null,
+        // Flip-binding-flow — per-nationality processing windows.
+        processingDays: fee.processingDays ?? 3,
+        expeditedProcessingDays: fee.expeditedProcessingDays ?? null,
         nationalityCountry: fee.nationalityCountry
           ? {
               id: fee.nationalityCountry.id,
@@ -743,11 +699,9 @@ export class TemplateBindingsService {
       // preview reads availability + headline fee from these.
       expeditedEnabled: binding.expeditedEnabled ?? false,
       expeditedFeeAmount: binding.expeditedFeeAmount?.toString() ?? null,
-      // M11.3 — per-destination minimum arrival lead time.
-      minArrivalDaysAdvance: binding.minArrivalDaysAdvance ?? 3,
-      // M11.14 (BUG OO) — processing window.
-      processingTimeMin: binding.processingTimeMin ?? 7,
-      processingTimeMax: binding.processingTimeMax ?? 14,
+      // Flip-binding-flow — `minArrivalDaysAdvance` and the
+      // `processingTimeMin/Max` range are gone. Processing days are
+      // returned per nationality on `nationalityFees[].processingDays`.
       createdAt: binding.createdAt,
       updatedAt: binding.updatedAt,
       destinationCountry: binding.destinationCountry
@@ -786,6 +740,9 @@ export class TemplateBindingsService {
         expeditedFeeAmount: fee.expeditedFeeAmount?.toString() || null,
         currencyCode: fee.currencyCode,
         expeditedEnabled: fee.expeditedEnabled,
+        // Flip-binding-flow — per-nationality processing windows.
+        processingDays: fee.processingDays ?? 3,
+        expeditedProcessingDays: fee.expeditedProcessingDays ?? null,
         isActive: fee.isActive,
         createdAt: fee.createdAt,
         updatedAt: fee.updatedAt,
@@ -794,33 +751,44 @@ export class TemplateBindingsService {
   }
 
   /**
-   * M11.2 — Bulk upsert destinations for one (template, nationality,
-   * visaType) scope.
+   * Flip-binding-flow — Bulk upsert per-nationality fees for one
+   * (template, destination, visaType) scope.
    *
-   * Lets the admin Destination Manager UI manage 50+ destination rows
-   * per (nationality, visaType) combo in a single round trip. Atomic
-   * via a single Prisma transaction — partial failures roll back so
-   * the admin doesn't end up with half-applied price changes.
+   * The envelope is now (destinationCountryId, visaTypeId) and each
+   * row is one nationality. The destination axis used to be the bulk
+   * list; flipping it lets an admin price one destination across many
+   * source markets in a single round trip — which is what the launch
+   * use case actually wants.
    *
-   * For each input row:
-   *   • If `isActive=true` and binding exists → update binding fields
-   *     + revive (`deletedAt=null`) + upsert nationality fee.
-   *   • If `isActive=true` and binding missing → create binding +
-   *     create fee.
-   *   • If `isActive=false` and binding exists → soft-delete binding
-   *     (sets `deletedAt`). Per-fee rows stay; revived bindings can
-   *     re-use them.
-   *   • If `isActive=false` and binding missing → counted as `skipped`.
+   * Per active row:
+   *   • Upsert exactly ONE `template_bindings` row keyed on
+   *     (destinationCountryId from envelope, visaTypeId from envelope).
+   *     All rows in the batch share this same binding (it carries the
+   *     trip-level template + the expedited-enabled bit; nothing fee-
+   *     shaped lives on it any more).
+   *   • Upsert one `binding_nationality_fees` row keyed on
+   *     (template_binding_id, nationalityCountryId from row) — fees,
+   *     currency, processing_days, expedited_*.
    *
-   * Boilerplate guard: throws 400 if the requested template is a
-   * boilerplate. Per the brief, boilerplates are clones-only and
-   * never directly bindable to a customer-facing combo.
+   * Per inactive row (`isActive=false`):
+   *   • Soft-delete just the per-nationality fee row.
+   *   • After all rows process: if the parent binding has zero active
+   *     fees remaining AND no application references it, soft-delete
+   *     the binding too. This matches the brief's "keep current soft-
+   *     delete semantics" while expressing the new grain (per-fee
+   *     deletion is the source of truth; binding rollup follows).
+   *
+   * Server-side validation mirrors the inline UI rules:
+   *   • Same-country: nationalityCountryId == destinationCountryId → 400
+   *   • Express days must be < standard days when expedited is on → 400
+   *
+   * Boilerplate guard stays — boilerplates aren't directly bindable.
    */
-  async bulkUpsertDestinations(
+  async bulkUpsertNationalities(
     templateId: string,
-    dto: BulkUpsertDestinationsDto,
+    dto: BulkUpsertNationalitiesDto,
     actorUserId: string,
-  ): Promise<BulkUpsertDestinationsResponseDto> {
+  ): Promise<BulkUpsertNationalitiesResponseDto> {
     const template = await this.prisma.template.findFirst({
       where: { id: templateId, deletedAt: null },
       select: { id: true, key: true, isBoilerplate: true },
@@ -835,36 +803,20 @@ export class TemplateBindingsService {
         {
           reason: ErrorCodes.BAD_REQUEST,
           message:
-            'Boilerplates are not directly bindable. Clone the template first via POST /admin/templates/:id/duplicate, then manage destinations on the clone.',
+            'Boilerplates are not directly bindable. Clone the template first via POST /admin/templates/:id/duplicate, then manage bindings on the clone.',
         },
       ]);
     }
 
-    // Validate every row references a real, active country before we
-    // open the transaction — fail fast on bad input.
-    const destinationIds = dto.destinations.map((d) => d.destinationCountryId);
-    const knownDestinations = await this.prisma.country.findMany({
-      where: { id: { in: destinationIds }, isActive: true, deletedAt: null },
+    // Validate envelope refs up front so we never open a transaction
+    // for input that can't possibly succeed.
+    const destination = await this.prisma.country.findFirst({
+      where: { id: dto.destinationCountryId, isActive: true, deletedAt: null },
       select: { id: true },
     });
-    if (knownDestinations.length !== destinationIds.length) {
-      const missing = destinationIds.filter(
-        (id) => !knownDestinations.some((c) => c.id === id),
-      );
-      throw new BadRequestException('Some destination countries not found', [
-        {
-          reason: ErrorCodes.NOT_FOUND,
-          message: `Unknown or inactive destination ids: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? `, … (+${missing.length - 3})` : ''}`,
-        },
-      ]);
-    }
-    const nationality = await this.prisma.country.findFirst({
-      where: { id: dto.nationalityCountryId, isActive: true, deletedAt: null },
-      select: { id: true },
-    });
-    if (!nationality) {
-      throw new BadRequestException('Nationality country not found', [
-        { reason: ErrorCodes.NOT_FOUND, message: 'Unknown or inactive nationality' },
+    if (!destination) {
+      throw new BadRequestException('Destination country not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Unknown or inactive destination' },
       ]);
     }
     const visaType = await this.prisma.visaType.findFirst({
@@ -876,17 +828,53 @@ export class TemplateBindingsService {
         { reason: ErrorCodes.NOT_FOUND, message: 'Unknown or inactive visa type' },
       ]);
     }
+    const nationalityIds = dto.nationalities.map((n) => n.nationalityCountryId);
+    const knownNationalities = await this.prisma.country.findMany({
+      where: { id: { in: nationalityIds }, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (knownNationalities.length !== nationalityIds.length) {
+      const missing = nationalityIds.filter(
+        (id) => !knownNationalities.some((c) => c.id === id),
+      );
+      throw new BadRequestException('Some nationality countries not found', [
+        {
+          reason: ErrorCodes.NOT_FOUND,
+          message: `Unknown or inactive nationality ids: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? `, … (+${missing.length - 3})` : ''}`,
+        },
+      ]);
+    }
 
-    // Reject same-country combos at validation time (matches the M10
-    // public same-country block at the data layer).
-    for (const row of dto.destinations) {
-      if (row.destinationCountryId === dto.nationalityCountryId) {
+    // Per-row validation: same-country + express<standard check.
+    for (const row of dto.nationalities) {
+      if (row.nationalityCountryId === dto.destinationCountryId) {
         throw new BadRequestException('Cannot bind same-country combo', [
           {
             reason: ErrorCodes.BAD_REQUEST,
-            message: `destinationCountryId equals nationalityCountryId for at least one row`,
+            message: `nationalityCountryId equals destinationCountryId for at least one row`,
           },
         ]);
+      }
+      if (row.isActive && row.expeditedEnabled) {
+        const std = row.processingDays ?? 3;
+        if (row.expeditedProcessingDays === undefined) {
+          throw new BadRequestException('Express processing days missing', [
+            {
+              field: 'expeditedProcessingDays',
+              reason: ErrorCodes.BAD_REQUEST,
+              message: 'expeditedProcessingDays is required when expeditedEnabled=true.',
+            },
+          ]);
+        }
+        if (row.expeditedProcessingDays >= std) {
+          throw new BadRequestException('Express must be faster than standard', [
+            {
+              field: 'expeditedProcessingDays',
+              reason: ErrorCodes.BAD_REQUEST,
+              message: `expeditedProcessingDays (${row.expeditedProcessingDays}) must be strictly less than processingDays (${std}).`,
+            },
+          ]);
+        }
       }
     }
 
@@ -895,22 +883,69 @@ export class TemplateBindingsService {
     let updated = 0;
     let deleted = 0;
     let skipped = 0;
+    let bindingId: string | null = null;
+
     await this.prisma.$transaction(async (tx) => {
-      for (const row of dto.destinations) {
-        const existing = await tx.templateBinding.findFirst({
-          where: {
-            destinationCountryId: row.destinationCountryId,
-            visaTypeId: dto.visaTypeId,
+      // Step 1 — Ensure the parent binding exists for the envelope.
+      // We materialize it eagerly so the per-row loop just upserts fees.
+      const existingBinding = await tx.templateBinding.findFirst({
+        where: {
+          destinationCountryId: dto.destinationCountryId,
+          visaTypeId: dto.visaTypeId,
+        },
+        select: { id: true, deletedAt: true, isActive: true },
+      });
+
+      if (existingBinding) {
+        await tx.templateBinding.update({
+          where: { id: existingBinding.id },
+          data: {
+            templateId,
+            isActive: true,
+            deletedAt: null,
+            // Binding-level expedited bit tracks "any row offers express"
+            // so the public catalog filter (show expedited destinations)
+            // stays a single-column lookup.
+            expeditedEnabled: dto.nationalities.some(
+              (r) => r.isActive && r.expeditedEnabled,
+            ),
           },
-          select: { id: true, deletedAt: true, templateId: true, isActive: true },
+        });
+        bindingId = existingBinding.id;
+      } else {
+        const fresh = await tx.templateBinding.create({
+          data: {
+            destinationCountryId: dto.destinationCountryId,
+            visaTypeId: dto.visaTypeId,
+            templateId,
+            isActive: true,
+            expeditedEnabled: dto.nationalities.some(
+              (r) => r.isActive && r.expeditedEnabled,
+            ),
+          },
+        });
+        bindingId = fresh.id;
+      }
+
+      // Step 2 — Upsert / soft-delete one fee row per nationality.
+      for (const row of dto.nationalities) {
+        const existingFee = await tx.bindingNationalityFee.findUnique({
+          where: {
+            templateBindingId_nationalityCountryId: {
+              templateBindingId: bindingId!,
+              nationalityCountryId: row.nationalityCountryId,
+            },
+          },
         });
 
         if (!row.isActive) {
-          // De-activation path — soft-delete if exists; otherwise no-op.
-          if (existing && existing.deletedAt === null) {
-            await tx.templateBinding.update({
-              where: { id: existing.id },
-              data: { deletedAt: new Date(), isActive: false },
+          if (existingFee && existingFee.deletedAt === null) {
+            await tx.bindingNationalityFee.update({
+              where: { id: existingFee.id },
+              data: {
+                isActive: false,
+                deletedAt: new Date(),
+              },
             });
             deleted++;
           } else {
@@ -919,89 +954,60 @@ export class TemplateBindingsService {
           continue;
         }
 
-        // Activation / upsert path.
-        let bindingId: string;
-        if (existing) {
-          await tx.templateBinding.update({
-            where: { id: existing.id },
-            data: {
-              templateId,
-              isActive: true,
-              deletedAt: null,
-              expeditedEnabled: row.expeditedEnabled,
-              expeditedFeeAmount: row.expeditedEnabled
-                ? row.expeditedFeeAmount ?? null
-                : null,
-              // M11.3 — only patch when caller actually sent a value;
-              // omitting it preserves whatever the admin had configured.
-              ...(row.minArrivalDaysAdvance !== undefined
-                ? { minArrivalDaysAdvance: row.minArrivalDaysAdvance }
-                : {}),
-            },
-          });
-          bindingId = existing.id;
-          updated++;
-        } else {
-          const fresh = await tx.templateBinding.create({
-            data: {
-              destinationCountryId: row.destinationCountryId,
-              visaTypeId: dto.visaTypeId,
-              templateId,
-              isActive: true,
-              expeditedEnabled: row.expeditedEnabled,
-              expeditedFeeAmount: row.expeditedEnabled
-                ? row.expeditedFeeAmount ?? null
-                : null,
-              // M11.3 — fresh row falls back to schema default 3.
-              minArrivalDaysAdvance: row.minArrivalDaysAdvance ?? 3,
-            },
-          });
-          bindingId = fresh.id;
-          created++;
-        }
+        const feeData = {
+          governmentFeeAmount: row.governmentFeeAmount,
+          serviceFeeAmount: row.serviceFeeAmount,
+          currencyCode: row.currencyCode,
+          expeditedEnabled: row.expeditedEnabled,
+          expeditedFeeAmount: row.expeditedEnabled
+            ? row.expeditedFeeAmount ?? null
+            : null,
+          // Flip-binding-flow — per-nationality processing windows.
+          processingDays: row.processingDays ?? 3,
+          expeditedProcessingDays: row.expeditedEnabled
+            ? row.expeditedProcessingDays ?? null
+            : null,
+          isActive: true,
+          deletedAt: null,
+        };
 
-        // Upsert the per-nationality fee for this binding. The fee
-        // table's unique key is (templateBindingId, nationalityCountryId)
-        // — exactly the right grain for this scope.
-        const existingFee = await tx.bindingNationalityFee.findUnique({
-          where: {
-            templateBindingId_nationalityCountryId: {
-              templateBindingId: bindingId,
-              nationalityCountryId: dto.nationalityCountryId,
-            },
-          },
-        });
         if (existingFee) {
           await tx.bindingNationalityFee.update({
             where: { id: existingFee.id },
-            data: {
-              governmentFeeAmount: row.governmentFeeAmount,
-              serviceFeeAmount: row.serviceFeeAmount,
-              currencyCode: row.currencyCode,
-              // Keep per-fee expedited columns in sync with binding-level
-              // for backwards-compat readers, but binding remains canonical.
-              expeditedEnabled: row.expeditedEnabled,
-              expeditedFeeAmount: row.expeditedEnabled
-                ? row.expeditedFeeAmount ?? null
-                : null,
-              isActive: true,
-              deletedAt: null,
-            },
+            data: feeData,
           });
+          updated++;
         } else {
           await tx.bindingNationalityFee.create({
             data: {
-              templateBindingId: bindingId,
-              nationalityCountryId: dto.nationalityCountryId,
-              governmentFeeAmount: row.governmentFeeAmount,
-              serviceFeeAmount: row.serviceFeeAmount,
-              currencyCode: row.currencyCode,
-              expeditedEnabled: row.expeditedEnabled,
-              expeditedFeeAmount: row.expeditedEnabled
-                ? row.expeditedFeeAmount ?? null
-                : null,
-              isActive: true,
+              templateBindingId: bindingId!,
+              nationalityCountryId: row.nationalityCountryId,
+              ...feeData,
             },
+          });
+          created++;
+        }
+      }
+
+      // Step 3 — If every active fee disappeared, soft-delete the
+      // binding too (only when no application references it). Matches
+      // the prior soft-delete semantics of "binding gone when its
+      // nationality scope is fully empty".
+      const remainingActive = await tx.bindingNationalityFee.count({
+        where: {
+          templateBindingId: bindingId!,
+          isActive: true,
+          deletedAt: null,
+        },
+      });
+      if (remainingActive === 0) {
+        const blockingApps = await tx.application.count({
+          where: { templateBindingId: bindingId!, deletedAt: null },
+        });
+        if (blockingApps === 0) {
+          await tx.templateBinding.update({
+            where: { id: bindingId! },
+            data: { deletedAt: new Date(), isActive: false },
           });
         }
       }
@@ -1015,9 +1021,9 @@ export class TemplateBindingsService {
       undefined,
       {
         templateId,
-        nationalityCountryId: dto.nationalityCountryId,
+        destinationCountryId: dto.destinationCountryId,
         visaTypeId: dto.visaTypeId,
-        rowCount: dto.destinations.length,
+        rowCount: dto.nationalities.length,
         created,
         updated,
         deleted,
@@ -1026,7 +1032,7 @@ export class TemplateBindingsService {
     );
 
     this.logger.log(
-      `bulk_upsert template=${templateId} nationality=${dto.nationalityCountryId} visa=${dto.visaTypeId} → +${created} ~${updated} -${deleted} (${skipped} skipped)`,
+      `bulk_upsert template=${templateId} destination=${dto.destinationCountryId} visa=${dto.visaTypeId} → +${created} ~${updated} -${deleted} (${skipped} skipped)`,
     );
 
     return { created, updated, deleted, skipped };

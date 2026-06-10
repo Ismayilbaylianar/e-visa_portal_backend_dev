@@ -1846,15 +1846,23 @@ export class ApplicationsService {
       assignedByUser: {
         select: { id: true, fullName: true, email: true },
       },
-      // M11.14 (BUG OO) — eager-load the binding so emails + the
-      // admin/detail page can quote the processing window (e.g.
-      // "5-10 business days") without an extra round-trip.
+      // Flip-binding-flow — eager-load the binding and the matching
+      // nationality fee row so status emails can quote the
+      // applicant's per-nationality processing window without a
+      // second round-trip. `processingTimeMin`/`Max` are gone; the
+      // single `processingDays` (or `expeditedProcessingDays` when
+      // the customer chose Express) is the new source.
       templateBinding: {
         select: {
           id: true,
-          processingTimeMin: true,
-          processingTimeMax: true,
-          minArrivalDaysAdvance: true,
+          nationalityFees: {
+            where: { deletedAt: null, isActive: true },
+            select: {
+              nationalityCountryId: true,
+              processingDays: true,
+              expeditedProcessingDays: true,
+            },
+          },
         },
       },
     };
@@ -1974,14 +1982,23 @@ export class ApplicationsService {
       // renderer (substituteVariables) now strips any leftover
       // `{{anyVar}}` to '' AND logs the unresolved keys — but the
       // first defense is to actually pass the values.
-      // M11.14 (BUG OO) — processing window for the "Your application
-      // was received in {{processingTimeMin}}-{{processingTimeMax}}
-      // business days" copy. Templates that don't reference the new
-      // variables stay unaffected (the renderer just doesn't substitute
-      // them and the sweep won't trigger). Falls back to a safe 7-14
-      // window when the binding wasn't included in the eager load.
-      const procMin = (application as any).templateBinding?.processingTimeMin ?? 7;
-      const procMax = (application as any).templateBinding?.processingTimeMax ?? 14;
+      // Flip-binding-flow — processing window is now per-nationality
+      // on `binding_nationality_fees`. Pick the fee row that matches
+      // THIS application's nationality (via the eager load above),
+      // then surface the standard processing window as a single
+      // number. Both legacy template variables ({{processingTimeMin}}
+      // and {{processingTimeMax}}) are kept pointing at the SAME
+      // value so old email templates that reference the M11.14 range
+      // still render — they just show "X-X days" instead of an
+      // arbitrary range. New templates should use {{processingDays}}.
+      const matchingFee = (
+        (application as any).templateBinding?.nationalityFees ?? []
+      ).find(
+        (f: { nationalityCountryId: string }) =>
+          f.nationalityCountryId === application.nationalityCountryId,
+      );
+      const procDays = matchingFee?.processingDays ?? 3;
+      const expressDays = matchingFee?.expeditedProcessingDays ?? null;
 
       const variables = {
         fullName,
@@ -2003,10 +2020,16 @@ export class ApplicationsService {
         ctaUrl,
         supportEmail,
         notes: notes ?? '',
-        // M11.14 (BUG OO) — processing window.
-        processingTimeMin: String(procMin),
-        processingTimeMax: String(procMax),
-        processingTimeRange: `${procMin}-${procMax}`,
+        // Flip-binding-flow — processing window is now a single
+        // per-nationality number. Legacy {{processingTimeMin/Max/Range}}
+        // template variables are kept (pointing at the same value) so
+        // old email templates still render. New templates should use
+        // {{processingDays}} and {{expeditedProcessingDays}}.
+        processingDays: String(procDays),
+        expeditedProcessingDays: expressDays != null ? String(expressDays) : '',
+        processingTimeMin: String(procDays),
+        processingTimeMax: String(procDays),
+        processingTimeRange: `${procDays}`,
       };
       try {
         const result = await this.emailService.sendTemplatedEmail({

@@ -109,6 +109,20 @@ export class NationalityFeeResponseDto {
   })
   expeditedEnabled: boolean;
 
+  // Flip-binding-flow — per-nationality processing windows. The
+  // public-selection preview surfaces `processingDays` to the customer
+  // and rerouts the dynamic form's `$bindingMinArrivalDays` token to
+  // this value when no Express is selected.
+  @ApiProperty({ example: 3 })
+  processingDays: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Express processing window. Set only when `expeditedEnabled` is true; the DB CHECK guarantees it is strictly less than `processingDays`.',
+    example: 1,
+  })
+  expeditedProcessingDays?: number | null;
+
   @ApiProperty({
     description: 'Whether the fee is active',
     example: true,
@@ -184,22 +198,12 @@ export class TemplateBindingResponseDto {
   })
   expeditedFeeAmount?: string | null;
 
-  @ApiProperty({
-    description:
-      'M11.3 — minimum advance days for arrival date on this destination. Customer-side renderer applies this to the native date picker `min` attribute and to the `$bindingMinArrivalDays` cross-field validator token.',
-    example: 3,
-    default: 3,
-  })
-  minArrivalDaysAdvance: number;
-
-  // M11.14 (BUG OO) — processing window in business days. Rendered to
-  // customers as "{min}-{max} business days" on /apply/success and in
-  // status emails (template variables {{processingTimeMin}}/{{Max}}).
-  @ApiProperty({ description: 'Lower bound of processing window (business days).', example: 7, default: 7 })
-  processingTimeMin: number;
-
-  @ApiProperty({ description: 'Upper bound of processing window (business days).', example: 14, default: 14 })
-  processingTimeMax: number;
+  // Flip-binding-flow — `minArrivalDaysAdvance`, `processingTimeMin`,
+  // and `processingTimeMax` are gone from the binding. The customer-
+  // side date-picker floor + the status-email "processed in N days"
+  // text now read from the per-nationality
+  // `BindingNationalityFee.processingDays` for the applicant's actual
+  // passport country. See NationalityFeeResponseDto above.
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
@@ -272,19 +276,9 @@ export class TemplateBindingListItemResponseDto {
   })
   expeditedFeeAmount?: string | null;
 
-  @ApiProperty({
-    description: 'M11.3 — minimum advance days for arrival date on this destination.',
-    example: 3,
-    default: 3,
-  })
-  minArrivalDaysAdvance: number;
-
-  // M11.14 (BUG OO) — processing window, summary view.
-  @ApiProperty({ description: 'Lower bound of processing window (business days).', example: 7, default: 7 })
-  processingTimeMin: number;
-
-  @ApiProperty({ description: 'Upper bound of processing window (business days).', example: 14, default: 14 })
-  processingTimeMax: number;
+  // Flip-binding-flow — the per-binding processing-window range and
+  // min-arrival-days fields are gone. Per-nationality `processingDays`
+  // is exposed on the detail (nested-fees) response above.
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;

@@ -213,15 +213,19 @@ export class PublicSelectionService {
         totalAmount: totalAmount.toFixed(2),
         expeditedEnabled,
       },
-      // M11.3 — surface per-binding context the dynamic-form renderer
-      // needs for cross-field date validation (`$bindingMinArrivalDays`)
-      // and the native picker `min` attribute on the arrival date input.
-      // M11.14 (BUG OO) — processing window so the success page can
-      // render "5-10 business days" instead of the legacy "0 days".
+      // Flip-binding-flow — processing days are per-nationality now.
+      // Pull `processingDays` from the matched fee row and surface it
+      // as the single source of truth. Legacy fields
+      // (`minArrivalDaysAdvance`, `processingTimeMin/Max`) are all
+      // populated with the SAME value so the customer-side dynamic
+      // form + success page + status emails keep rendering until the
+      // public site swaps over to {{processingDays}}.
       binding: {
-        minArrivalDaysAdvance: templateBinding.minArrivalDaysAdvance ?? 3,
-        processingTimeMin: templateBinding.processingTimeMin ?? 7,
-        processingTimeMax: templateBinding.processingTimeMax ?? 14,
+        processingDays: nationalityFee.processingDays,
+        expeditedProcessingDays: nationalityFee.expeditedProcessingDays ?? null,
+        minArrivalDaysAdvance: nationalityFee.processingDays,
+        processingTimeMin: nationalityFee.processingDays,
+        processingTimeMax: nationalityFee.processingDays,
       },
     };
   }

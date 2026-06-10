@@ -577,13 +577,13 @@ model TemplateField {
 }
 
 model TemplateBinding {
-  id                    String    @id @default(uuid())
-  destinationCountryId  String    @map("destination_country_id")
-  visaTypeId            String    @map("visa_type_id")
-  templateId            String    @map("template_id")
-  isActive              Boolean   @default(true) @map("is_active")
-  validFrom             DateTime? @map("valid_from")
-  validTo               DateTime? @map("valid_to")
+  id                   String    @id @default(uuid())
+  destinationCountryId String    @map("destination_country_id")
+  visaTypeId           String    @map("visa_type_id")
+  templateId           String    @map("template_id")
+  isActive             Boolean   @default(true) @map("is_active")
+  validFrom            DateTime? @map("valid_from")
+  validTo              DateTime? @map("valid_to")
   // M11.2 — per-binding expedited config. Pre-M11.2 the expedited
   // fields lived on each BindingNationalityFee — they still do for
   // backwards compat — but the binding-level values are now the
@@ -591,27 +591,19 @@ model TemplateBinding {
   // once per (template, destination, visaType) combo via the bulk
   // destination manager. Migration backfills these from any existing
   // BindingNationalityFee that had expeditedEnabled=true.
-  expeditedEnabled      Boolean   @default(false) @map("expedited_enabled")
-  expeditedFeeAmount    Decimal?  @map("expedited_fee_amount") @db.Decimal(10, 2)
-  // M11.3 — minimum number of days between today and the earliest
-  // arrival date a customer is allowed to pick. Per-destination
-  // business rule (Türkiye 3, USA 14, Egypt 1, etc.). The dynamic
-  // form renderer reads this off the public preview response and
-  // applies it as the native `min` attribute on the arrival date
-  // input + the `$bindingMinArrivalDays` cross-field validator token.
-  minArrivalDaysAdvance Int       @default(3) @map("min_arrival_days_advance")
-  // M11.14 (BUG OO) — admin-configurable processing window in BUSINESS
-  // days, rendered to customers as "{min}-{max} business days" on the
-  // /apply/success page and inside status emails. Defaults are
-  // intentionally non-zero so a template that's never had these
-  // edited never shows "0 days". Per-nationality overrides could
-  // live on BindingNationalityFee in a later sprint — for now the
-  // binding's window applies to all nationalities sharing it.
-  processingTimeMin     Int       @default(7) @map("processing_time_min")
-  processingTimeMax     Int       @default(14) @map("processing_time_max")
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
-  deletedAt             DateTime? @map("deleted_at")
+  expeditedEnabled     Boolean   @default(false) @map("expedited_enabled")
+  expeditedFeeAmount   Decimal?  @map("expedited_fee_amount") @db.Decimal(10, 2)
+  // Flip-binding-flow: the M11.3 `min_arrival_days_advance` and the
+  // M11.14 `processing_time_min` / `_max` columns moved down to
+  // BindingNationalityFee.processing_days — see the new model below.
+  // The earliest-selectable-arrival-date date floor that used to read
+  // from this binding now reads the per-nationality processing_days
+  // (or expedited_processing_days when expedited is on), so a
+  // destination with two passport markets can quote different
+  // processing windows.
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  deletedAt            DateTime? @map("deleted_at")
 
   destinationCountry Country                 @relation("DestinationCountry", fields: [destinationCountryId], references: [id])
   visaType           VisaType                @relation(fields: [visaTypeId], references: [id])
@@ -629,18 +621,27 @@ model TemplateBinding {
 }
 
 model BindingNationalityFee {
-  id                   String    @id @default(uuid())
-  templateBindingId    String    @map("template_binding_id")
-  nationalityCountryId String    @map("nationality_country_id")
-  governmentFeeAmount  Decimal   @map("government_fee_amount") @db.Decimal(10, 2)
-  serviceFeeAmount     Decimal   @map("service_fee_amount") @db.Decimal(10, 2)
-  expeditedFeeAmount   Decimal?  @map("expedited_fee_amount") @db.Decimal(10, 2)
-  currencyCode         String    @map("currency_code")
-  expeditedEnabled     Boolean   @default(false) @map("expedited_enabled")
-  isActive             Boolean   @default(true) @map("is_active")
-  createdAt            DateTime  @default(now()) @map("created_at")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
-  deletedAt            DateTime? @map("deleted_at")
+  id                      String    @id @default(uuid())
+  templateBindingId       String    @map("template_binding_id")
+  nationalityCountryId    String    @map("nationality_country_id")
+  governmentFeeAmount     Decimal   @map("government_fee_amount") @db.Decimal(10, 2)
+  serviceFeeAmount        Decimal   @map("service_fee_amount") @db.Decimal(10, 2)
+  expeditedFeeAmount      Decimal?  @map("expedited_fee_amount") @db.Decimal(10, 2)
+  currencyCode            String    @map("currency_code")
+  expeditedEnabled        Boolean   @default(false) @map("expedited_enabled")
+  // Flip-binding-flow — per-nationality processing windows. The standard
+  // window (`processing_days`) is always set; the express window
+  // (`expedited_processing_days`) is only meaningful when
+  // `expedited_enabled` is true. The DB CHECK enforces
+  // `expedited_processing_days < processing_days` whenever expedited
+  // is on, so the customer always sees a strictly faster express
+  // option.
+  processingDays          Int       @default(3) @map("processing_days")
+  expeditedProcessingDays Int?      @map("expedited_processing_days")
+  isActive                Boolean   @default(true) @map("is_active")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+  deletedAt               DateTime? @map("deleted_at")
 
   templateBinding    TemplateBinding @relation(fields: [templateBindingId], references: [id], onDelete: Cascade)
   nationalityCountry Country         @relation("NationalityCountry", fields: [nationalityCountryId], references: [id])

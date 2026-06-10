@@ -18,10 +18,14 @@
  *
  * Date keyword tokens used here are resolved by the renderer's
  * `resolveDateKeyword` helper (frontend) and validator. The token
- * `$bindingMinArrivalDays` is M11.3-new and resolves to
- * `today + binding.minArrivalDaysAdvance` at validation time. The
- * `$systemKey` style references resolve to the value of another
- * field with that systemKey in the form payload.
+ * `$bindingMinArrivalDays` resolves to `today + binding.processingDays`
+ * at validation time — post-flip-binding-flow, the source is the
+ * applicant-nationality's per-nationality `processingDays` (the
+ * preview API exposes it as `binding.processingDays` AND keeps the
+ * legacy `binding.minArrivalDaysAdvance` alias populated with the
+ * same number so seeded templates still resolve). The `$systemKey`
+ * style references resolve to the value of another field with that
+ * systemKey in the form payload.
  */
 
 export interface SystemFieldSpec {
@@ -301,8 +305,9 @@ export const SYSTEM_DEFAULT_FIELDS: SystemFieldSpec[] = [
       helpText: 'Earliest date you can arrive at destination',
       validationRulesJson: {
         // `$bindingMinArrivalDays` resolves at validation time to
-        // `today + binding.minArrivalDaysAdvance`. `$passportExpiryDate`
-        // pulls from the form payload by systemKey.
+        // `today + binding.processingDays` (per-nationality, set on
+        // the bulk-binding admin editor). `$passportExpiryDate` pulls
+        // from the form payload by systemKey.
         min: '$bindingMinArrivalDays',
         max: '$passportExpiryDate',
         errorMessages: {
