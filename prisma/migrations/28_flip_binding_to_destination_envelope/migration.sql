@@ -21,14 +21,36 @@
 --     rule the bulk editor enforces inline.
 --
 -- The brief explicitly says the old binding rows are test data and may
--- be deleted, so this migration TRUNCATEs both tables before dropping
--- the now-unused columns. Cascade kills nationality fees first.
+-- be deleted, so this migration wipes the relevant rows before dropping
+-- the now-unused columns.
 
 BEGIN;
 
--- 1. Wipe existing test rows. Cascading from template_bindings would
---    also nuke `applications.template_binding_id` references, which is
---    RESTRICTed — guard rail. We delete fees first, then bindings.
+-- 1. Wipe existing test rows in FK-dependency order. The original cut
+--    of this migration deleted only fees + bindings and got blocked by
+--    `applications.template_binding_id_fkey` (ON DELETE RESTRICT) —
+--    the dev clone carries 10 application rows pointing at bindings.
+--    Owner approved a wider clean slate for both dev + prod since all
+--    of this is test data, so we wipe the application + payment trees
+--    first. CASCADE handles the descendant rows automatically:
+--      * payments      → payment_callbacks, payment_reconciliations,
+--                         payment_status_history, payment_transactions
+--      * applications  → application_applicants,
+--                         application_assignment_history,
+--                         application_estimated_time_changes,
+--                         application_internal_notes,
+--                         application_result_files,
+--                         application_status_history,
+--                         document_requests
+--    Order matters:
+--      payments.application_id is ON DELETE RESTRICT, so payments
+--      must be wiped before applications. applications.template_binding_id
+--      is ON DELETE RESTRICT, so applications must be wiped before
+--      template_bindings. binding_nationality_fees.template_binding_id
+--      is ON DELETE CASCADE, but we delete it explicitly anyway so the
+--      step is visible in this migration.
+DELETE FROM "payments";
+DELETE FROM "applications";
 DELETE FROM "binding_nationality_fees";
 DELETE FROM "template_bindings";
 
