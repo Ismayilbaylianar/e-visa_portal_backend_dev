@@ -1,5 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsBoolean, IsOptional, IsInt, Min, MinLength, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsBoolean,
+  IsOptional,
+  IsInt,
+  IsEnum,
+  Min,
+  MaxLength,
+} from 'class-validator';
+import { CountrySectionSlot } from '@prisma/client';
 
 export class UpdateCountrySectionDto {
   @ApiPropertyOptional({
@@ -8,18 +17,25 @@ export class UpdateCountrySectionDto {
   })
   @IsOptional()
   @IsString()
-  @MinLength(2, { message: 'Title must be at least 2 characters' })
   @MaxLength(200, { message: 'Title must not exceed 200 characters' })
   title?: string;
 
   @ApiPropertyOptional({
-    description: 'Section content (HTML allowed)',
+    description:
+      'Section content (HTML — TipTap output). May be empty; empty sections are hidden on the public page but stay editable in admin.',
     example: '<p>Updated content</p>',
   })
   @IsOptional()
   @IsString()
-  @MinLength(1, { message: 'Content cannot be empty' })
   content?: string;
+
+  @ApiPropertyOptional({
+    description: 'Which card skin renders the section on the public page.',
+    enum: CountrySectionSlot,
+  })
+  @IsOptional()
+  @IsEnum(CountrySectionSlot)
+  slot?: CountrySectionSlot;
 
   @ApiPropertyOptional({
     description: 'Sort order for display',

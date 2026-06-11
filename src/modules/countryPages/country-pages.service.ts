@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { StorageService } from '../storage/storage.service';
@@ -13,6 +14,7 @@ import {
 } from './dto';
 import { NotFoundException, ConflictException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
+import { DEFAULT_COUNTRY_SECTIONS } from './default-sections';
 
 /**
  * Module 1.5 — manages publishable marketing pages per Country.
@@ -34,7 +36,61 @@ export class CountryPagesService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly storageService: StorageService,
+    private readonly jwt: JwtService,
   ) {}
+
+  /**
+   * Mint a short-lived preview token for a country page. The admin
+   * uses this to share a URL that renders the page (even when
+   * `isPublished=false`) without leaking unpublished content via the
+   * regular public route. Token is scoped to a single page id +
+   * actor and lives ~15 minutes by default (matches the existing
+   * access-token TTL feel; tune via env if needed).
+   */
+  async mintPreviewToken(
+    countryPageId: string,
+    actorUserId: string,
+  ): Promise<{ token: string; expiresInSec: number }> {
+    const page = await this.prisma.countryPage.findFirst({
+      where: { id: countryPageId, deletedAt: null },
+      select: { id: true, slug: true },
+    });
+    if (!page) {
+      throw new NotFoundException('CountryPage not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Page does not exist' },
+      ]);
+    }
+    const expiresInSec = 60 * 15;
+    const token = this.jwt.sign(
+      {
+        pageId: page.id,
+        slug: page.slug,
+        userId: actorUserId,
+        scope: 'country_page_preview',
+      },
+      { expiresIn: expiresInSec, noTimestamp: false },
+    );
+    return { token, expiresInSec };
+  }
+
+  /**
+   * Verify a preview token. Returns the page id it grants access to,
+   * or `null` when the token is missing/expired/invalid/wrong-scope.
+   * Callers that get `null` fall back to the publish-gated read.
+   */
+  verifyPreviewToken(token: string | undefined): string | null {
+    if (!token) return null;
+    try {
+      const payload = this.jwt.verify<{
+        pageId: string;
+        scope: string;
+      }>(token);
+      if (payload.scope !== 'country_page_preview') return null;
+      return payload.pageId ?? null;
+    } catch {
+      return null;
+    }
+  }
 
   async findAll(query: GetCountryPagesQueryDto): Promise<CountryPageListResponseDto> {
     const { page = 1, limit = 50, search, sortBy = 'slug', sortOrder = 'asc' } = query;
@@ -144,19 +200,42 @@ export class CountryPagesService {
       ]);
     }
 
-    const page = await this.prisma.countryPage.create({
-      data: {
-        countryId: dto.countryId,
-        slug: dto.slug,
-        isActive: dto.isActive ?? true,
-        isPublished: dto.isPublished ?? false,
-        seoTitle: dto.seoTitle,
-        seoDescription: dto.seoDescription,
-      },
-      include: {
-        country: { select: { id: true, isoCode: true, name: true, flagEmoji: true } },
-        sections: true,
-      },
+    // Seed the 4 default structured sections inside the same
+    // transaction as the page row so a partial create can't leave a
+    // page without its starter content. Defaults mirror the public
+    // page's old hardcoded fallbacks so an admin who never edits
+    // sees the same English text they used to see baked into the
+    // frontend code.
+    const page = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.countryPage.create({
+        data: {
+          countryId: dto.countryId,
+          slug: dto.slug,
+          isActive: dto.isActive ?? true,
+          isPublished: dto.isPublished ?? false,
+          seoTitle: dto.seoTitle,
+          seoDescription: dto.seoDescription,
+        },
+      });
+
+      await tx.countrySection.createMany({
+        data: DEFAULT_COUNTRY_SECTIONS.map((seed) => ({
+          countryPageId: created.id,
+          slot: seed.slot,
+          title: seed.title,
+          content: seed.content,
+          sortOrder: seed.sortOrder,
+          isActive: true,
+        })),
+      });
+
+      return tx.countryPage.findUniqueOrThrow({
+        where: { id: created.id },
+        include: {
+          country: { select: { id: true, isoCode: true, name: true, flagEmoji: true } },
+          sections: { orderBy: { sortOrder: 'asc' } },
+        },
+      });
     });
 
     if (actorUserId) {
@@ -318,18 +397,33 @@ export class CountryPagesService {
     };
   }
 
-  async findBySlugPublic(slug: string): Promise<PublicCountryPageResponseDto> {
+  async findBySlugPublic(
+    slug: string,
+    previewToken?: string,
+  ): Promise<PublicCountryPageResponseDto> {
+    // Preview-token bypass: a valid token whose `pageId` matches the
+    // page found at this slug lets us return the page even when
+    // `isPublished=false`. Wrong slug ↔ token mismatch and unsigned
+    // requests fall back to the publish-gated read.
+    const previewPageId = this.verifyPreviewToken(previewToken);
+
     const page = await this.prisma.countryPage.findFirst({
-      where: { slug, deletedAt: null, isActive: true, isPublished: true },
+      where: previewPageId
+        ? { slug, deletedAt: null, id: previewPageId }
+        : { slug, deletedAt: null, isActive: true, isPublished: true },
       include: {
         country: { select: { id: true, isoCode: true, name: true, flagEmoji: true } },
         sections: {
           where: { deletedAt: null, isActive: true },
           orderBy: { sortOrder: 'asc' },
         },
-        // M11.1 — published hero images, ordered for the slider.
+        // Preview shows unpublished hero images too so the admin can
+        // sanity-check the slider before going live. Published page
+        // reads stay restricted to `isPublished: true` below.
         images: {
-          where: { deletedAt: null, isPublished: true },
+          where: previewPageId
+            ? { deletedAt: null }
+            : { deletedAt: null, isPublished: true },
           orderBy: { displayOrder: 'asc' },
         },
       },
@@ -432,6 +526,7 @@ export class CountryPagesService {
         id: s.id,
         title: s.title,
         content: s.content,
+        slot: s.slot,
         sortOrder: s.sortOrder,
         isActive: s.isActive,
         createdAt: s.createdAt,
@@ -461,6 +556,7 @@ export class CountryPagesService {
         id: s.id,
         title: s.title,
         content: s.content,
+        slot: s.slot,
         sortOrder: s.sortOrder,
         isActive: s.isActive,
         createdAt: s.createdAt,

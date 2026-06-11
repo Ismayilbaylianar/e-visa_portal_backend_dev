@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CountrySectionSlot } from '@prisma/client';
 
 /**
  * CountrySection response. Country sections belong to a CountryPage, not
@@ -14,6 +15,14 @@ export class CountrySectionResponseDto {
 
   @ApiProperty({ description: 'Section content (HTML)', example: '<p>Passport, photo</p>' })
   content: string;
+
+  @ApiProperty({
+    description:
+      'Which card skin renders the section on the public page. EXTRA = plain prose. The slot does NOT decide position — sortOrder does.',
+    enum: CountrySectionSlot,
+    example: CountrySectionSlot.REQUIREMENTS,
+  })
+  slot: CountrySectionSlot;
 
   @ApiProperty({ description: 'Sort order', example: 1 })
   sortOrder: number;

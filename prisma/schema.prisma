@@ -433,16 +433,31 @@ model CountryPage {
   @@map("country_pages")
 }
 
+/// `slot` decides which structured card SKIN the section renders with
+/// on the public country page; `sortOrder` decides position. Two
+/// sections may share a slot — public renderer just renders both in
+/// their sortOrder positions. Default EXTRA = plain prose skin.
+enum CountrySectionSlot {
+  REQUIREMENTS
+  PROCESSING_TIME
+  ELIGIBILITY
+  HOW_TO_APPLY
+  EXTRA
+
+  @@map("country_section_slot")
+}
+
 model CountrySection {
-  id            String    @id @default(uuid())
-  countryPageId String    @map("country_page_id")
+  id            String             @id @default(uuid())
+  countryPageId String             @map("country_page_id")
   title         String
   content       String
-  sortOrder     Int       @default(0) @map("sort_order")
-  isActive      Boolean   @default(true) @map("is_active")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  deletedAt     DateTime? @map("deleted_at")
+  slot          CountrySectionSlot @default(EXTRA)
+  sortOrder     Int                @default(0) @map("sort_order")
+  isActive      Boolean            @default(true) @map("is_active")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  deletedAt     DateTime?          @map("deleted_at")
 
   countryPage CountryPage @relation(fields: [countryPageId], references: [id], onDelete: Cascade)
 

@@ -43,6 +43,7 @@ export class CountrySectionsService {
         countryPageId,
         title: dto.title,
         content: dto.content,
+        slot: dto.slot,
         sortOrder: dto.sortOrder ?? 0,
         isActive: dto.isActive ?? true,
       },
@@ -89,6 +90,7 @@ export class CountrySectionsService {
     const updateData: any = {};
     if (dto.title !== undefined) updateData.title = dto.title;
     if (dto.content !== undefined) updateData.content = dto.content;
+    if (dto.slot !== undefined) updateData.slot = dto.slot;
     if (dto.sortOrder !== undefined) updateData.sortOrder = dto.sortOrder;
     if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
 
@@ -244,6 +246,7 @@ export class CountrySectionsService {
       id: section.id,
       title: section.title,
       content: section.content,
+      slot: section.slot,
       sortOrder: section.sortOrder,
       isActive: section.isActive,
       createdAt: section.createdAt,

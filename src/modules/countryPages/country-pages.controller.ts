@@ -108,6 +108,27 @@ export class CountryPagesController {
     return this.countryPagesService.delete(countryPageId, currentUser.id);
   }
 
+  @Post('admin/countryPages/:countryPageId/preview-token')
+  @RequirePermissions('countryPages.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Mint a short-lived preview token for a draft country page',
+    description:
+      'The token lets the holder fetch the page through the public detail endpoint even when isPublished is false. Scoped to one pageId; 15-minute TTL. Use case: admin previews edits before publishing.',
+  })
+  @ApiParam({ name: 'countryPageId', description: 'CountryPage UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns { token, expiresInSec }',
+  })
+  @ApiResponse({ status: 404, description: 'CountryPage not found' })
+  async mintPreviewToken(
+    @Param('countryPageId') countryPageId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<{ token: string; expiresInSec: number }> {
+    return this.countryPagesService.mintPreviewToken(countryPageId, currentUser.id);
+  }
+
   // ==========================================
   // Public endpoints
   // ==========================================
@@ -125,12 +146,15 @@ export class CountryPagesController {
   @ApiOperation({
     summary: 'Get published country page by slug',
     description:
-      'Public detail with sections. Replaces the legacy /public/countries/:slug route which was tied to the conflated countries.slug column.',
+      'Public detail with sections. Pass `?previewToken=<token>` to fetch an unpublished page (admin draft preview); the token is minted by POST /admin/countryPages/:id/preview-token and is single-page-scoped + short-lived.',
   })
   @ApiParam({ name: 'slug', description: 'Country page slug', example: 'turkey' })
   @ApiResponse({ status: 200, type: PublicCountryPageResponseDto })
   @ApiResponse({ status: 404, description: 'CountryPage not found' })
-  async findBySlugPublic(@Param('slug') slug: string): Promise<PublicCountryPageResponseDto> {
-    return this.countryPagesService.findBySlugPublic(slug);
+  async findBySlugPublic(
+    @Param('slug') slug: string,
+    @Query('previewToken') previewToken?: string,
+  ): Promise<PublicCountryPageResponseDto> {
+    return this.countryPagesService.findBySlugPublic(slug, previewToken);
   }
 }
