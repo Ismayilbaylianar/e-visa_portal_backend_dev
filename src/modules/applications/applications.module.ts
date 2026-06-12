@@ -4,6 +4,7 @@ import {
   ApplicationsPortalController,
 } from './applications.controller';
 import { ApplicationsService } from './applications.service';
+import { PaymentTimeoutService } from './payment-timeout.service';
 import { PortalAuthModule } from '../portalAuth/portal-auth.module';
 import { AuditLogsModule } from '../auditLogs/audit-logs.module';
 import { EmailModule } from '../email/email.module';
@@ -31,7 +32,9 @@ import { SettingsModule } from '../settings/settings.module';
     SettingsModule,
   ],
   controllers: [ApplicationsAdminController, ApplicationsPortalController],
-  providers: [ApplicationsService],
+  // PaymentTimeoutService runs the 3-hour payment-window sweep via
+  // OnModuleInit + setInterval (single PM2 fork instance → no double-fire).
+  providers: [ApplicationsService, PaymentTimeoutService],
   exports: [ApplicationsService],
 })
 export class ApplicationsModule {}

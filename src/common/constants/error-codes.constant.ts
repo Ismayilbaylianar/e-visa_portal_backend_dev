@@ -38,6 +38,11 @@ export const ErrorCodes = {
   SAME_COUNTRY_BLOCKED: 'sameCountryBlocked',
   TEMPLATE_NOT_FOUND: 'templateNotFound',
   APPLICATION_NOT_FOUND: 'applicationNotFound',
+  /** Resume token points at an application the timeout sweep cancelled
+   *  (soft-deleted, expired_reason=PAYMENT_WINDOW_EXPIRED). Distinct from
+   *  the generic not-found so the public resume page can show the
+   *  "payment window expired, start a new application" message. */
+  PAYMENT_WINDOW_EXPIRED: 'paymentWindowExpired',
   APPLICATION_ALREADY_SUBMITTED: 'applicationAlreadySubmitted',
   APPLICATION_NOT_EDITABLE: 'applicationNotEditable',
   INVALID_STATUS_TRANSITION: 'invalidStatusTransition',
@@ -127,6 +132,7 @@ export const ErrorCodeHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.SAME_COUNTRY_BLOCKED]: 400,
   [ErrorCodes.TEMPLATE_NOT_FOUND]: 404,
   [ErrorCodes.APPLICATION_NOT_FOUND]: 404,
+  [ErrorCodes.PAYMENT_WINDOW_EXPIRED]: 410,
   [ErrorCodes.APPLICATION_ALREADY_SUBMITTED]: 409,
   [ErrorCodes.APPLICATION_NOT_EDITABLE]: 409,
   [ErrorCodes.INVALID_STATUS_TRANSITION]: 400,

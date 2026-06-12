@@ -810,6 +810,15 @@ model Application {
   // adjustment trail with reasons.
   estimatedProcessingDays Int?              @map("estimated_processing_days")
   estimatedTimeUpdatedAt  DateTime?         @map("estimated_time_updated_at")
+  // Payment-window timeout job markers.
+  //   paymentWarningSentAt — stamped when the "1h remaining" warning
+  //     email fires, so the 10-min sweep never re-sends it.
+  //   expiredReason — set to 'PAYMENT_WINDOW_EXPIRED' when the sweep
+  //     soft-deletes an UNPAID app past its paymentDeadlineAt. Lets the
+  //     resume endpoint distinguish a timeout cancellation from a
+  //     never-existed token and surface the specific message.
+  paymentWarningSentAt    DateTime?         @map("payment_warning_sent_at")
+  expiredReason           String?           @map("expired_reason")
   // Timestamps
   createdAt               DateTime          @default(now()) @map("created_at")
   updatedAt               DateTime          @updatedAt @map("updated_at")

@@ -23,7 +23,9 @@ import {
   BadRequestException,
   ForbiddenException,
   ServiceUnavailableException,
+  BaseException,
 } from '@/common/exceptions';
+import { HttpStatus } from '@nestjs/common';
 import { ErrorCodes } from '@/common/constants';
 import { PaginationMeta } from '@/common/types';
 import { ApplicationStatus, PaymentStatus } from '@/common/enums';
@@ -832,6 +834,29 @@ export class ApplicationsService {
     });
 
     if (!application) {
+      // Distinguish "cancelled by the payment-timeout sweep" from
+      // "never existed". A second lookup WITHOUT the deletedAt filter,
+      // scoped to the same token, checks only for the timeout marker —
+      // we select just the marker fields so no soft-deleted application
+      // payload can leak.
+      const expired = await this.prisma.application.findFirst({
+        where: { resumeToken, expiredReason: 'PAYMENT_WINDOW_EXPIRED' },
+        select: { id: true, deletedAt: true },
+      });
+      if (expired && expired.deletedAt) {
+        throw new BaseException({
+          code: ErrorCodes.PAYMENT_WINDOW_EXPIRED,
+          statusCode: HttpStatus.GONE, // 410
+          message: 'Payment window expired',
+          details: [
+            {
+              reason: ErrorCodes.PAYMENT_WINDOW_EXPIRED,
+              message:
+                "This application's payment window has expired. Please start a new application.",
+            },
+          ],
+        });
+      }
       throw new NotFoundException('Application not found', [
         {
           reason: ErrorCodes.APPLICATION_NOT_FOUND,
