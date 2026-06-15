@@ -96,6 +96,16 @@ export class ApplicationPaymentDto {
   @ApiProperty({ description: 'Provider key (e.g. mockProvider)' })
   paymentProviderKey: string;
 
+  // Payment Stage 2 — gov/service/expedited split (decimal strings).
+  @ApiPropertyOptional({ description: 'Government fee amount' })
+  governmentFeeAmount?: string | null;
+
+  @ApiPropertyOptional({ description: 'Service fee amount' })
+  serviceFeeAmount?: string | null;
+
+  @ApiPropertyOptional({ description: 'Expedited fee amount (if any)' })
+  expeditedFeeAmount?: string | null;
+
   @ApiProperty({ description: 'Total amount (decimal string)' })
   totalAmount: string;
 
@@ -104,6 +114,19 @@ export class ApplicationPaymentDto {
 
   @ApiProperty({ description: 'Currency code (ISO 4217)' })
   currencyCode: string;
+
+  // Payment Stage 2 — authorize/capture lifecycle + per-portion refunds.
+  @ApiPropertyOptional({ description: 'When funds were authorized (held)' })
+  authorizedAt?: Date;
+
+  @ApiPropertyOptional({ description: 'When the authorization was captured' })
+  capturedAt?: Date;
+
+  @ApiPropertyOptional({ description: 'When the government fee portion was refunded' })
+  governmentFeeRefundedAt?: Date;
+
+  @ApiPropertyOptional({ description: 'When the service fee portion was refunded' })
+  serviceFeeRefundedAt?: Date;
 
   @ApiPropertyOptional({ description: 'Payment-window expiry (3h deadline)' })
   expiresAt?: Date;

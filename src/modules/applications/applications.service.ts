@@ -1890,6 +1890,12 @@ export class ApplicationsService {
         where: { deletedAt: null },
         orderBy: [{ isMainApplicant: 'desc' as const }, { createdAt: 'asc' as const }],
       },
+      // Payment Stage 2 — admin detail shows the gov/service split +
+      // payment state + refunded portions. Latest row first.
+      payments: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: 'desc' as const },
+      },
       // M-Assign — include the assignee for the admin detail page
       // sidebar (AssignmentAndNotesPanel). Only public-safe fields.
       assignedToUser: {
@@ -2237,9 +2243,18 @@ export class ApplicationsService {
         id: p.id,
         paymentStatus: p.paymentStatus,
         paymentProviderKey: p.paymentProviderKey,
+        // Payment Stage 2 — gov/service/expedited split for admin display.
+        governmentFeeAmount: p.governmentFeeAmount?.toString?.() ?? null,
+        serviceFeeAmount: p.serviceFeeAmount?.toString?.() ?? null,
+        expeditedFeeAmount: p.expeditedFeeAmount?.toString?.() ?? null,
         totalAmount: p.totalAmount?.toString?.() ?? null,
         payableAmount: p.payableAmount?.toString?.() ?? null,
         currencyCode: p.currencyCode,
+        // Payment Stage 2 — lifecycle + per-portion refund markers.
+        authorizedAt: p.authorizedAt ?? undefined,
+        capturedAt: p.capturedAt ?? undefined,
+        governmentFeeRefundedAt: p.governmentFeeRefundedAt ?? undefined,
+        serviceFeeRefundedAt: p.serviceFeeRefundedAt ?? undefined,
         expiresAt: p.expiresAt ?? undefined,
         paidAt: p.paidAt ?? undefined,
         createdAt: p.createdAt,

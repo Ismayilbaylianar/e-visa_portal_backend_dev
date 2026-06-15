@@ -36,6 +36,10 @@ enum PaymentStatus {
   CREATED
   PENDING
   PROCESSING
+  // Payment Stage 2 — funds held on the card (authorize/hold), not yet
+  // captured. Customer pay still produces PAID today; the pay→AUTHORIZED
+  // switch + capture/release triggers land in Stage 3.
+  AUTHORIZED
   PAID
   FAILED
   EXPIRED
@@ -1182,6 +1186,12 @@ model Payment {
   providerOrderId     String?       @map("provider_order_id")
   idempotencyKey      String?       @unique @map("idempotency_key")
   expiresAt           DateTime?     @map("expires_at")
+  // Payment Stage 2 — authorize/capture lifecycle timestamps (parity
+  // with paidAt/cancelledAt) + per-portion full-refund markers.
+  authorizedAt              DateTime? @map("authorized_at")
+  capturedAt                DateTime? @map("captured_at")
+  governmentFeeRefundedAt   DateTime? @map("government_fee_refunded_at")
+  serviceFeeRefundedAt      DateTime? @map("service_fee_refunded_at")
   paidAt              DateTime?     @map("paid_at")
   failedAt            DateTime?     @map("failed_at")
   cancelledAt         DateTime?     @map("cancelled_at")

@@ -8,6 +8,8 @@ import {
   PaymentStatusCheckResponse,
   CallbackValidationRequest,
   CallbackValidationResponse,
+  PaymentActionRequest,
+  PaymentActionResponse,
 } from './payment-provider.interface';
 import { randomBytes } from 'crypto';
 
@@ -116,5 +118,30 @@ export class MockPaymentProvider implements PaymentProvider {
       eventType,
       status: mappedStatus,
     };
+  }
+
+  // ── Payment Stage 2 — authorize/capture/release/refund ──────────────
+  // The mock gateway auto-succeeds for every lifecycle action and returns
+  // a synthetic provider reference. The real MSolution provider will map
+  // these to its hold/capture/void/refund APIs.
+
+  async authorize(request: PaymentActionRequest): Promise<PaymentActionResponse> {
+    this.logger.log(`[MOCK] Authorize (hold) payment: ${request.paymentId}`);
+    return { success: true, providerReference: `mock_auth_${randomBytes(8).toString('hex')}` };
+  }
+
+  async capture(request: PaymentActionRequest): Promise<PaymentActionResponse> {
+    this.logger.log(`[MOCK] Capture payment: ${request.paymentId}`);
+    return { success: true, providerReference: `mock_cap_${randomBytes(8).toString('hex')}` };
+  }
+
+  async release(request: PaymentActionRequest): Promise<PaymentActionResponse> {
+    this.logger.log(`[MOCK] Release (void) authorization: ${request.paymentId}`);
+    return { success: true, providerReference: `mock_void_${randomBytes(8).toString('hex')}` };
+  }
+
+  async refund(request: PaymentActionRequest): Promise<PaymentActionResponse> {
+    this.logger.log(`[MOCK] Refund payment: ${request.paymentId} amount=${request.amount ?? 'n/a'}`);
+    return { success: true, providerReference: `mock_refund_${randomBytes(8).toString('hex')}` };
   }
 }

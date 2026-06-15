@@ -924,6 +924,324 @@ export class PaymentsService {
     return this.findByIdForPortal(paymentId, portalIdentityId);
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // Payment Stage 2 — authorize / capture / release / selective refund
+  //
+  // Builds the MECHANISM only. The customer pay path still produces PAID
+  // (confirmMockPayment above). Capture/release/refund are admin/service
+  // actions here; Stage 3 wires their TRIGGERS into the two-stage review
+  // and flips the customer pay to AUTHORIZED. Each action records a
+  // PaymentTransaction (correct TransactionType) + a PaymentStatusHistory
+  // row, atomically, mirroring updateStatus.
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * Shared atomic recorder: update payment status (+extra timestamp
+   * columns), write a status-history row + a transaction row, and
+   * optionally cascade the application PAID flip. Validates the
+   * transition first.
+   */
+  private async recordPaymentAction(opts: {
+    paymentId: string;
+    applicationId: string;
+    newStatus: PaymentStatus;
+    extraData?: Record<string, any>;
+    transactionType: string;
+    reason: string;
+    userId?: string;
+    bySystem: boolean;
+    txnPayload?: Record<string, any>;
+    flipApplicationOnPaid?: boolean;
+  }): Promise<void> {
+    await this.prisma.$transaction(async prisma => {
+      const current = await prisma.payment.findUnique({ where: { id: opts.paymentId } });
+      if (!current) return;
+      const oldStatus = current.paymentStatus;
+
+      await prisma.payment.update({
+        where: { id: opts.paymentId },
+        data: { paymentStatus: opts.newStatus, ...(opts.extraData ?? {}) },
+      });
+
+      await prisma.paymentStatusHistory.create({
+        data: {
+          paymentId: opts.paymentId,
+          oldStatus,
+          newStatus: opts.newStatus,
+          changeReason: opts.reason,
+          changedByUserId: opts.userId,
+          changedBySystem: opts.bySystem,
+        },
+      });
+
+      await prisma.paymentTransaction.create({
+        data: {
+          paymentId: opts.paymentId,
+          transactionType: opts.transactionType as any,
+          transactionStatus: 'SUCCESS',
+          internalTransactionReference: this.generateTransactionReference(),
+          requestPayloadJson: opts.txnPayload ?? {},
+          processedAt: new Date(),
+        },
+      });
+
+      if (opts.flipApplicationOnPaid && opts.newStatus === PaymentStatus.PAID) {
+        await this.updateApplicationAfterPayment(prisma, opts.applicationId);
+      }
+    });
+
+    this.logger.log(
+      `[Stage2] Payment ${opts.paymentId} → ${opts.newStatus} (${opts.transactionType})`,
+    );
+  }
+
+  /**
+   * Dev hook (portal) — mock-authorize a payment (hold funds), analogous
+   * to confirmMockPayment but setting AUTHORIZED instead of PAID. Stage 3
+   * will route the customer pay through here; today it exists for the
+   * mechanism + verification. Does NOT capture / flip the application.
+   */
+  async confirmMockAuthorize(
+    paymentId: string,
+    portalIdentityId: string,
+  ): Promise<PaymentResponseDto> {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, deletedAt: null },
+      include: { application: { select: { portalIdentityId: true } } },
+    });
+    if (!payment) {
+      throw new NotFoundException('Payment not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Payment does not exist' },
+      ]);
+    }
+    if (payment.application.portalIdentityId !== portalIdentityId) {
+      throw new ForbiddenException('Access denied', [
+        { reason: ErrorCodes.FORBIDDEN, message: 'You do not own this application' },
+      ]);
+    }
+    if (payment.paymentProviderKey !== 'mockProvider') {
+      throw new BadRequestException('Only mock provider payments can be authorized via this endpoint', [
+        { reason: ErrorCodes.BAD_REQUEST, message: `Provider is ${payment.paymentProviderKey}.` },
+      ]);
+    }
+    if (payment.paymentStatus === PaymentStatus.AUTHORIZED) {
+      return this.findByIdForPortal(paymentId, portalIdentityId);
+    }
+    if (
+      payment.paymentStatus !== PaymentStatus.CREATED &&
+      payment.paymentStatus !== PaymentStatus.PENDING &&
+      payment.paymentStatus !== PaymentStatus.PROCESSING
+    ) {
+      throw new BadRequestException('Payment cannot be authorized', [
+        { reason: ErrorCodes.BAD_REQUEST, message: `Payment in ${payment.paymentStatus} status cannot be authorized.` },
+      ]);
+    }
+    if (payment.expiresAt && new Date() > payment.expiresAt) {
+      await this.updatePaymentStatusInternal(paymentId, PaymentStatus.EXPIRED, 'Authorize attempted on expired payment', true);
+      throw new BadRequestException('Payment session expired', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'Your payment session has expired.' },
+      ]);
+    }
+
+    const provider = this.getProvider(payment.paymentProviderKey);
+    const res = await provider.authorize({
+      paymentId,
+      providerPaymentId: payment.providerPaymentId ?? undefined,
+      amount: Number(payment.totalAmount),
+      currency: payment.currencyCode,
+    });
+    if (!res.success) {
+      throw new BadRequestException('Authorization failed', [
+        { reason: ErrorCodes.BAD_REQUEST, message: res.errorMessage || 'Provider declined the authorization.' },
+      ]);
+    }
+
+    await this.recordPaymentAction({
+      paymentId,
+      applicationId: payment.applicationId,
+      newStatus: PaymentStatus.AUTHORIZED,
+      extraData: { authorizedAt: new Date() },
+      transactionType: 'AUTHORIZATION',
+      reason: 'Mock payment authorized (funds held)',
+      bySystem: false,
+      txnPayload: { providerReference: res.providerReference },
+    });
+
+    return this.findByIdForPortal(paymentId, portalIdentityId);
+  }
+
+  /**
+   * Capture an authorized payment (settlement) → PAID + capturedAt, and
+   * cascade the application PAID flip (reusing updateApplicationAfterPayment).
+   */
+  async capturePayment(paymentId: string, userId: string): Promise<PaymentResponseDto> {
+    const payment = await this.prisma.payment.findFirst({ where: { id: paymentId, deletedAt: null } });
+    if (!payment) {
+      throw new NotFoundException('Payment not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Payment does not exist' },
+      ]);
+    }
+    if (payment.paymentStatus !== PaymentStatus.AUTHORIZED) {
+      throw new BadRequestException('Payment cannot be captured', [
+        { reason: ErrorCodes.BAD_REQUEST, message: `Only an AUTHORIZED payment can be captured (current: ${payment.paymentStatus}).` },
+      ]);
+    }
+    const provider = this.getProvider(payment.paymentProviderKey);
+    const res = await provider.capture({
+      paymentId,
+      providerPaymentId: payment.providerPaymentId ?? undefined,
+      amount: Number(payment.totalAmount),
+      currency: payment.currencyCode,
+    });
+    if (!res.success) {
+      throw new BadRequestException('Capture failed', [
+        { reason: ErrorCodes.BAD_REQUEST, message: res.errorMessage || 'Provider declined the capture.' },
+      ]);
+    }
+
+    await this.recordPaymentAction({
+      paymentId,
+      applicationId: payment.applicationId,
+      newStatus: PaymentStatus.PAID,
+      extraData: { paidAt: new Date(), capturedAt: new Date() },
+      transactionType: 'CAPTURE',
+      reason: 'Payment captured',
+      userId,
+      bySystem: false,
+      txnPayload: { providerReference: res.providerReference },
+      flipApplicationOnPaid: true,
+    });
+
+    return this.findById(paymentId);
+  }
+
+  /**
+   * Release/void an authorization → CANCELLED (no charge). No application
+   * flip (nothing was captured).
+   */
+  async releasePayment(paymentId: string, userId: string, reason?: string): Promise<PaymentResponseDto> {
+    const payment = await this.prisma.payment.findFirst({ where: { id: paymentId, deletedAt: null } });
+    if (!payment) {
+      throw new NotFoundException('Payment not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Payment does not exist' },
+      ]);
+    }
+    if (payment.paymentStatus !== PaymentStatus.AUTHORIZED) {
+      throw new BadRequestException('Payment cannot be released', [
+        { reason: ErrorCodes.BAD_REQUEST, message: `Only an AUTHORIZED payment can be released (current: ${payment.paymentStatus}).` },
+      ]);
+    }
+    const provider = this.getProvider(payment.paymentProviderKey);
+    const res = await provider.release({
+      paymentId,
+      providerPaymentId: payment.providerPaymentId ?? undefined,
+    });
+    if (!res.success) {
+      throw new BadRequestException('Release failed', [
+        { reason: ErrorCodes.BAD_REQUEST, message: res.errorMessage || 'Provider declined the release.' },
+      ]);
+    }
+
+    await this.recordPaymentAction({
+      paymentId,
+      applicationId: payment.applicationId,
+      newStatus: PaymentStatus.CANCELLED,
+      extraData: { cancelledAt: new Date() },
+      transactionType: 'VOID',
+      reason: reason || 'Authorization released (no charge)',
+      userId,
+      bySystem: false,
+      txnPayload: { providerReference: res.providerReference, reason },
+    });
+
+    return this.findById(paymentId);
+  }
+
+  /**
+   * Selective refund — refund the government and/or service fee portion(s)
+   * in FULL (no arbitrary partial amounts). Valid only from a captured
+   * payment (PAID or PARTIALLY_REFUNDED). Stamps the per-portion marker;
+   * status becomes REFUNDED once both split portions are refunded, else
+   * PARTIALLY_REFUNDED. Expedited fee is not separately refundable here.
+   */
+  async selectiveRefund(
+    paymentId: string,
+    portions: { government?: boolean; service?: boolean },
+    userId: string,
+    reason?: string,
+  ): Promise<PaymentResponseDto> {
+    const payment = await this.prisma.payment.findFirst({ where: { id: paymentId, deletedAt: null } });
+    if (!payment) {
+      throw new NotFoundException('Payment not found', [
+        { reason: ErrorCodes.NOT_FOUND, message: 'Payment does not exist' },
+      ]);
+    }
+    if (
+      payment.paymentStatus !== PaymentStatus.PAID &&
+      payment.paymentStatus !== PaymentStatus.PARTIALLY_REFUNDED
+    ) {
+      throw new BadRequestException('Payment cannot be refunded', [
+        { reason: ErrorCodes.BAD_REQUEST, message: `Only a captured (PAID) payment can be refunded (current: ${payment.paymentStatus}).` },
+      ]);
+    }
+    const wantGov = portions.government === true;
+    const wantSvc = portions.service === true;
+    if (!wantGov && !wantSvc) {
+      throw new BadRequestException('No portion selected', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'Select at least one fee portion to refund (government and/or service).' },
+      ]);
+    }
+    if (wantGov && payment.governmentFeeRefundedAt) {
+      throw new BadRequestException('Government portion already refunded', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'The government fee has already been refunded.' },
+      ]);
+    }
+    if (wantSvc && payment.serviceFeeRefundedAt) {
+      throw new BadRequestException('Service portion already refunded', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'The service fee has already been refunded.' },
+      ]);
+    }
+
+    const provider = this.getProvider(payment.paymentProviderKey);
+    if (wantGov) {
+      const r = await provider.refund({ paymentId, amount: Number(payment.governmentFeeAmount), currency: payment.currencyCode });
+      if (!r.success) throw new BadRequestException('Government refund failed', [{ reason: ErrorCodes.BAD_REQUEST, message: r.errorMessage || 'Provider declined the refund.' }]);
+    }
+    if (wantSvc) {
+      const r = await provider.refund({ paymentId, amount: Number(payment.serviceFeeAmount), currency: payment.currencyCode });
+      if (!r.success) throw new BadRequestException('Service refund failed', [{ reason: ErrorCodes.BAD_REQUEST, message: r.errorMessage || 'Provider declined the refund.' }]);
+    }
+
+    const now = new Date();
+    const govRefunded = !!payment.governmentFeeRefundedAt || wantGov;
+    const svcRefunded = !!payment.serviceFeeRefundedAt || wantSvc;
+    // gov + service are the two split portions; both refunded → fully REFUNDED.
+    const newStatus = govRefunded && svcRefunded ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED;
+
+    const extraData: Record<string, any> = {};
+    if (wantGov) extraData.governmentFeeRefundedAt = now;
+    if (wantSvc) extraData.serviceFeeRefundedAt = now;
+
+    await this.recordPaymentAction({
+      paymentId,
+      applicationId: payment.applicationId,
+      newStatus,
+      extraData,
+      transactionType: 'REFUND',
+      reason: reason || `Selective refund (${[wantGov && 'government', wantSvc && 'service'].filter(Boolean).join(', ')})`,
+      userId,
+      bySystem: false,
+      txnPayload: {
+        portions: { government: wantGov, service: wantSvc },
+        governmentAmount: wantGov ? Number(payment.governmentFeeAmount) : undefined,
+        serviceAmount: wantSvc ? Number(payment.serviceFeeAmount) : undefined,
+        reason,
+      },
+    });
+
+    return this.findById(paymentId);
+  }
+
   private async updatePaymentStatusInternal(
     paymentId: string,
     newStatus: PaymentStatus,
@@ -946,6 +1264,10 @@ export class PaymentsService {
 
     if (newStatus === PaymentStatus.PAID) {
       updateData.paidAt = new Date();
+      // Payment Stage 2 — a PAID transition is a capture; stamp it once.
+      if (!payment.capturedAt) updateData.capturedAt = new Date();
+    } else if (newStatus === PaymentStatus.AUTHORIZED) {
+      updateData.authorizedAt = new Date();
     } else if (newStatus === PaymentStatus.FAILED) {
       updateData.failedAt = new Date();
     } else if (newStatus === PaymentStatus.CANCELLED) {
@@ -1192,17 +1514,27 @@ export class PaymentsService {
     const transitions: Record<PaymentStatus, PaymentStatus[]> = {
       [PaymentStatus.CREATED]: [
         PaymentStatus.PENDING,
+        // Payment Stage 2 — authorize (hold) directly from CREATED.
+        PaymentStatus.AUTHORIZED,
         PaymentStatus.EXPIRED,
         PaymentStatus.CANCELLED,
       ],
       [PaymentStatus.PENDING]: [
         PaymentStatus.PROCESSING,
+        // Payment Stage 2 — authorize (hold) from PENDING.
+        PaymentStatus.AUTHORIZED,
         PaymentStatus.PAID,
         PaymentStatus.FAILED,
         PaymentStatus.EXPIRED,
         PaymentStatus.CANCELLED,
       ],
       [PaymentStatus.PROCESSING]: [PaymentStatus.PAID, PaymentStatus.FAILED],
+      // Payment Stage 2 — capture → PAID, release → CANCELLED, or expire.
+      [PaymentStatus.AUTHORIZED]: [
+        PaymentStatus.PAID,
+        PaymentStatus.CANCELLED,
+        PaymentStatus.EXPIRED,
+      ],
       [PaymentStatus.PAID]: [PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED],
       [PaymentStatus.FAILED]: [PaymentStatus.PENDING],
       [PaymentStatus.EXPIRED]: [],

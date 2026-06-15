@@ -24,6 +24,8 @@ import {
   GetPaymentsQueryDto,
   PaymentTransactionDto,
   PaymentCallbackDto,
+  ReleasePaymentDto,
+  RefundPaymentDto,
 } from './dto';
 import { PaymentIdParamDto } from '@/common/dto';
 import {
@@ -162,6 +164,58 @@ export class PaymentsAdminController {
   ): Promise<PaymentResponseDto> {
     return this.paymentsService.updateStatus(params.paymentId, dto, user.id);
   }
+
+  // ── Payment Stage 2 — capture / release / selective refund ──────────
+  // Mechanism endpoints; Stage 3 wires their TRIGGERS into the two-stage
+  // review (accept→capture, reject→release, admin refund action).
+
+  @Post(':paymentId/capture')
+  @RequirePermissions('payments.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Capture an authorized payment (→ PAID)' })
+  @ApiResponse({ status: 200, type: PaymentResponseDto })
+  @ApiResponse({ status: 400, description: 'Payment is not in AUTHORIZED state' })
+  async capture(
+    @Param() params: PaymentIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaymentResponseDto> {
+    return this.paymentsService.capturePayment(params.paymentId, user.id);
+  }
+
+  @Post(':paymentId/release')
+  @RequirePermissions('payments.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Release/void an authorization (→ CANCELLED, no charge)' })
+  @ApiResponse({ status: 200, type: PaymentResponseDto })
+  @ApiResponse({ status: 400, description: 'Payment is not in AUTHORIZED state' })
+  async release(
+    @Param() params: PaymentIdParamDto,
+    @Body() dto: ReleasePaymentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaymentResponseDto> {
+    return this.paymentsService.releasePayment(params.paymentId, user.id, dto.reason);
+  }
+
+  @Post(':paymentId/refund')
+  @RequirePermissions('payments.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Selective refund — refund the government and/or service fee portion in full',
+  })
+  @ApiResponse({ status: 200, type: PaymentResponseDto })
+  @ApiResponse({ status: 400, description: 'Not captured, no portion selected, or portion already refunded' })
+  async refund(
+    @Param() params: PaymentIdParamDto,
+    @Body() dto: RefundPaymentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaymentResponseDto> {
+    return this.paymentsService.selectiveRefund(
+      params.paymentId,
+      { government: dto.government, service: dto.service },
+      user.id,
+      dto.reason,
+    );
+  }
 }
 
 @ApiTags('Payments - Portal')
@@ -272,6 +326,30 @@ export class PaymentsPortalController {
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<PaymentResponseDto> {
     return this.paymentsService.confirmMockPayment(params.paymentId, portalIdentity.id);
+  }
+
+  /**
+   * Payment Stage 2 — dev hook to mock-AUTHORIZE (hold funds) instead of
+   * capturing. The live customer pay path still uses `confirm-mock`
+   * (→ PAID); this exists for the authorize/capture mechanism +
+   * verification. Stage 3 will route the customer pay through here.
+   */
+  @Post(':paymentId/confirm-mock-authorize')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Authorize (hold) a mock payment',
+    description:
+      "Marks a mock-provider payment as AUTHORIZED (funds held, not captured). Idempotent. Rejects non-mock providers / wrong state / expired sessions.",
+  })
+  @ApiResponse({ status: 200, description: 'Payment authorized', type: PaymentResponseDto })
+  @ApiResponse({ status: 400, description: 'Wrong provider, wrong state, or expired session' })
+  @ApiResponse({ status: 403, description: 'Caller does not own the application' })
+  @ApiResponse({ status: 404, description: 'Payment not found' })
+  async confirmMockAuthorize(
+    @Param() params: PaymentIdParamDto,
+    @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
+  ): Promise<PaymentResponseDto> {
+    return this.paymentsService.confirmMockAuthorize(params.paymentId, portalIdentity.id);
   }
 }
 
