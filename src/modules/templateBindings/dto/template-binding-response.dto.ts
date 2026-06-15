@@ -308,6 +308,17 @@ export class TemplateBindingListItemResponseDto {
   })
   nationalityFees?: Array<{
     id: string;
+    isActive?: boolean;
+    currencyCode?: string;
+    governmentFeeAmount?: string;
+    serviceFeeAmount?: string;
+    expeditedEnabled?: boolean;
+    expeditedFeeAmount?: string | null;
+    processingDays?: number;
+    expeditedProcessingDays?: number | null;
+    // Entries feature — per-entry pricing dimension.
+    entryId?: string;
+    entry?: { id: string; entryLabel: string; sortOrder: number; isActive: boolean };
     nationalityCountry?: { id: string; name: string; isoCode: string; flagEmoji: string | null };
   }>;
 }

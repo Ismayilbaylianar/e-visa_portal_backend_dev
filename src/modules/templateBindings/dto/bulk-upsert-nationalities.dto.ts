@@ -41,8 +41,20 @@ export class BulkUpsertNationalityItem {
   nationalityCountryId!: string;
 
   /**
-   * `true` → upsert (create or revive + update the per-nationality fee).
-   * `false` → soft-delete the per-nationality fee row only. The parent
+   * Entries feature — pricing is per (nationality, entry). Each item
+   * carries one entry of the bound visa type; a nationality with N
+   * entries sends N items (same nationalityCountryId, different
+   * entryId). The upsert key is
+   * (templateBindingId, nationalityCountryId, entryId).
+   */
+  @ApiProperty()
+  @IsString()
+  @IsUUID()
+  entryId!: string;
+
+  /**
+   * `true` → upsert (create or revive + update this (nationality, entry)
+   * fee). `false` → soft-delete that specific fee row only. The parent
    * binding only gets soft-deleted when its LAST active fee disappears
    * — see `bulkUpsertNationalities` in the service.
    */

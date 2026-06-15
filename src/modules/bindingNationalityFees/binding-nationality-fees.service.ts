@@ -103,6 +103,8 @@ export class BindingNationalityFeesService {
       where: {
         templateBindingId: bindingId,
         nationalityCountryId: dto.nationalityCountryId,
+        // Entries feature — uniqueness is per (binding, nationality, entry).
+        entryId: dto.entryId,
       },
     });
 
@@ -111,7 +113,7 @@ export class BindingNationalityFeesService {
         {
           field: 'nationalityCountryId',
           reason: ErrorCodes.CONFLICT,
-          message: 'A fee already exists for this nationality in this binding',
+          message: 'A fee already exists for this nationality + entry in this binding',
         },
       ]);
     }
@@ -155,6 +157,7 @@ export class BindingNationalityFeesService {
           data: {
             templateBindingId: bindingId,
             nationalityCountryId: dto.nationalityCountryId,
+            entryId: dto.entryId,
             ...writeData,
           },
           include: {
@@ -398,6 +401,9 @@ export class BindingNationalityFeesService {
       where: {
         templateBindingId: bindingId,
         nationalityCountryId: { in: dto.targetNationalityCountryIds },
+        // Entries feature — copy is scoped to the source fee's entry, so
+        // the existing-target check must match the same entry dimension.
+        entryId: source.entryId,
       },
       select: {
         id: true,
@@ -423,6 +429,8 @@ export class BindingNationalityFeesService {
     // Materialize the source fee values once — Decimal payload is
     // identical for every target write.
     const valuesFromSource = {
+      // Entries feature — copy keeps the source fee's entry.
+      entryId: source.entryId,
       governmentFeeAmount: source.governmentFeeAmount,
       serviceFeeAmount: source.serviceFeeAmount,
       expeditedFeeAmount: source.expeditedFeeAmount,

@@ -62,13 +62,22 @@ export class PublicSelectionService {
         },
         orderBy: { name: 'asc' },
       }),
-      // Visa types: active only
+      // Visa types: active only. Entries feature — pull the first
+      // active entry for representative durations (shape unchanged).
       this.prisma.visaType.findMany({
         where: {
           isActive: true,
           deletedAt: null,
         },
         orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
+        include: {
+          entries: {
+            where: { isActive: true, deletedAt: null },
+            orderBy: { sortOrder: 'asc' },
+            take: 1,
+            select: { entryLabel: true, validityDays: true, maxStayDays: true },
+          },
+        },
       }),
     ]);
 
@@ -87,14 +96,18 @@ export class PublicSelectionService {
         isoCode: country.isoCode,
         flagEmoji: country.flagEmoji,
       })),
-      visaTypes: visaTypes.map((visaType) => ({
-        id: visaType.id,
-        purpose: visaType.purpose,
-        validityDays: visaType.validityDays,
-        maxStay: visaType.maxStay,
-        entries: visaType.entries,
-        label: visaType.label,
-      })),
+      visaTypes: visaTypes.map((visaType) => {
+        const primaryEntry = visaType.entries[0];
+        return {
+          id: visaType.id,
+          purpose: visaType.purpose,
+          // Representative durations from the first active entry.
+          validityDays: primaryEntry?.validityDays ?? 0,
+          maxStay: primaryEntry?.maxStayDays ?? 0,
+          entries: primaryEntry?.entryLabel ?? '',
+          label: visaType.label,
+        };
+      }),
     };
   }
 
@@ -373,10 +386,18 @@ export class PublicSelectionService {
                 id: true,
                 label: true,
                 purpose: true,
-                validityDays: true,
-                maxStay: true,
-                entries: true,
                 sortOrder: true,
+                // Entries feature — representative durations from the
+                // first active entry keep the cascade step-2 shape
+                // unchanged for Stage 1+2. Stage 3 adds the dedicated
+                // Entry step that lists all entries + threads entryId
+                // into the fee preview.
+                entries: {
+                  where: { isActive: true, deletedAt: null },
+                  orderBy: { sortOrder: 'asc' },
+                  take: 1,
+                  select: { entryLabel: true, validityDays: true, maxStayDays: true },
+                },
               },
             },
           },
@@ -403,14 +424,18 @@ export class PublicSelectionService {
         if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
         return a.label.localeCompare(b.label);
       })
-      .map((vt) => ({
-        id: vt.id,
-        label: vt.label,
-        purpose: vt.purpose,
-        validityDays: vt.validityDays,
-        maxStay: vt.maxStay,
-        entries: vt.entries,
-      }));
+      .map((vt) => {
+        const primaryEntry = vt.entries[0];
+        return {
+          id: vt.id,
+          label: vt.label,
+          purpose: vt.purpose,
+          // Representative durations from the first active entry.
+          validityDays: primaryEntry?.validityDays ?? 0,
+          maxStay: primaryEntry?.maxStayDays ?? 0,
+          entries: primaryEntry?.entryLabel ?? '',
+        };
+      });
 
     return { visaTypes };
   }

@@ -453,10 +453,18 @@ export class CountryPagesService {
             id: true,
             purpose: true,
             label: true,
-            validityDays: true,
-            maxStay: true,
-            entries: true,
             sortOrder: true,
+            // Entries feature — validity / max stay / entry label live
+            // per-entry now. Stage 1+2 keeps the public Available Visas
+            // card unchanged by surfacing the FIRST active entry as the
+            // representative (Stage 3 will render the full entry list +
+            // a public entry picker).
+            entries: {
+              where: { isActive: true, deletedAt: null },
+              orderBy: { sortOrder: 'asc' },
+              take: 1,
+              select: { entryLabel: true, validityDays: true, maxStayDays: true },
+            },
           },
         },
         nationalityFees: {
@@ -482,13 +490,17 @@ export class CountryPagesService {
           (acc, cur) => (acc === undefined || cur.total < acc.total ? cur : acc),
           undefined,
         );
+        const primaryEntry = b.visaType!.entries[0];
         return {
           id: b.visaType!.id,
           purpose: b.visaType!.purpose,
           label: b.visaType!.label,
-          validityDays: b.visaType!.validityDays,
-          maxStay: b.visaType!.maxStay,
-          entries: b.visaType!.entries,
+          // Representative durations from the first active entry — keeps
+          // the existing public card shape (validity/maxStay/entries
+          // label) until Stage 3 expands it to the full entry list.
+          validityDays: primaryEntry?.validityDays ?? 0,
+          maxStay: primaryEntry?.maxStayDays ?? 0,
+          entries: primaryEntry?.entryLabel ?? '',
           fromAmount: cheapest ? cheapest.total.toFixed(2) : undefined,
           currencyCode: cheapest?.currencyCode,
           // Carry sortOrder so we can order client-friendly below.

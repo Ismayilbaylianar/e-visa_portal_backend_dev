@@ -16,11 +16,10 @@ datasource db {
 // ENUMS
 // ===========================================
 
-enum VisaEntryType {
-  SINGLE
-  DOUBLE
-  MULTIPLE
-}
+// Entries feature — the old fixed VisaEntryType enum (SINGLE/DOUBLE/
+// MULTIPLE) is gone. A visa type now owns many `VisaTypeEntry` rows,
+// each with a FREE-STRING label (so admins can create CUSTOM entries)
+// plus its own validity + max-stay window.
 
 enum PermissionEffect {
   ALLOW
@@ -469,19 +468,21 @@ model CountrySection {
 }
 
 model VisaType {
-  id           String        @id @default(uuid())
-  purpose      String
-  validityDays Int           @map("validity_days")
-  maxStay      Int           @map("max_stay")
-  entries      VisaEntryType @default(SINGLE)
-  label        String
-  description  String?
-  isActive     Boolean       @default(true) @map("is_active")
-  sortOrder    Int           @default(0) @map("sort_order")
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
-  deletedAt    DateTime?     @map("deleted_at")
+  id          String    @id @default(uuid())
+  purpose     String
+  label       String
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
 
+  // Entries feature — validity / max stay / entry label moved to
+  // per-entry rows. Each visa type seeds 3 defaults on create
+  // (Single / Double / Multiple) which the admin can edit, reorder,
+  // delete, or extend with custom entries.
+  entries          VisaTypeEntry[]
   templateBindings TemplateBinding[]
   applications     Application[]
 
@@ -490,6 +491,35 @@ model VisaType {
   @@index([sortOrder])
   @@index([deletedAt])
   @@map("visa_types")
+}
+
+/// Entries feature — one selectable entry option on a visa type
+/// (e.g. Single / Double / Multiple, or an admin-created custom one).
+/// `entryLabel` is free text so admins aren't bound to a fixed enum.
+/// Pricing is per-entry: BindingNationalityFee carries an `entryId`.
+model VisaTypeEntry {
+  id           String    @id @default(uuid())
+  visaTypeId   String    @map("visa_type_id")
+  entryLabel   String    @map("entry_label")
+  /// Optional stable machine key (e.g. 'single'); label can be renamed
+  /// without breaking references that key off this.
+  entryKey     String?   @map("entry_key")
+  validityDays Int       @map("validity_days")
+  maxStayDays  Int       @map("max_stay_days")
+  sortOrder    Int       @default(0) @map("sort_order")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  visaType        VisaType                @relation(fields: [visaTypeId], references: [id], onDelete: Cascade)
+  nationalityFees BindingNationalityFee[]
+
+  @@index([visaTypeId])
+  @@index([sortOrder])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("visa_type_entries")
 }
 
 model Template {
@@ -639,6 +669,9 @@ model BindingNationalityFee {
   id                      String    @id @default(uuid())
   templateBindingId       String    @map("template_binding_id")
   nationalityCountryId    String    @map("nationality_country_id")
+  // Entries feature — pricing is per (binding, nationality, entry).
+  // Each entry of the bound visa type carries its own full fee set.
+  entryId                 String    @map("entry_id")
   governmentFeeAmount     Decimal   @map("government_fee_amount") @db.Decimal(10, 2)
   serviceFeeAmount        Decimal   @map("service_fee_amount") @db.Decimal(10, 2)
   expeditedFeeAmount      Decimal?  @map("expedited_fee_amount") @db.Decimal(10, 2)
@@ -660,10 +693,12 @@ model BindingNationalityFee {
 
   templateBinding    TemplateBinding @relation(fields: [templateBindingId], references: [id], onDelete: Cascade)
   nationalityCountry Country         @relation("NationalityCountry", fields: [nationalityCountryId], references: [id])
+  entry              VisaTypeEntry   @relation(fields: [entryId], references: [id], onDelete: Restrict)
 
-  @@unique([templateBindingId, nationalityCountryId])
+  @@unique([templateBindingId, nationalityCountryId, entryId])
   @@index([templateBindingId])
   @@index([nationalityCountryId])
+  @@index([entryId])
   @@index([isActive])
   @@index([deletedAt])
   @@map("binding_nationality_fees")

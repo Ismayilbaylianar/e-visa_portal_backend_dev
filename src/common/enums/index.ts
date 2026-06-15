@@ -1,6 +1,6 @@
 // Re-export Prisma enums for use in application code
+// (VisaEntryType removed — entries are free-string rows now.)
 export {
-  VisaEntryType,
   PermissionEffect,
   OtpPurpose,
   PaymentStatus,

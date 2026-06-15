@@ -10,6 +10,14 @@ export class CreateBindingNationalityFeeDto {
   nationalityCountryId: string;
 
   @ApiProperty({
+    description:
+      'Visa type entry UUID this fee prices. Must be an entry of the binding’s visa type. Pricing is per (binding, nationality, entry).',
+    example: '550e8400-e29b-41d4-a716-446655440099',
+  })
+  @IsUUID()
+  entryId: string;
+
+  @ApiProperty({
     description: 'Government fee amount (decimal string, e.g., "20.00")',
     example: '20.00',
   })

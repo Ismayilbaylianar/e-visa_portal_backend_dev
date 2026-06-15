@@ -1,7 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsIn, IsInt, IsString, IsEnum, Max, Min } from 'class-validator';
+import { IsOptional, IsBoolean, IsIn, IsInt, IsString, Max, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { VisaEntryType } from '@prisma/client';
 import { PaginationQueryDto } from '@/common/dto';
 
 export class GetVisaTypesQueryDto extends PaginationQueryDto {
@@ -55,14 +54,8 @@ export class GetVisaTypesQueryDto extends PaginationQueryDto {
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiPropertyOptional({
-    description: 'Filter by entry type',
-    enum: VisaEntryType,
-    example: 'SINGLE',
-  })
-  @IsOptional()
-  @IsEnum(VisaEntryType)
-  entries?: VisaEntryType;
+  // Entries feature — the entry-type filter is gone (entries are
+  // per-row now, not a visa-type column). Filter by purpose/label/active.
 
   @ApiPropertyOptional({
     description: 'Search by purpose or label',

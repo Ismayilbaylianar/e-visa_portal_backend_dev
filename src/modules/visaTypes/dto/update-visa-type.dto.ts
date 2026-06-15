@@ -5,17 +5,18 @@ import {
   IsOptional,
   IsInt,
   Min,
-  Max,
   MinLength,
   MaxLength,
-  IsEnum,
   Matches,
 } from 'class-validator';
-import { VisaEntryType } from '@prisma/client';
-import { MaxStayLessThanOrEqualValidityDays } from '../validators/max-stay-le-validity-days.validator';
 
 const PURPOSE_SNAKE_CASE = /^[a-z]+(?:_[a-z]+)*$/;
 
+/**
+ * Entries feature — validity / max stay / entry are per-entry now, so
+ * they're gone from the visa-type update payload. Manage them via the
+ * visa-type entries endpoints (create/update/delete/reorder).
+ */
 export class UpdateVisaTypeDto {
   @ApiPropertyOptional({
     description:
@@ -31,37 +32,6 @@ export class UpdateVisaTypeDto {
       'Purpose must be lowercase snake_case (letters and single underscores only, e.g. tourism, work_permit)',
   })
   purpose?: string;
-
-  @ApiPropertyOptional({
-    description: 'Visa validity in days',
-    example: 60,
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(1, { message: 'Validity days must be at least 1' })
-  @Max(3650, { message: 'Validity days must not exceed 3650' })
-  validityDays?: number;
-
-  @ApiPropertyOptional({
-    description:
-      'Maximum stay in days. Must be <= validityDays. Cross-field check skips when only one of the pair is sent; service re-validates against the persisted row.',
-    example: 30,
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(1, { message: 'Max stay must be at least 1' })
-  @Max(365, { message: 'Max stay must not exceed 365' })
-  @MaxStayLessThanOrEqualValidityDays()
-  maxStay?: number;
-
-  @ApiPropertyOptional({
-    description: 'Entry type',
-    enum: VisaEntryType,
-    example: 'MULTIPLE',
-  })
-  @IsOptional()
-  @IsEnum(VisaEntryType, { message: 'Invalid entry type' })
-  entries?: VisaEntryType;
 
   @ApiPropertyOptional({
     description: 'Display label',

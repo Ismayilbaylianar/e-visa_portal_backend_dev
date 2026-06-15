@@ -20,6 +20,10 @@ import {
   VisaTypeListResponseDto,
   GetVisaTypesQueryDto,
   PublicVisaTypeListResponseDto,
+  VisaTypeEntryResponseDto,
+  CreateVisaTypeEntryDto,
+  UpdateVisaTypeEntryDto,
+  ReorderVisaTypeEntriesDto,
 } from './dto';
 import { RequirePermissions, Public, CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
@@ -85,7 +89,8 @@ export class VisaTypesController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create visa type',
-    description: 'Create a new visa type. Conflict check is on (purpose, entries) compound.',
+    description:
+      'Create a new visa type. Auto-seeds 3 default entries (Single 30/30, Double 90/30, Multiple 180/30) which the admin can edit, reorder, delete, or extend.',
   })
   @ApiResponse({
     status: 201,
@@ -157,6 +162,82 @@ export class VisaTypesController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<void> {
     return this.visaTypesService.delete(visaTypeId, currentUser.id);
+  }
+
+  // ==========================================
+  // Visa Type Entries (entries feature)
+  // ==========================================
+
+  @Post('admin/visaTypes/:visaTypeId/entries')
+  @RequirePermissions('visaTypes.update')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Add an entry to a visa type',
+    description:
+      'Create a new entry (free-text label + validity + max stay). Supports custom entries beyond the seeded Single/Double/Multiple.',
+  })
+  @ApiParam({ name: 'visaTypeId', description: 'Visa type ID' })
+  @ApiResponse({ status: 201, type: VisaTypeEntryResponseDto })
+  @ApiResponse({ status: 404, description: 'Visa type not found' })
+  @ApiResponse({ status: 409, description: 'maxStayDays exceeds validityDays' })
+  async createEntry(
+    @Param('visaTypeId') visaTypeId: string,
+    @Body() dto: CreateVisaTypeEntryDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<VisaTypeEntryResponseDto> {
+    return this.visaTypesService.createEntry(visaTypeId, dto, currentUser.id);
+  }
+
+  @Patch('admin/visaTypes/:visaTypeId/entries/reorder')
+  @RequirePermissions('visaTypes.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reorder a visa type’s entries',
+    description:
+      'Atomic bulk reorder. Body must list every current entry id; partial reorders are rejected.',
+  })
+  @ApiParam({ name: 'visaTypeId', description: 'Visa type ID' })
+  @ApiResponse({ status: 200, type: [VisaTypeEntryResponseDto] })
+  @ApiResponse({ status: 400, description: 'orderedIds does not match the entries' })
+  async reorderEntries(
+    @Param('visaTypeId') visaTypeId: string,
+    @Body() dto: ReorderVisaTypeEntriesDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<VisaTypeEntryResponseDto[]> {
+    return this.visaTypesService.reorderEntries(visaTypeId, dto.orderedIds, currentUser.id);
+  }
+
+  @Patch('admin/visaTypeEntries/:entryId')
+  @RequirePermissions('visaTypes.update')
+  @ApiOperation({ summary: 'Update a visa type entry' })
+  @ApiParam({ name: 'entryId', description: 'Entry ID' })
+  @ApiResponse({ status: 200, type: VisaTypeEntryResponseDto })
+  @ApiResponse({ status: 404, description: 'Entry not found' })
+  @ApiResponse({ status: 409, description: 'maxStayDays exceeds validityDays' })
+  async updateEntry(
+    @Param('entryId') entryId: string,
+    @Body() dto: UpdateVisaTypeEntryDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<VisaTypeEntryResponseDto> {
+    return this.visaTypesService.updateEntry(entryId, dto, currentUser.id);
+  }
+
+  @Delete('admin/visaTypeEntries/:entryId')
+  @RequirePermissions('visaTypes.update')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete a visa type entry',
+    description: 'Soft-delete. Blocked (409) if any binding fee still prices this entry.',
+  })
+  @ApiParam({ name: 'entryId', description: 'Entry ID' })
+  @ApiResponse({ status: 204, description: 'Entry deleted' })
+  @ApiResponse({ status: 404, description: 'Entry not found' })
+  @ApiResponse({ status: 409, description: 'Entry is priced in one or more binding fees' })
+  async deleteEntry(
+    @Param('entryId') entryId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<void> {
+    return this.visaTypesService.deleteEntry(entryId, currentUser.id);
   }
 
   // ==========================================

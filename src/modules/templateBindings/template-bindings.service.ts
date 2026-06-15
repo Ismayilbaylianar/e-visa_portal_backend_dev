@@ -114,6 +114,14 @@ export class TemplateBindingsService {
               serviceFeeAmount: true,
               expeditedEnabled: true,
               expeditedFeeAmount: true,
+              processingDays: true,
+              expeditedProcessingDays: true,
+              // Entries feature — per-entry pricing. The bulk editor
+              // groups fees by (nationality, entry) to hydrate sub-rows.
+              entryId: true,
+              entry: {
+                select: { id: true, entryLabel: true, sortOrder: true, isActive: true },
+              },
               nationalityCountry: {
                 select: { id: true, name: true, isoCode: true, flagEmoji: true },
               },
@@ -674,6 +682,16 @@ export class TemplateBindingsService {
         // Flip-binding-flow — per-nationality processing windows.
         processingDays: fee.processingDays ?? 3,
         expeditedProcessingDays: fee.expeditedProcessingDays ?? null,
+        // Entries feature — per-entry pricing dimension.
+        entryId: fee.entryId,
+        entry: fee.entry
+          ? {
+              id: fee.entry.id,
+              entryLabel: fee.entry.entryLabel,
+              sortOrder: fee.entry.sortOrder,
+              isActive: fee.entry.isActive,
+            }
+          : undefined,
         nationalityCountry: fee.nationalityCountry
           ? {
               id: fee.nationalityCountry.id,
@@ -845,6 +863,25 @@ export class TemplateBindingsService {
       ]);
     }
 
+    // Entries feature — every row's entryId must be a live entry of the
+    // envelope's visa type. Guards against pricing a (nationality, entry)
+    // for an entry that belongs to a different visa type or was deleted.
+    const entryIds = [...new Set(dto.nationalities.map((n) => n.entryId))];
+    const knownEntries = await this.prisma.visaTypeEntry.findMany({
+      where: { id: { in: entryIds }, visaTypeId: dto.visaTypeId, deletedAt: null },
+      select: { id: true },
+    });
+    if (knownEntries.length !== entryIds.length) {
+      const missing = entryIds.filter((id) => !knownEntries.some((e) => e.id === id));
+      throw new BadRequestException('Some entries not found on this visa type', [
+        {
+          field: 'entryId',
+          reason: ErrorCodes.NOT_FOUND,
+          message: `Unknown entry ids for visa type ${dto.visaTypeId}: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? `, … (+${missing.length - 3})` : ''}`,
+        },
+      ]);
+    }
+
     // Per-row validation: same-country + express<standard check.
     for (const row of dto.nationalities) {
       if (row.nationalityCountryId === dto.destinationCountryId) {
@@ -927,13 +964,14 @@ export class TemplateBindingsService {
         bindingId = fresh.id;
       }
 
-      // Step 2 — Upsert / soft-delete one fee row per nationality.
+      // Step 2 — Upsert / soft-delete one fee row per (nationality, entry).
       for (const row of dto.nationalities) {
         const existingFee = await tx.bindingNationalityFee.findUnique({
           where: {
-            templateBindingId_nationalityCountryId: {
+            templateBindingId_nationalityCountryId_entryId: {
               templateBindingId: bindingId!,
               nationalityCountryId: row.nationalityCountryId,
+              entryId: row.entryId,
             },
           },
         });
@@ -982,6 +1020,7 @@ export class TemplateBindingsService {
             data: {
               templateBindingId: bindingId!,
               nationalityCountryId: row.nationalityCountryId,
+              entryId: row.entryId,
               ...feeData,
             },
           });

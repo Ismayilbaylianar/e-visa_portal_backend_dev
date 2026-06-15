@@ -5,21 +5,21 @@ import {
   IsOptional,
   IsInt,
   Min,
-  Max,
   MinLength,
   MaxLength,
-  IsEnum,
   Matches,
 } from 'class-validator';
-import { VisaEntryType } from '@prisma/client';
-import { MaxStayLessThanOrEqualValidityDays } from '../validators/max-stay-le-validity-days.validator';
 
 /**
- * `purpose` is a machine key used for joining/filtering across modules
- * (TemplateBindings group by purpose, public selection groups duplicate
- * purpose+entries pairs visually). Restricting to lowercase snake_case
- * keeps the key URL-safe and prevents accidental "Tourism" vs "tourism"
- * fragmentation. Display strings live in `label` / `description`.
+ * Entries feature — a VisaType is now just identity + display
+ * (purpose, label, description, active, sortOrder). Validity, max stay
+ * and the entry label moved to per-entry `visa_type_entries` rows; on
+ * create the service seeds 3 default entries (Single/Double/Multiple)
+ * which the admin edits afterward.
+ *
+ * `purpose` stays a lowercase snake_case machine key used for
+ * joining/filtering across modules. Display strings live in `label` /
+ * `description`.
  */
 const PURPOSE_SNAKE_CASE = /^[a-z]+(?:_[a-z]+)*$/;
 
@@ -37,33 +37,6 @@ export class CreateVisaTypeDto {
       'Purpose must be lowercase snake_case (letters and single underscores only, e.g. tourism, work_permit)',
   })
   purpose: string;
-
-  @ApiProperty({
-    description: 'Visa validity in days',
-    example: 30,
-  })
-  @IsInt()
-  @Min(1, { message: 'Validity days must be at least 1' })
-  @Max(3650, { message: 'Validity days must not exceed 3650' })
-  validityDays: number;
-
-  @ApiProperty({
-    description: 'Maximum stay in days. Must be <= validityDays.',
-    example: 30,
-  })
-  @IsInt()
-  @Min(1, { message: 'Max stay must be at least 1' })
-  @Max(365, { message: 'Max stay must not exceed 365' })
-  @MaxStayLessThanOrEqualValidityDays()
-  maxStay: number;
-
-  @ApiProperty({
-    description: 'Entry type',
-    enum: VisaEntryType,
-    example: 'SINGLE',
-  })
-  @IsEnum(VisaEntryType, { message: 'Invalid entry type' })
-  entries: VisaEntryType;
 
   @ApiProperty({
     description: 'Display label',
