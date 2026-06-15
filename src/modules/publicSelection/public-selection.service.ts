@@ -62,8 +62,9 @@ export class PublicSelectionService {
         },
         orderBy: { name: 'asc' },
       }),
-      // Visa types: active only. Entries feature — pull the first
-      // active entry for representative durations (shape unchanged).
+      // Visa types: active only. Entries feature (Stage 3) — return the
+      // full list of active entries so callers can render an entry picker
+      // (no representative-entry shim).
       this.prisma.visaType.findMany({
         where: {
           isActive: true,
@@ -74,8 +75,13 @@ export class PublicSelectionService {
           entries: {
             where: { isActive: true, deletedAt: null },
             orderBy: { sortOrder: 'asc' },
-            take: 1,
-            select: { entryLabel: true, validityDays: true, maxStayDays: true },
+            select: {
+              id: true,
+              entryLabel: true,
+              validityDays: true,
+              maxStayDays: true,
+              sortOrder: true,
+            },
           },
         },
       }),
@@ -96,18 +102,19 @@ export class PublicSelectionService {
         isoCode: country.isoCode,
         flagEmoji: country.flagEmoji,
       })),
-      visaTypes: visaTypes.map((visaType) => {
-        const primaryEntry = visaType.entries[0];
-        return {
-          id: visaType.id,
-          purpose: visaType.purpose,
-          // Representative durations from the first active entry.
-          validityDays: primaryEntry?.validityDays ?? 0,
-          maxStay: primaryEntry?.maxStayDays ?? 0,
-          entries: primaryEntry?.entryLabel ?? '',
-          label: visaType.label,
-        };
-      }),
+      visaTypes: visaTypes.map((visaType) => ({
+        id: visaType.id,
+        purpose: visaType.purpose,
+        // Entries feature (Stage 3) — full entry list (no shim).
+        entries: visaType.entries.map((e) => ({
+          id: e.id,
+          entryLabel: e.entryLabel,
+          validityDays: e.validityDays,
+          maxStayDays: e.maxStayDays,
+          sortOrder: e.sortOrder,
+        })),
+        label: visaType.label,
+      })),
     };
   }
 
@@ -155,9 +162,13 @@ export class PublicSelectionService {
         template: {
           select: { id: true },
         },
+        // Entries feature (Stage 3) — pricing is per (nationality, entry).
+        // Filter by the chosen entryId so the matched fee row is the
+        // exact one the customer picked, not an arbitrary first entry.
         nationalityFees: {
           where: {
             nationalityCountryId: dto.nationalityCountryId,
+            entryId: dto.entryId,
             isActive: true,
             deletedAt: null,
           },
@@ -387,16 +398,20 @@ export class PublicSelectionService {
                 label: true,
                 purpose: true,
                 sortOrder: true,
-                // Entries feature — representative durations from the
-                // first active entry keep the cascade step-2 shape
-                // unchanged for Stage 1+2. Stage 3 adds the dedicated
-                // Entry step that lists all entries + threads entryId
-                // into the fee preview.
+                // Entries feature (Stage 3) — full list of active entries.
+                // The cascade Step 4 (Entry) renders these; the chosen
+                // entry's id threads into the fee preview. Replaces the
+                // Stage 1+2 representative-entry shim.
                 entries: {
                   where: { isActive: true, deletedAt: null },
                   orderBy: { sortOrder: 'asc' },
-                  take: 1,
-                  select: { entryLabel: true, validityDays: true, maxStayDays: true },
+                  select: {
+                    id: true,
+                    entryLabel: true,
+                    validityDays: true,
+                    maxStayDays: true,
+                    sortOrder: true,
+                  },
                 },
               },
             },
@@ -424,18 +439,19 @@ export class PublicSelectionService {
         if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
         return a.label.localeCompare(b.label);
       })
-      .map((vt) => {
-        const primaryEntry = vt.entries[0];
-        return {
-          id: vt.id,
-          label: vt.label,
-          purpose: vt.purpose,
-          // Representative durations from the first active entry.
-          validityDays: primaryEntry?.validityDays ?? 0,
-          maxStay: primaryEntry?.maxStayDays ?? 0,
-          entries: primaryEntry?.entryLabel ?? '',
-        };
-      });
+      .map((vt) => ({
+        id: vt.id,
+        label: vt.label,
+        purpose: vt.purpose,
+        // Entries feature (Stage 3) — full entry list for the Step 4 picker.
+        entries: vt.entries.map((e) => ({
+          id: e.id,
+          entryLabel: e.entryLabel,
+          validityDays: e.validityDays,
+          maxStayDays: e.maxStayDays,
+          sortOrder: e.sortOrder,
+        })),
+      }));
 
     return { visaTypes };
   }

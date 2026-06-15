@@ -454,16 +454,20 @@ export class CountryPagesService {
             purpose: true,
             label: true,
             sortOrder: true,
-            // Entries feature — validity / max stay / entry label live
-            // per-entry now. Stage 1+2 keeps the public Available Visas
-            // card unchanged by surfacing the FIRST active entry as the
-            // representative (Stage 3 will render the full entry list +
-            // a public entry picker).
+            // Entries feature (Stage 3) — full list of active entries so
+            // the public Available Visas card can nest them beneath their
+            // visa type (label + per-entry validity / max stay). Replaces
+            // the Stage 1+2 representative-entry shim.
             entries: {
               where: { isActive: true, deletedAt: null },
               orderBy: { sortOrder: 'asc' },
-              take: 1,
-              select: { entryLabel: true, validityDays: true, maxStayDays: true },
+              select: {
+                id: true,
+                entryLabel: true,
+                validityDays: true,
+                maxStayDays: true,
+                sortOrder: true,
+              },
             },
           },
         },
@@ -490,17 +494,19 @@ export class CountryPagesService {
           (acc, cur) => (acc === undefined || cur.total < acc.total ? cur : acc),
           undefined,
         );
-        const primaryEntry = b.visaType!.entries[0];
         return {
           id: b.visaType!.id,
           purpose: b.visaType!.purpose,
           label: b.visaType!.label,
-          // Representative durations from the first active entry — keeps
-          // the existing public card shape (validity/maxStay/entries
-          // label) until Stage 3 expands it to the full entry list.
-          validityDays: primaryEntry?.validityDays ?? 0,
-          maxStay: primaryEntry?.maxStayDays ?? 0,
-          entries: primaryEntry?.entryLabel ?? '',
+          // Entries feature (Stage 3) — full entry list nested under the
+          // visa type (no representative-entry shim).
+          entries: b.visaType!.entries.map((e) => ({
+            id: e.id,
+            entryLabel: e.entryLabel,
+            validityDays: e.validityDays,
+            maxStayDays: e.maxStayDays,
+            sortOrder: e.sortOrder,
+          })),
           fromAmount: cheapest ? cheapest.total.toFixed(2) : undefined,
           currencyCode: cheapest?.currencyCode,
           // Carry sortOrder so we can order client-friendly below.

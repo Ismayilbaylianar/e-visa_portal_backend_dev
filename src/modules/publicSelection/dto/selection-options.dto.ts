@@ -33,6 +33,27 @@ export class CountryOptionDto {
   flagEmoji?: string;
 }
 
+/**
+ * Entries feature (Stage 3) — one entry on a visa type in the legacy
+ * bulk options response. Mirrors CascadeVisaTypeEntryDto.
+ */
+export class VisaTypeEntryOptionDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ description: 'Free-text entry label' })
+  entryLabel: string;
+
+  @ApiProperty({ description: 'Validity in days for this entry' })
+  validityDays: number;
+
+  @ApiProperty({ description: 'Maximum stay in days for this entry' })
+  maxStayDays: number;
+
+  @ApiProperty()
+  sortOrder: number;
+}
+
 export class VisaTypeOptionDto {
   @ApiProperty({
     description: 'Visa type ID',
@@ -46,23 +67,13 @@ export class VisaTypeOptionDto {
   })
   purpose: string;
 
-  @ApiProperty({
-    description: 'Validity in days',
-    example: 30,
-  })
-  validityDays: number;
-
-  @ApiProperty({
-    description: 'Maximum stay in days',
-    example: 30,
-  })
-  maxStay: number;
-
-  @ApiProperty({
-    description: 'Entry type (SINGLE, DOUBLE, MULTIPLE)',
-    example: 'SINGLE',
-  })
-  entries: string;
+  /**
+   * Entries feature (Stage 3) — full list of active entries. Replaces
+   * the Stage 1+2 representative-entry shim (single validityDays/
+   * maxStay/entries scalars).
+   */
+  @ApiProperty({ type: [VisaTypeEntryOptionDto] })
+  entries: VisaTypeEntryOptionDto[];
 
   @ApiProperty({
     description: 'Display label',

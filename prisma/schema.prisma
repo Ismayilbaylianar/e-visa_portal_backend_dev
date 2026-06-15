@@ -514,6 +514,7 @@ model VisaTypeEntry {
 
   visaType        VisaType                @relation(fields: [visaTypeId], references: [id], onDelete: Cascade)
   nationalityFees BindingNationalityFee[]
+  applications    Application[]
 
   @@index([visaTypeId])
   @@index([sortOrder])
@@ -823,6 +824,9 @@ model Application {
   nationalityCountryId    String            @map("nationality_country_id")
   destinationCountryId    String            @map("destination_country_id")
   visaTypeId              String            @map("visa_type_id")
+  /// Entries feature (Stage 4) — the entry the customer chose in the
+  /// public cascade Step 4. Nullable for the clean-slate transition.
+  visaTypeEntryId         String?           @map("visa_type_entry_id")
   templateId              String            @map("template_id")
   templateBindingId       String            @map("template_binding_id")
   totalFeeAmount          Decimal           @map("total_fee_amount") @db.Decimal(10, 2)
@@ -863,6 +867,7 @@ model Application {
   nationalityCountry Country         @relation("NationalityCountry", fields: [nationalityCountryId], references: [id])
   destinationCountry Country         @relation("DestinationCountry", fields: [destinationCountryId], references: [id])
   visaType           VisaType        @relation(fields: [visaTypeId], references: [id])
+  visaTypeEntry      VisaTypeEntry?  @relation(fields: [visaTypeEntryId], references: [id])
   template           Template        @relation(fields: [templateId], references: [id])
   templateBinding    TemplateBinding @relation(fields: [templateBindingId], references: [id])
   reviewedByUser     User?           @relation("ApplicationReviewedByUser", fields: [reviewedByUserId], references: [id])

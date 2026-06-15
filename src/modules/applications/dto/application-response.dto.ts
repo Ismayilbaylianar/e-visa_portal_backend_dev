@@ -36,11 +36,33 @@ export class VisaTypeDto {
   @ApiProperty({ description: 'Maximum stay in days' })
   maxStay: number;
 
-  @ApiProperty({ description: 'Entry type' })
+  @ApiProperty({
+    description:
+      'Entry label for THIS application (the chosen entry; per-entry now, not a flat column)',
+  })
   entries: string;
 
   @ApiProperty({ description: 'Display label' })
   label: string;
+}
+
+/**
+ * Entries feature (Stage 4) — the entry the customer chose at apply
+ * time. Surfaced so admin list/detail + the apply review can show the
+ * exact entry (label + its validity / max stay).
+ */
+export class ApplicationVisaTypeEntryDto {
+  @ApiProperty({ description: 'Visa type entry ID' })
+  id: string;
+
+  @ApiProperty({ description: 'Free-text entry label' })
+  entryLabel: string;
+
+  @ApiProperty({ description: 'Validity in days for this entry' })
+  validityDays: number;
+
+  @ApiProperty({ description: 'Maximum stay in days for this entry' })
+  maxStayDays: number;
 }
 
 export class TemplateDto {
@@ -129,6 +151,13 @@ export class ApplicationResponseDto {
     example: '550e8400-e29b-41d4-a716-446655440004',
   })
   visaTypeId: string;
+
+  @ApiPropertyOptional({
+    description: 'Visa type entry ID — the entry chosen at apply time (Stage 4)',
+    example: '550e8400-e29b-41d4-a716-446655440006',
+    nullable: true,
+  })
+  visaTypeEntryId?: string | null;
 
   @ApiProperty({
     description: 'Template ID',
@@ -246,6 +275,12 @@ export class ApplicationResponseDto {
     description: 'Visa type details',
   })
   visaType?: VisaTypeDto;
+
+  @ApiPropertyOptional({
+    type: ApplicationVisaTypeEntryDto,
+    description: 'Chosen visa type entry (Stage 4)',
+  })
+  visaTypeEntry?: ApplicationVisaTypeEntryDto;
 
   @ApiPropertyOptional({
     type: TemplateDto,

@@ -96,6 +96,7 @@ export class ApplicationsService {
           nationalityCountry: true,
           destinationCountry: true,
           visaType: true,
+          visaTypeEntry: true,
           template: true,
           applicants: {
             where: { deletedAt: null },
@@ -175,6 +176,7 @@ export class ApplicationsService {
         nationalityCountry: true,
         destinationCountry: true,
         visaType: true,
+        visaTypeEntry: true,
         template: true,
         applicants: {
           where: { deletedAt: null },
@@ -254,9 +256,14 @@ export class ApplicationsService {
       },
       include: {
         template: true,
+        // Entries feature (Stage 4) — pricing is per (nationality, entry).
+        // When the customer's chosen entry is supplied, match the exact
+        // (nationality, entry) fee so the recorded total is that entry's
+        // price (not an arbitrary first entry).
         nationalityFees: {
           where: {
             nationalityCountryId: dto.nationalityCountryId,
+            ...(dto.visaTypeEntryId ? { entryId: dto.visaTypeEntryId } : {}),
             isActive: true,
             deletedAt: null,
           },
@@ -314,6 +321,8 @@ export class ApplicationsService {
           nationalityCountryId: dto.nationalityCountryId,
           destinationCountryId: dto.destinationCountryId,
           visaTypeId: dto.visaTypeId,
+          // Entries feature (Stage 4) — record the customer's chosen entry.
+          ...(dto.visaTypeEntryId ? { visaTypeEntryId: dto.visaTypeEntryId } : {}),
           templateId: templateBinding.templateId,
           templateBindingId: templateBinding.id,
           totalFeeAmount,
@@ -328,6 +337,7 @@ export class ApplicationsService {
           nationalityCountry: true,
           destinationCountry: true,
           visaType: true,
+          visaTypeEntry: true,
           template: true,
           applicants: {
             where: { deletedAt: null },
@@ -440,6 +450,7 @@ export class ApplicationsService {
         nationalityCountry: true,
         destinationCountry: true,
         visaType: true,
+        visaTypeEntry: true,
         template: true,
         applicants: {
           where: { deletedAt: null },
@@ -528,6 +539,7 @@ export class ApplicationsService {
         nationalityCountry: true,
         destinationCountry: true,
         visaType: true,
+        visaTypeEntry: true,
         template: true,
         applicants: {
           where: { deletedAt: null },
@@ -755,6 +767,7 @@ export class ApplicationsService {
         nationalityCountry: true,
         destinationCountry: true,
         visaType: true,
+        visaTypeEntry: true,
         template: true,
         applicants: {
           where: { deletedAt: null },
@@ -815,6 +828,7 @@ export class ApplicationsService {
         nationalityCountry: true,
         destinationCountry: true,
         visaType: true,
+        visaTypeEntry: true,
         template: true,
         applicants: {
           where: { deletedAt: null },
@@ -1819,6 +1833,7 @@ export class ApplicationsService {
         nationalityCountry: true,
         destinationCountry: true,
         visaType: true,
+        visaTypeEntry: true,
         template: true,
         applicants: {
           where: { deletedAt: null },
@@ -1858,6 +1873,9 @@ export class ApplicationsService {
       nationalityCountry: true,
       destinationCountry: true,
       visaType: true,
+      // Entries feature (Stage 4) — the chosen entry, so admin detail +
+      // list and the portal can render its label / durations.
+      visaTypeEntry: true,
       template: true,
       applicants: {
         where: { deletedAt: null },
@@ -2103,6 +2121,7 @@ export class ApplicationsService {
       nationalityCountryId: application.nationalityCountryId,
       destinationCountryId: application.destinationCountryId,
       visaTypeId: application.visaTypeId,
+      visaTypeEntryId: application.visaTypeEntryId ?? null,
       templateId: application.templateId,
       templateBindingId: application.templateBindingId,
       totalFeeAmount: application.totalFeeAmount.toString(),
@@ -2145,10 +2164,25 @@ export class ApplicationsService {
         ? {
             id: application.visaType.id,
             purpose: application.visaType.purpose,
-            validityDays: application.visaType.validityDays,
-            maxStay: application.visaType.maxStay,
-            entries: application.visaType.entries,
+            // Entries feature — validity / max stay / entry label moved
+            // to per-entry rows. For a specific application these ARE the
+            // chosen entry's durations, so surface them here (keeps the
+            // legacy visaType.{validityDays,maxStay,entries} shape working
+            // instead of the now-dropped flat columns → undefined).
+            validityDays: application.visaTypeEntry?.validityDays ?? 0,
+            maxStay: application.visaTypeEntry?.maxStayDays ?? 0,
+            entries: application.visaTypeEntry?.entryLabel ?? '',
             label: application.visaType.label,
+          }
+        : undefined,
+      // Entries feature (Stage 4) — the chosen entry, surfaced explicitly
+      // so admin list/detail + the apply review can show its label.
+      visaTypeEntry: application.visaTypeEntry
+        ? {
+            id: application.visaTypeEntry.id,
+            entryLabel: application.visaTypeEntry.entryLabel,
+            validityDays: application.visaTypeEntry.validityDays,
+            maxStayDays: application.visaTypeEntry.maxStayDays,
           }
         : undefined,
       template: application.template

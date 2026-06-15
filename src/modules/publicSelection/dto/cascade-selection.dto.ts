@@ -63,6 +63,31 @@ export class CascadeDestinationsResponseDto {
   destinations!: CascadeCountryDto[];
 }
 
+/**
+ * Entries feature (Stage 3) — one selectable entry on a visa type.
+ * The cascade's Step 4 (Entry) renders one card per entry showing its
+ * label + per-entry validity / max stay; the chosen entry's id is then
+ * threaded into the fee preview so the matched (nationality, entry) fee
+ * is the one priced. Free-text `entryLabel` (admins can add customs
+ * beyond Single/Double/Multiple).
+ */
+export class CascadeVisaTypeEntryDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ description: 'Free-text entry label, e.g. Single / Multiple / Transit' })
+  entryLabel!: string;
+
+  @ApiProperty({ description: 'Validity in days for this entry' })
+  validityDays!: number;
+
+  @ApiProperty({ description: 'Maximum stay in days for this entry' })
+  maxStayDays!: number;
+
+  @ApiProperty()
+  sortOrder!: number;
+}
+
 export class CascadeVisaTypeDto {
   @ApiProperty()
   id!: string;
@@ -73,14 +98,15 @@ export class CascadeVisaTypeDto {
   @ApiProperty()
   purpose!: string;
 
-  @ApiProperty()
-  validityDays!: number;
-
-  @ApiProperty()
-  maxStay!: number;
-
-  @ApiProperty({ description: 'SINGLE / DOUBLE / MULTIPLE' })
-  entries!: string;
+  /**
+   * Entries feature (Stage 3) — the full list of active entries for
+   * this visa type, sorted by sortOrder. Replaces the Stage 1+2
+   * representative-entry shim (single validityDays/maxStay/entries
+   * scalars). The Step 4 picker renders these; the fee preview is
+   * called with the chosen entry's id.
+   */
+  @ApiProperty({ type: [CascadeVisaTypeEntryDto] })
+  entries!: CascadeVisaTypeEntryDto[];
 }
 
 export class CascadeVisaTypesResponseDto {

@@ -75,11 +75,38 @@ export class CountryPageListResponseDto {
 }
 
 /**
+ * Entries feature (Stage 3) — one entry nested under a visa type on the
+ * public country page. The "Available Visas" card lists these beneath
+ * their visa type (label + per-entry validity / max stay). Free-text
+ * `entryLabel`.
+ */
+export class PublicCountryPageEntryDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ description: 'Free-text entry label' })
+  entryLabel: string;
+
+  @ApiProperty()
+  validityDays: number;
+
+  @ApiProperty()
+  maxStayDays: number;
+
+  @ApiProperty()
+  sortOrder: number;
+}
+
+/**
  * M11.1 — public-facing visa-type summary embedded in the country
  * page response. Lets the country page render a visa-type card grid
  * in one round trip. Pricing here is intentionally GENERIC (the
  * lowest-cost active fee for any nationality) — nationality-specific
  * pricing still flows through the cascade preview endpoint.
+ *
+ * Entries feature (Stage 3) — validity / max stay / entry label moved
+ * to per-entry `entries[]`. Replaces the Stage 1+2 representative-entry
+ * shim (single validityDays/maxStay/entries scalars).
  */
 export class PublicCountryPageVisaTypeDto {
   @ApiProperty()
@@ -91,14 +118,8 @@ export class PublicCountryPageVisaTypeDto {
   @ApiProperty()
   label: string;
 
-  @ApiProperty()
-  validityDays: number;
-
-  @ApiProperty()
-  maxStay: number;
-
-  @ApiProperty()
-  entries: string;
+  @ApiProperty({ type: [PublicCountryPageEntryDto] })
+  entries: PublicCountryPageEntryDto[];
 
   @ApiPropertyOptional({ description: 'Lowest active total fee across nationalities (display only)' })
   fromAmount?: string;

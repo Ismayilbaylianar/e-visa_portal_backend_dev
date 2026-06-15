@@ -25,6 +25,15 @@ export class SelectionPreviewRequestDto {
   @IsUUID()
   @IsNotEmpty()
   visaTypeId: string;
+
+  @ApiProperty({
+    description:
+      'Visa type entry ID (Stage 3). The customer picks an entry in cascade Step 4; the matched fee row is the (nationality, entry) one. The client only calls preview AFTER an entry is chosen, so the price stays hidden until selection.',
+    example: '550e8400-e29b-41d4-a716-446655440005',
+  })
+  @IsUUID()
+  @IsNotEmpty()
+  entryId: string;
 }
 
 /**
