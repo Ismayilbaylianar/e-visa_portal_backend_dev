@@ -487,6 +487,15 @@ export class PortalAuthService {
   }
 
   private generateOtpCode(): string {
+    // DEV ONLY — fixed code so testing doesn't require reading the code
+    // each time. Strictly gated to non-production via `isDevelopment`
+    // (NODE_ENV !== 'production'); prod keeps the random branch below.
+    // Generate-side only: this constant still flows through the normal
+    // pipeline (sha256-hashed into otp_codes.codeHash, expiry +
+    // rate-limit + verify all unchanged). There is NO verify-path bypass.
+    if (this.isDevelopment) {
+      return '111111';
+    }
     const digits = '0123456789';
     let code = '';
     for (let i = 0; i < 6; i++) {
