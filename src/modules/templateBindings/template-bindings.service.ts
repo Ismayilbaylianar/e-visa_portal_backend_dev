@@ -846,7 +846,10 @@ export class TemplateBindingsService {
         { reason: ErrorCodes.NOT_FOUND, message: 'Unknown or inactive visa type' },
       ]);
     }
-    const nationalityIds = dto.nationalities.map((n) => n.nationalityCountryId);
+    // Entries feature — a nationality now repeats across the batch (one
+    // row per priced entry), so dedupe before the existence check. The
+    // old raw-length comparison spuriously failed any multi-entry batch.
+    const nationalityIds = [...new Set(dto.nationalities.map((n) => n.nationalityCountryId))];
     const knownNationalities = await this.prisma.country.findMany({
       where: { id: { in: nationalityIds }, isActive: true, deletedAt: null },
       select: { id: true },
