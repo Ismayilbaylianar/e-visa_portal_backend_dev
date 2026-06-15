@@ -440,11 +440,24 @@ export class CountryPagesService {
     // displayed price is the lowest active total fee across all
     // nationalities (purely a display hint — actual nationality-aware
     // pricing flows through the cascade preview endpoint at apply time).
+    //
+    // Eligibility filter (destination level) — the sidebar has no
+    // nationality in scope (route is by slug only), so we filter by
+    // "priced for ANY nationality at this destination". Same definition
+    // of "active fee" as the cascade: an active, non-deleted fee under
+    // an active, date-valid, non-deleted binding with an active visa
+    // type. The date window matches the cascade so a binding outside its
+    // validFrom/validTo never makes a visa type look bookable.
+    const now = new Date();
     const bindings = await this.prisma.templateBinding.findMany({
       where: {
         destinationCountryId: page.country.id,
         isActive: true,
         deletedAt: null,
+        AND: [
+          { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
+          { OR: [{ validTo: null }, { validTo: { gte: now } }] },
+        ],
         visaType: { isActive: true, deletedAt: null },
       },
       select: {
@@ -474,6 +487,9 @@ export class CountryPagesService {
         nationalityFees: {
           where: { isActive: true, deletedAt: null },
           select: {
+            // Eligibility filter — which entry this fee prices (any
+            // nationality). Drives the per-entry + per-visa-type filter.
+            entryId: true,
             governmentFeeAmount: true,
             serviceFeeAmount: true,
             currencyCode: true,
@@ -494,25 +510,38 @@ export class CountryPagesService {
           (acc, cur) => (acc === undefined || cur.total < acc.total ? cur : acc),
           undefined,
         );
+        // Eligibility filter (destination level) — set of entryIds that
+        // have ≥1 active fee at this destination (any nationality).
+        const pricedEntryIds = new Set(
+          b.nationalityFees.map((f) => f.entryId).filter(Boolean),
+        );
         return {
           id: b.visaType!.id,
           purpose: b.visaType!.purpose,
           label: b.visaType!.label,
-          // Entries feature (Stage 3) — full entry list nested under the
-          // visa type (no representative-entry shim).
-          entries: b.visaType!.entries.map((e) => ({
-            id: e.id,
-            entryLabel: e.entryLabel,
-            validityDays: e.validityDays,
-            maxStayDays: e.maxStayDays,
-            sortOrder: e.sortOrder,
-          })),
+          // Entries feature (Stage 3) + eligibility filter — only entries
+          // that are actually priced for someone at this destination.
+          // Never-priced entries are hidden.
+          entries: b.visaType!.entries
+            .filter((e) => pricedEntryIds.has(e.id))
+            .map((e) => ({
+              id: e.id,
+              entryLabel: e.entryLabel,
+              validityDays: e.validityDays,
+              maxStayDays: e.maxStayDays,
+              sortOrder: e.sortOrder,
+            })),
           fromAmount: cheapest ? cheapest.total.toFixed(2) : undefined,
           currencyCode: cheapest?.currencyCode,
           // Carry sortOrder so we can order client-friendly below.
           _sortOrder: b.visaType!.sortOrder,
         };
       })
+      // Eligibility filter (visa-type level) — drop visa types that have
+      // no priced entry at this destination (a binding with zero active
+      // fees, or all fees pointing at inactive entries). After the entry
+      // filter, "no priced entry" === "not bookable by anyone here".
+      .filter((vt) => vt.entries.length > 0)
       .sort((a, b) => a._sortOrder - b._sortOrder)
       .map(({ _sortOrder, ...rest }) => rest);
 

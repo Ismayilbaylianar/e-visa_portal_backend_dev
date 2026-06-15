@@ -390,6 +390,10 @@ export class PublicSelectionService {
         },
       },
       select: {
+        // Eligibility filter — the entry this fee prices. Used to keep
+        // only entries the customer can actually buy for this
+        // (nationality, destination) — see the intersection below.
+        entryId: true,
         templateBinding: {
           select: {
             visaType: {
@@ -428,10 +432,21 @@ export class PublicSelectionService {
       string,
       NonNullable<NonNullable<(typeof fees)[number]['templateBinding']>['visaType']>
     >();
+    // Eligibility filter (entry level) — visaTypeId → set of entryIds
+    // that have an active fee for THIS (nationality, destination).
+    // Built from the same fee rows that already drive the visa-type
+    // list, so both levels share one definition of "active fee".
+    const pricedEntryIds = new Map<string, Set<string>>();
     for (const fee of fees) {
       const vt = fee.templateBinding?.visaType;
-      if (!vt || seen.has(vt.id)) continue;
-      seen.set(vt.id, vt);
+      if (!vt) continue;
+      if (!seen.has(vt.id)) seen.set(vt.id, vt);
+      let set = pricedEntryIds.get(vt.id);
+      if (!set) {
+        set = new Set<string>();
+        pricedEntryIds.set(vt.id, set);
+      }
+      if (fee.entryId) set.add(fee.entryId);
     }
 
     const visaTypes = Array.from(seen.values())
@@ -439,19 +454,27 @@ export class PublicSelectionService {
         if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
         return a.label.localeCompare(b.label);
       })
-      .map((vt) => ({
-        id: vt.id,
-        label: vt.label,
-        purpose: vt.purpose,
-        // Entries feature (Stage 3) — full entry list for the Step 4 picker.
-        entries: vt.entries.map((e) => ({
-          id: e.id,
-          entryLabel: e.entryLabel,
-          validityDays: e.validityDays,
-          maxStayDays: e.maxStayDays,
-          sortOrder: e.sortOrder,
-        })),
-      }));
+      .map((vt) => {
+        const priced = pricedEntryIds.get(vt.id) ?? new Set<string>();
+        return {
+          id: vt.id,
+          label: vt.label,
+          purpose: vt.purpose,
+          // Entries feature (Stage 3) + eligibility filter — only entries
+          // the customer can actually buy for their nationality at this
+          // destination (an active fee exists). Removes dead options that
+          // getPreview would otherwise 404 on.
+          entries: vt.entries
+            .filter((e) => priced.has(e.id))
+            .map((e) => ({
+              id: e.id,
+              entryLabel: e.entryLabel,
+              validityDays: e.validityDays,
+              maxStayDays: e.maxStayDays,
+              sortOrder: e.sortOrder,
+            })),
+        };
+      });
 
     return { visaTypes };
   }
