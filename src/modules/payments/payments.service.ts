@@ -1143,10 +1143,14 @@ export class PaymentsService {
       paymentStatus: PaymentStatus.PAID,
     };
 
-    // If application is in UNPAID status, move to SUBMITTED
+    // If application is in UNPAID status, move to SUBMITTED.
+    // NOTE: the Application model has no `submittedAt` column (the
+    // submission moment lives in application_status_history below), so
+    // writing it here threw "Unknown argument submittedAt" and 500'd the
+    // whole PAID flip. This was latent until the payments[] fix let the
+    // confirm step actually reach this code.
     if (application.currentStatus === ApplicationStatus.UNPAID) {
       updateData.currentStatus = ApplicationStatus.SUBMITTED;
-      updateData.submittedAt = new Date();
     }
 
     await prisma.application.update({
