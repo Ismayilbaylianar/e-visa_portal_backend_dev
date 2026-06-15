@@ -2,7 +2,7 @@
  * Payment Provider Interface
  *
  * Defines the contract for payment provider implementations.
- * Each provider (mock, stripe, paypal, etc.) must implement this interface.
+ * Each provider (mockProvider now, MSolution later) must implement this interface.
  */
 export interface PaymentInitializationRequest {
   paymentId: string;

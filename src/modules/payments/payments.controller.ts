@@ -300,7 +300,7 @@ export class PaymentsPublicController {
   })
   @ApiParam({
     name: 'providerKey',
-    description: 'Payment provider key (e.g., mockProvider, stripe, paypal)',
+    description: 'Payment provider key (e.g., mockProvider; MSolution later)',
     example: 'mockProvider',
   })
   @ApiResponse({
