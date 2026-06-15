@@ -79,6 +79,42 @@ export class TemplateDto {
   version: number;
 }
 
+/**
+ * Payment row embedded on the portal getApplication response. The
+ * customer payment page reads this to resolve the pending `paymentId`
+ * (so the mock confirm step can run) and the payment-window `expiresAt`
+ * (so the "Time Remaining" countdown can tick). Only the portal
+ * getApplication path populates this; other paths omit it.
+ */
+export class ApplicationPaymentDto {
+  @ApiProperty({ description: 'Payment ID' })
+  id: string;
+
+  @ApiProperty({ description: 'Payment status (PENDING/CREATED/PAID/…)' })
+  paymentStatus: string;
+
+  @ApiProperty({ description: 'Provider key (e.g. mockProvider)' })
+  paymentProviderKey: string;
+
+  @ApiProperty({ description: 'Total amount (decimal string)' })
+  totalAmount: string;
+
+  @ApiProperty({ description: 'Payable amount (decimal string)' })
+  payableAmount: string;
+
+  @ApiProperty({ description: 'Currency code (ISO 4217)' })
+  currencyCode: string;
+
+  @ApiPropertyOptional({ description: 'Payment-window expiry (3h deadline)' })
+  expiresAt?: Date;
+
+  @ApiPropertyOptional({ description: 'When the payment was marked paid' })
+  paidAt?: Date;
+
+  @ApiProperty({ description: 'Created timestamp' })
+  createdAt: Date;
+}
+
 export class ApplicantDto {
   @ApiProperty({ description: 'Applicant ID' })
   id: string;
@@ -293,6 +329,13 @@ export class ApplicationResponseDto {
     description: 'Application applicants',
   })
   applicants?: ApplicantDto[];
+
+  @ApiPropertyOptional({
+    type: [ApplicationPaymentDto],
+    description:
+      'Payment rows (portal getApplication only). Lets the payment page resolve the pending paymentId + the countdown deadline.',
+  })
+  payments?: ApplicationPaymentDto[];
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;

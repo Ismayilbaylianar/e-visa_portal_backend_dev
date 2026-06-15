@@ -178,6 +178,15 @@ export class ApplicationsService {
         visaType: true,
         visaTypeEntry: true,
         template: true,
+        // BUG (mock-pay + frozen-timer) — the customer payment page reads
+        // `application.payments[]` to resolve the pending paymentId (so the
+        // mock confirm step runs → PAID flip) and the `expiresAt` deadline
+        // (so the countdown ticks). This was the missing data. Scoped to
+        // the portal getApplication path; latest row first.
+        payments: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'desc' },
+        },
         applicants: {
           where: { deletedAt: null },
           orderBy: [{ isMainApplicant: 'desc' }, { createdAt: 'asc' }],
@@ -2219,6 +2228,21 @@ export class ApplicationsService {
         })),
         createdAt: applicant.createdAt,
         updatedAt: applicant.updatedAt,
+      })),
+      // Payment rows — only present on the portal getApplication path
+      // (the include adds `payments`); other paths omit it → undefined.
+      // The payment page reads id + paymentStatus (resolve paymentId) and
+      // expiresAt (countdown deadline).
+      payments: application.payments?.map((p: any) => ({
+        id: p.id,
+        paymentStatus: p.paymentStatus,
+        paymentProviderKey: p.paymentProviderKey,
+        totalAmount: p.totalAmount?.toString?.() ?? null,
+        payableAmount: p.payableAmount?.toString?.() ?? null,
+        currencyCode: p.currencyCode,
+        expiresAt: p.expiresAt ?? undefined,
+        paidAt: p.paidAt ?? undefined,
+        createdAt: p.createdAt,
       })),
       // M-Assign — surface the operator assignment so the admin
       // detail page sidebar (AssignmentAndNotesPanel) can render
