@@ -225,11 +225,12 @@ export class TemplateFieldsService {
 
     // M11.3 — system fields are auto-provisioned + locked. Admins can
     // edit cosmetic + organizational properties (label, placeholder,
-    // helpText, sortOrder, visibilityRulesJson) but cannot change the
-    // field's identity (fieldKey/systemKey), shape (fieldType/options),
-    // or contract (validationRulesJson, isRequired→false). Returning
-    // 400 instead of silently dropping these keeps the audit trail
-    // honest and surfaces the constraint to the admin UI.
+    // helpText, sortOrder, visibilityRulesJson) AND the option list on
+    // option-bearing system fields (e.g. remove "Other" from Gender),
+    // but cannot change the field's identity (fieldKey/systemKey), shape
+    // (fieldType), or contract (validationRulesJson, isRequired→false).
+    // Returning 400 instead of silently dropping these keeps the audit
+    // trail honest and surfaces the constraint to the admin UI.
     if (field.isSystem) {
       const lockedAttempts: string[] = [];
       if (dto.fieldKey !== undefined && dto.fieldKey !== field.fieldKey) {
@@ -244,19 +245,17 @@ export class TemplateFieldsService {
       if (dto.isRequired !== undefined && dto.isRequired === false) {
         lockedAttempts.push('isRequired (cannot be disabled)');
       }
-      if (
-        dto.optionsJson !== undefined &&
-        JSON.stringify(dto.optionsJson) !== JSON.stringify(field.optionsJson ?? [])
-      ) {
-        lockedAttempts.push('optionsJson');
-      }
+      // BUG 1 fix — optionsJson is intentionally NOT locked here. Admins
+      // may edit the option list on system option-fields (Gender, etc.);
+      // the options validation further below (≥2 clean {value,label})
+      // still applies, so only type/key/required/validation stay locked.
       if (lockedAttempts.length > 0) {
         throw new BadRequestException(
           'System fields have locked attributes',
           lockedAttempts.map((attr) => ({
             field: attr,
             reason: ErrorCodes.BAD_REQUEST,
-            message: `'${attr}' cannot be modified on a system field. Editable: label, placeholder, helpText, sortOrder, visibilityRulesJson.`,
+            message: `'${attr}' cannot be modified on a system field. Editable: label, placeholder, helpText, sortOrder, visibilityRulesJson, options.`,
           })),
         );
       }
