@@ -963,6 +963,15 @@ export class PaymentsService {
      * payment-window sweep would expire it while funds are held).
      */
     flipApplication?: boolean;
+    /**
+     * Stage 3 Step 6 — keep `application.paymentStatus` truthful without
+     * touching `currentStatus`. Release and refund previously wrote
+     * NOTHING to the application, so an admin releasing an authorization
+     * left the application still reading AUTHORIZED, and a refund left it
+     * reading PAID. Use this for money movements that don't advance the
+     * workflow; use `flipApplication` for the ones that do.
+     */
+    syncApplicationPaymentStatus?: boolean;
   }): Promise<void> {
     await this.prisma.$transaction(async prisma => {
       const current = await prisma.payment.findUnique({ where: { id: opts.paymentId } });
@@ -1001,6 +1010,11 @@ export class PaymentsService {
         (opts.newStatus === PaymentStatus.AUTHORIZED || opts.newStatus === PaymentStatus.PAID)
       ) {
         await this.updateApplicationAfterPayment(prisma, opts.applicationId, opts.newStatus);
+      } else if (opts.syncApplicationPaymentStatus) {
+        await prisma.application.update({
+          where: { id: opts.applicationId },
+          data: { paymentStatus: opts.newStatus },
+        });
       }
     });
 
@@ -1113,6 +1127,7 @@ export class PaymentsService {
         { reason: ErrorCodes.NOT_FOUND, message: 'Payment does not exist' },
       ]);
     }
+    await this.assertManualPaymentActionAllowed(payment.applicationId, 'captured');
     if (payment.paymentStatus !== PaymentStatus.AUTHORIZED) {
       throw new BadRequestException('Payment cannot be captured', [
         { reason: ErrorCodes.BAD_REQUEST, message: `Only an AUTHORIZED payment can be captured (current: ${payment.paymentStatus}).` },
@@ -1158,6 +1173,7 @@ export class PaymentsService {
         { reason: ErrorCodes.NOT_FOUND, message: 'Payment does not exist' },
       ]);
     }
+    await this.assertManualPaymentActionAllowed(payment.applicationId, 'released');
     if (payment.paymentStatus !== PaymentStatus.AUTHORIZED) {
       throw new BadRequestException('Payment cannot be released', [
         { reason: ErrorCodes.BAD_REQUEST, message: `Only an AUTHORIZED payment can be released (current: ${payment.paymentStatus}).` },
@@ -1184,6 +1200,7 @@ export class PaymentsService {
       userId,
       bySystem: false,
       txnPayload: { providerReference: res.providerReference, reason },
+      syncApplicationPaymentStatus: true,
     });
 
     return this.findById(paymentId);
@@ -1198,6 +1215,37 @@ export class PaymentsService {
   // cannot be rolled back) runs first, then the caller does every DB
   // write inside its own tx via the record*WithinTx helpers below.
   // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * Stage 3 Step 6 — guard the MANUAL admin capture/release controls.
+   *
+   * While an application sits in SUBMITTED, its money belongs to the
+   * first decision: Accept captures + assigns + moves to PROCESSING,
+   * Cancel releases + moves to CANCELLED. Capturing or releasing behind
+   * their back doesn't just desync the status — it STRANDS the
+   * application, because both actions require an AUTHORIZED payment and
+   * would then fail forever, leaving the operator with money moved and
+   * no way to progress the case.
+   */
+  private async assertManualPaymentActionAllowed(
+    applicationId: string,
+    action: 'captured' | 'released',
+  ): Promise<void> {
+    const application = await this.prisma.application.findUnique({
+      where: { id: applicationId },
+      select: { currentStatus: true },
+    });
+    if (application?.currentStatus === ApplicationStatus.SUBMITTED) {
+      throw new BadRequestException(`Payment cannot be ${action} manually`, [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message:
+            `This application is awaiting the operator's first decision, so the payment cannot be ${action} on its own. ` +
+            'Use Accept (captures the funds and starts processing) or Cancel (releases them) on the application instead.',
+        },
+      ]);
+    }
+  }
 
   /**
    * Load the application's live AUTHORIZED payment. Throws when there
@@ -1610,6 +1658,7 @@ export class PaymentsService {
         serviceAmount: wantSvc ? Number(payment.serviceFeeAmount) : undefined,
         reason,
       },
+      syncApplicationPaymentStatus: true,
     });
 
     return this.findById(paymentId);
@@ -2226,6 +2275,9 @@ export class PaymentsService {
       paidAt: payment.paidAt || undefined,
       failedAt: payment.failedAt || undefined,
       cancelledAt: payment.cancelledAt || undefined,
+      // Stage 3 Step 6 — per-portion refund state for the admin UI.
+      governmentFeeRefundedAt: payment.governmentFeeRefundedAt || undefined,
+      serviceFeeRefundedAt: payment.serviceFeeRefundedAt || undefined,
       application: payment.application
         ? {
             id: payment.application.id,

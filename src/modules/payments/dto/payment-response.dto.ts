@@ -299,6 +299,23 @@ export class PaymentResponseDto {
   })
   cancelledAt?: Date;
 
+  /**
+   * Stage 3 Step 6 — refunds are selective and per-portion, so the
+   * amounts alone can't tell you what's left: a PARTIALLY_REFUNDED
+   * payment still reports its original fee amounts. Without these the
+   * admin UI can't disable a portion that was already refunded and
+   * would only find out from a 400.
+   */
+  @ApiPropertyOptional({
+    description: 'When the government fee portion was refunded (null if not refunded)',
+  })
+  governmentFeeRefundedAt?: Date;
+
+  @ApiPropertyOptional({
+    description: 'When the service fee portion was refunded (null if not refunded)',
+  })
+  serviceFeeRefundedAt?: Date;
+
   @ApiPropertyOptional({
     type: PaymentApplicationDto,
     description: 'Associated application details',

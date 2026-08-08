@@ -1212,7 +1212,13 @@ export class ApplicationsService {
     // ── per-target transition + payload validation ──
     const TRANSITIONS: Record<string, ApplicationStatus[]> = {
       APPROVED: this.APPROVABLE_STATUSES,
-      REJECTED: this.REJECTABLE_STATUSES,
+      // Stage 3 Step 6 — REJECTED is deliberately NOT reachable through
+      // this generic endpoint. Rejecting is a refund decision (which fee
+      // portions go back to the customer) and only `rejectApplication`
+      // asks for and performs it; routing a rejection through here would
+      // silently keep the customer's entire captured payment.
+      // Same reasoning as CANCELLED below.
+
       // M11.14 (BUG FF) — operator must release the issued visa
       // by transitioning APPROVED → READY_TO_DOWNLOAD. The
       // hasPrimaryFile() gate below enforces that a primary

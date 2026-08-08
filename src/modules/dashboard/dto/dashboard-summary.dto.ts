@@ -34,6 +34,20 @@ export class DashboardSummaryDto {
   })
   readyToDownloadApplications: number;
 
+  @ApiProperty({
+    description:
+      'Stage 3 Step 6 — applications whose payment window expired (EXPIRED). Previously soft-deleted, so they were uncounted.',
+    example: 24,
+  })
+  expiredApplications: number;
+
+  @ApiProperty({
+    description:
+      'Stage 3 Step 6 — applications cancelled at the first decision, funds released (CANCELLED).',
+    example: 7,
+  })
+  cancelledApplications: number;
+
   // Payment counts
   @ApiProperty({ description: 'Total number of payments', example: 1000 })
   totalPayments: number;

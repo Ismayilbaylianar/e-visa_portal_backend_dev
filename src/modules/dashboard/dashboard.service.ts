@@ -22,6 +22,12 @@ export class DashboardService {
       approvedApplications,
       rejectedApplications,
       readyToDownloadApplications,
+      // Stage 3 Step 6 — EXPIRED and CANCELLED are ordinary terminal
+      // states now, not soft-deletes, so the per-status card was
+      // silently dropping them and no longer summed to
+      // totalApplications.
+      expiredApplications,
+      cancelledApplications,
       totalPayments,
       paidPayments,
       failedPayments,
@@ -56,6 +62,12 @@ export class DashboardService {
       }),
       this.prisma.application.count({
         where: { currentStatus: ApplicationStatus.READY_TO_DOWNLOAD, deletedAt: null },
+      }),
+      this.prisma.application.count({
+        where: { currentStatus: ApplicationStatus.EXPIRED, deletedAt: null },
+      }),
+      this.prisma.application.count({
+        where: { currentStatus: ApplicationStatus.CANCELLED, deletedAt: null },
       }),
       // Payment counts
       this.prisma.payment.count({ where: { deletedAt: null } }),
@@ -95,6 +107,8 @@ export class DashboardService {
       approvedApplications,
       rejectedApplications,
       readyToDownloadApplications,
+      expiredApplications,
+      cancelledApplications,
       totalPayments,
       paidPayments,
       failedPayments,
