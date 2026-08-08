@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsArray, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsArray,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 /**
  * DTO for approving an application
@@ -31,33 +39,29 @@ export class RejectApplicationDto {
   @MinLength(10, { message: 'Rejection reason must be at least 10 characters' })
   @MaxLength(2000)
   reason: string;
-}
 
-/**
- * DTO for requesting additional documents
- */
-export class RequestDocumentsDto {
-  @ApiProperty({
-    description: 'Instructions or reason for requesting additional documents',
-    example: 'Please provide a clearer scan of your passport photo page.',
-    minLength: 10,
-    maxLength: 2000,
-  })
-  @IsNotEmpty()
-  @IsString()
-  @MinLength(10, { message: 'Instructions must be at least 10 characters' })
-  @MaxLength(2000)
-  note: string;
-
+  /**
+   * Stage 3 Step 4 — selective refund. The payment is already CAPTURED
+   * by the time an application can be rejected, so the operator decides
+   * explicitly which portions go back. Each selected portion is refunded
+   * IN FULL; omitting both is a valid choice (reject, refund nothing).
+   */
   @ApiPropertyOptional({
-    description: 'List of specific document type keys requested',
-    example: ['passport_photo', 'proof_of_address'],
-    type: [String],
+    description:
+      'Refund the government fee portion in full. Omit or false to keep it.',
+    example: true,
   })
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  documentTypeKeys?: string[];
+  @IsBoolean()
+  refundGovernmentFee?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Refund the service fee portion in full. Omit or false to keep it.',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  refundServiceFee?: boolean;
 }
 
 /**
@@ -66,7 +70,7 @@ export class RequestDocumentsDto {
 export class AdminStatusUpdateDto {
   @ApiProperty({
     description: 'New status for the application',
-    example: 'IN_REVIEW',
+    example: 'PROCESSING',
   })
   @IsNotEmpty()
   @IsString()

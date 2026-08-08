@@ -6,6 +6,7 @@ import { EmailService } from '../email/email.service';
 import { NotificationEmitterService } from '../notifications/notification-emitter.service';
 import { SettingsService } from '../settings/settings.service';
 import { PortalTokenService } from './portal-token.service';
+import { PaymentsService } from '../payments/payments.service';
 import {
   CreateApplicationDto,
   UpdateApplicationDto,
@@ -13,10 +14,11 @@ import {
   GetApplicationsQueryDto,
   ApproveApplicationDto,
   RejectApplicationDto,
-  RequestDocumentsDto,
   UpdateEstimatedTimeDto,
   EstimatedTimeChangeEntryDto,
   ChangeApplicationStatusDto,
+  AcceptApplicationDto,
+  CancelApplicationDto,
 } from './dto';
 import {
   NotFoundException,
@@ -49,6 +51,9 @@ export class ApplicationsService {
     // M11.13 (BUG U + T) — mint signed deep-link tokens so status
     // emails carry per-recipient one-click access to /portal/[code].
     private readonly portalToken: PortalTokenService,
+    // Stage 3 — the first decision captures or releases the customer's
+    // held funds, so the application flow owns the payment trigger.
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   private generateResumeToken(): string {
@@ -537,11 +542,17 @@ export class ApplicationsService {
     const oldStatus = application.currentStatus;
     const newStatus = ApplicationStatus.UNPAID;
 
+    // Stage 3 Step 5 — the payment window comes from the admin setting
+    // (default 3h). The payment row's own `expiresAt` is derived from
+    // this deadline, and the timeout sweep enforces it, so this is the
+    // single place the duration is decided.
+    const timeoutHours = await this.settingsService.getPaymentTimeoutHours();
+
     const updatedApplication = await this.prisma.application.update({
       where: { id },
       data: {
         currentStatus: newStatus,
-        paymentDeadlineAt: new Date(Date.now() + 3 * 60 * 60 * 1000), // 3 hours
+        paymentDeadlineAt: new Date(Date.now() + timeoutHours * 60 * 60 * 1000),
       },
       include: {
         portalIdentity: true,
@@ -748,8 +759,6 @@ export class ApplicationsService {
       ]);
     }
 
-    // Temporary behavior: Allow submission from UNPAID status (payment not implemented yet)
-    // In production, this should check: application.paymentStatus === PaymentStatus.PAID
     const allowedStatuses: ApplicationStatus[] = [
       ApplicationStatus.UNPAID,
       ApplicationStatus.DRAFT,
@@ -759,6 +768,30 @@ export class ApplicationsService {
         {
           reason: ErrorCodes.APPLICATION_NOT_EDITABLE,
           message: 'Application is not in a submittable state',
+        },
+      ]);
+    }
+
+    // Stage 3 — payment gate. Reaching SUBMITTED means "the customer has
+    // paid and the operator owes them a decision", so it now requires a
+    // payment with funds held (AUTHORIZED) or already captured (PAID).
+    // Previously this endpoint moved any UNPAID/DRAFT application straight
+    // to SUBMITTED with no payment at all, which bypassed the whole
+    // payment flow. DRAFT→UNPAID (submitForReview) is unaffected.
+    const settledPayment = await this.prisma.payment.findFirst({
+      where: {
+        applicationId: id,
+        deletedAt: null,
+        paymentStatus: { in: [PaymentStatus.AUTHORIZED, PaymentStatus.PAID] },
+      },
+      select: { id: true },
+    });
+    if (!settledPayment) {
+      throw new BadRequestException('Payment required before submission', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message:
+            'This application has no authorized or captured payment. Complete payment to submit it.',
         },
       ]);
     }
@@ -895,6 +928,29 @@ export class ApplicationsService {
       ]);
     }
 
+    // Stage 3 Step 5 — EXPIRED is terminal and NOT resumable.
+    //
+    // The timeout sweep used to soft-delete, so an expired application
+    // fell out of the lookup above and the 410 came from the not-found
+    // branch (keyed on `deletedAt`). Now that it expires to a STATUS and
+    // stays visible, that lookup succeeds — without this check the
+    // customer would be handed a perfectly resumable draft for an
+    // application whose payment window has already closed.
+    if (application.currentStatus === ApplicationStatus.EXPIRED) {
+      throw new BaseException({
+        code: ErrorCodes.PAYMENT_WINDOW_EXPIRED,
+        statusCode: HttpStatus.GONE, // 410
+        message: 'Payment window expired',
+        details: [
+          {
+            reason: ErrorCodes.PAYMENT_WINDOW_EXPIRED,
+            message:
+              "This application's payment window has expired. Please start a new application.",
+          },
+        ],
+      });
+    }
+
     return this.mapToResponse(application);
   }
 
@@ -903,28 +959,23 @@ export class ApplicationsService {
   // =====================
 
   /**
-   * Valid statuses that can be approved
+   * Valid statuses for the SECOND decision (approve / reject).
+   *
+   * Stage 3 Step 4 — PROCESSING only. SUBMITTED was allowed while the
+   * accept action was being built, but leaving it in meant an operator
+   * could approve or reject an application whose funds were still merely
+   * AUTHORIZED — approving without ever capturing (money never taken) or
+   * rejecting with nothing to refund. The first decision (accept →
+   * capture, cancel → release) is now the only way out of SUBMITTED, so
+   * by the time we get here the payment is always PAID.
    */
   private readonly APPROVABLE_STATUSES: ApplicationStatus[] = [
-    ApplicationStatus.SUBMITTED,
-    ApplicationStatus.IN_REVIEW,
+    ApplicationStatus.PROCESSING,
   ];
 
-  /**
-   * Valid statuses that can be rejected
-   */
+  /** Valid statuses that can be rejected — see APPROVABLE_STATUSES. */
   private readonly REJECTABLE_STATUSES: ApplicationStatus[] = [
-    ApplicationStatus.SUBMITTED,
-    ApplicationStatus.IN_REVIEW,
-    ApplicationStatus.NEED_DOCS,
-  ];
-
-  /**
-   * Valid statuses that can have documents requested
-   */
-  private readonly DOCS_REQUESTABLE_STATUSES: ApplicationStatus[] = [
-    ApplicationStatus.SUBMITTED,
-    ApplicationStatus.IN_REVIEW,
+    ApplicationStatus.PROCESSING,
   ];
 
   /**
@@ -942,7 +993,7 @@ export class ApplicationsService {
       throw new BadRequestException('Application cannot be approved', [
         {
           reason: ErrorCodes.INVALID_STATUS_TRANSITION,
-          message: `Application in ${application.currentStatus} status cannot be approved. Must be in SUBMITTED or IN_REVIEW status.`,
+          message: `Application in ${application.currentStatus} status cannot be approved. It must be in PROCESSING (accepted by an operator) first.`,
         },
       ]);
     }
@@ -1018,7 +1069,7 @@ export class ApplicationsService {
       throw new BadRequestException('Application cannot be rejected', [
         {
           reason: ErrorCodes.INVALID_STATUS_TRANSITION,
-          message: `Application in ${application.currentStatus} status cannot be rejected.`,
+          message: `Application in ${application.currentStatus} status cannot be rejected. It must be in PROCESSING (accepted by an operator) first.`,
         },
       ]);
     }
@@ -1026,29 +1077,71 @@ export class ApplicationsService {
     const oldStatus = application.currentStatus;
     const newStatus = ApplicationStatus.REJECTED;
 
-    // Update application status
-    const updatedApplication = await this.prisma.application.update({
-      where: { id },
-      data: {
-        currentStatus: newStatus,
-        reviewedAt: new Date(),
-        reviewedByUserId: adminUserId,
-        adminNote: dto.reason,
-        rejectionReason: dto.reason,
-      },
-      include: this.getApplicationIncludes(),
-    });
+    // ── Stage 3 Step 4 — selective refund ──
+    //
+    // The money was captured at Accept, so rejecting is a refund
+    // decision, not a release. The operator picks which portions go
+    // back; picking neither is valid (reject, refund nothing). Same
+    // atomicity shape as accept/cancel: validate → provider call
+    // OUTSIDE the transaction → every DB write inside ONE transaction.
+    const portions = {
+      government: dto.refundGovernmentFee === true,
+      service: dto.refundServiceFee === true,
+    };
+    const wantsRefund = portions.government || portions.service;
 
-    // Create status history
-    await this.prisma.applicationStatusHistory.create({
-      data: {
-        applicationId: id,
-        oldStatus,
-        newStatus,
-        note: dto.reason,
-        changedByUserId: adminUserId,
-        changedBySystem: false,
-      },
+    let payment: Awaited<
+      ReturnType<PaymentsService['getCapturedPaymentForApplication']>
+    > | null = null;
+    if (wantsRefund) {
+      payment = await this.paymentsService.getCapturedPaymentForApplication(id);
+      this.paymentsService.assertRefundablePortions(payment, portions);
+      await this.paymentsService.runProviderRefund(payment, portions);
+    }
+
+    const now = new Date();
+    let refundedPaymentStatus:
+      | Awaited<ReturnType<PaymentsService['recordRefundWithinTx']>>
+      | null = null;
+
+    const updatedApplication = await this.prisma.$transaction(async tx => {
+      if (payment) {
+        refundedPaymentStatus = await this.paymentsService.recordRefundWithinTx(
+          tx,
+          payment,
+          portions,
+          adminUserId,
+          dto.reason,
+        );
+      }
+
+      const updated = await tx.application.update({
+        where: { id },
+        data: {
+          currentStatus: newStatus,
+          reviewedAt: now,
+          reviewedByUserId: adminUserId,
+          adminNote: dto.reason,
+          rejectionReason: dto.reason,
+          // Keep the application's payment dimension in step with the
+          // payment row. With no refund it stays exactly as it was.
+          ...(refundedPaymentStatus ? { paymentStatus: refundedPaymentStatus } : {}),
+        },
+        include: this.getApplicationIncludes(),
+      });
+
+      await tx.applicationStatusHistory.create({
+        data: {
+          applicationId: id,
+          oldStatus,
+          newStatus,
+          note: dto.reason,
+          changedByUserId: adminUserId,
+          changedBySystem: false,
+        },
+      });
+
+      return updated;
     });
 
     // Audit log
@@ -1058,7 +1151,13 @@ export class ApplicationsService {
       'Application',
       id,
       { status: oldStatus },
-      { status: newStatus, reason: dto.reason },
+      {
+        status: newStatus,
+        reason: dto.reason,
+        refundedPortions: wantsRefund ? portions : null,
+        paymentStatus: refundedPaymentStatus ?? undefined,
+        paymentId: payment?.id,
+      },
     );
 
     // Send notification email
@@ -1081,163 +1180,25 @@ export class ApplicationsService {
   }
 
   /**
-   * Request additional documents for an application (Admin)
-   */
-  async requestDocuments(
-    id: string,
-    dto: RequestDocumentsDto,
-    adminUserId: string,
-  ): Promise<ApplicationResponseDto> {
-    const application = await this.getApplicationWithRelations(id);
-
-    // Validate status transition
-    if (!this.DOCS_REQUESTABLE_STATUSES.includes(application.currentStatus as ApplicationStatus)) {
-      throw new BadRequestException('Cannot request documents for this application', [
-        {
-          reason: ErrorCodes.INVALID_STATUS_TRANSITION,
-          message: `Application in ${application.currentStatus} status cannot have documents requested.`,
-        },
-      ]);
-    }
-
-    const oldStatus = application.currentStatus;
-    const newStatus = ApplicationStatus.NEED_DOCS;
-
-    // Update application status
-    const updatedApplication = await this.prisma.application.update({
-      where: { id },
-      data: {
-        currentStatus: newStatus,
-        adminNote: dto.note,
-        requestedDocumentTypes: dto.documentTypeKeys || [],
-      },
-      include: this.getApplicationIncludes(),
-    });
-
-    // Create status history
-    await this.prisma.applicationStatusHistory.create({
-      data: {
-        applicationId: id,
-        oldStatus,
-        newStatus,
-        note: dto.note,
-        changedByUserId: adminUserId,
-        changedBySystem: false,
-      },
-    });
-
-    // Audit log
-    await this.auditLogsService.logAdminAction(
-      adminUserId,
-      'application.request_documents',
-      'Application',
-      id,
-      { status: oldStatus },
-      { status: newStatus, note: dto.note, documentTypeKeys: dto.documentTypeKeys },
-    );
-
-    // M11.10 (BUG 5) — Compose the email `notes` body from BOTH the
-    // operator's free-form message AND the bulleted list of
-    // requested document type keys. The customer sees:
-    //
-    //   What we need:
-    //   <operator's typed message>
-    //   • passport_photo
-    //   • proof_of_address
-    //
-    // (Bullets render as plain text in the HTML template — the
-    // template wraps {{notes}} in a colored callout.)
-    const requestedDocs = (dto.documentTypeKeys ?? [])
-      .map((key) => `• ${key}`)
-      .join('\n');
-    const composedNote = [dto.note, requestedDocs].filter(Boolean).join('\n\n');
-    await this.sendStatusNotificationEmail(
-      updatedApplication,
-      'Additional Documents Required',
-      composedNote,
-    );
-
-    this.logger.log(`Documents requested for application: ${id} by admin ${adminUserId}`);
-    return this.mapToResponse(updatedApplication);
-  }
-
-  /**
-   * Move application to IN_REVIEW status (Admin)
-   */
-  async startReview(id: string, adminUserId: string): Promise<ApplicationResponseDto> {
-    const application = await this.getApplicationWithRelations(id);
-
-    if (application.currentStatus !== ApplicationStatus.SUBMITTED) {
-      throw new BadRequestException('Application cannot be moved to review', [
-        {
-          reason: ErrorCodes.INVALID_STATUS_TRANSITION,
-          message: `Only SUBMITTED applications can be moved to IN_REVIEW status.`,
-        },
-      ]);
-    }
-
-    const oldStatus = application.currentStatus;
-    const newStatus = ApplicationStatus.IN_REVIEW;
-
-    const updatedApplication = await this.prisma.application.update({
-      where: { id },
-      data: {
-        currentStatus: newStatus,
-        reviewedByUserId: adminUserId,
-      },
-      include: this.getApplicationIncludes(),
-    });
-
-    await this.prisma.applicationStatusHistory.create({
-      data: {
-        applicationId: id,
-        oldStatus,
-        newStatus,
-        note: 'Application review started',
-        changedByUserId: adminUserId,
-        changedBySystem: false,
-      },
-    });
-
-    await this.auditLogsService.logAdminAction(
-      adminUserId,
-      'application.start_review',
-      'Application',
-      id,
-      { status: oldStatus },
-      { status: newStatus },
-    );
-
-    this.logger.log(`Application review started: ${id} by admin ${adminUserId}`);
-    return this.mapToResponse(updatedApplication);
-  }
-
-  /**
    * M11.12 (BUG P) — Unified status change.
    *
-   * Subsumes approve / reject / requestDocuments / startReview into
-   * a single endpoint that:
+   * Subsumes approve / reject into a single endpoint that:
    *   1. Validates the requested transition (per-status source-state
-   *      checks reuse the existing APPROVABLE / REJECTABLE /
-   *      DOCS_REQUESTABLE / etc. constants).
+   *      checks reuse the existing APPROVABLE / REJECTABLE constants).
    *   2. Validates per-status required fields (reason for REJECTED,
-   *      ≥1 requestedDocuments for NEED_DOCS, custom subject + body
-   *      for emailMode='custom').
+   *      custom subject + body for emailMode='custom').
    *   3. Updates the application + writes status history + audit log.
-   *   4. For NEED_DOCS: persists a DocumentRequest + DocumentRequestItem
-   *      rows AND populates the legacy
-   *      `applications.requested_document_types` array so the existing
-   *      customer /me upload UI keeps working without a frontend
-   *      change (lite-shipping path per the M11.12 spec).
-   *   5. If sendEmail is true (default), sends either:
+   *   4. If sendEmail is true (default), sends either:
    *        - the standard template + optional "Message from our team"
    *          custom block (template mode, the default), or
    *        - the operator's custom subject + body verbatim
    *          (custom mode — bypasses the template entirely).
    *
-   * Existing approve / reject / requestDocuments endpoints stay for
-   * back-compat; new admin dialog calls this single endpoint for
-   * every transition.
+   * Stage 3 (Step 1): the document-request + under-review targets are
+   * gone: documents are now requested by email outside the system and
+   * the operator decides straight from SUBMITTED. The accept (→PROCESSING,
+   * capture) and disqualify (→CANCELLED, release) actions land in
+   * Step 3; the legacy approve / reject endpoints stay for back-compat.
    */
   async changeStatus(
     id: string,
@@ -1252,21 +1213,19 @@ export class ApplicationsService {
     const TRANSITIONS: Record<string, ApplicationStatus[]> = {
       APPROVED: this.APPROVABLE_STATUSES,
       REJECTED: this.REJECTABLE_STATUSES,
-      NEED_DOCS: this.DOCS_REQUESTABLE_STATUSES,
-      IN_REVIEW: [ApplicationStatus.SUBMITTED, ApplicationStatus.NEED_DOCS],
       // M11.14 (BUG FF) — operator must release the issued visa
       // by transitioning APPROVED → READY_TO_DOWNLOAD. The
       // hasPrimaryFile() gate below enforces that a primary
       // visa file exists before the customer sees a download
       // link in their email.
       READY_TO_DOWNLOAD: [ApplicationStatus.APPROVED],
-      CANCELLED: [
-        ApplicationStatus.DRAFT,
-        ApplicationStatus.UNPAID,
-        ApplicationStatus.SUBMITTED,
-        ApplicationStatus.IN_REVIEW,
-        ApplicationStatus.NEED_DOCS,
-      ],
+      // Stage 3 — only the pre-payment states may be cancelled through
+      // this generic endpoint. Once funds are held (SUBMITTED) or
+      // captured (PROCESSING), cancelling MUST go through
+      // `cancelApplication`, which releases the authorization —
+      // otherwise the application would read CANCELLED while the
+      // customer's money is still held or already taken.
+      CANCELLED: [ApplicationStatus.DRAFT, ApplicationStatus.UNPAID],
     };
     const allowedFrom = TRANSITIONS[dto.status];
     if (!allowedFrom || !allowedFrom.includes(oldStatus)) {
@@ -1282,17 +1241,6 @@ export class ApplicationsService {
         {
           reason: ErrorCodes.BAD_REQUEST,
           message: 'A rejection reason of at least 10 characters is required when status=REJECTED.',
-        },
-      ]);
-    }
-    if (
-      dto.status === 'NEED_DOCS' &&
-      (!dto.requestedDocuments || dto.requestedDocuments.length === 0)
-    ) {
-      throw new BadRequestException('Requested documents required', [
-        {
-          reason: ErrorCodes.BAD_REQUEST,
-          message: 'At least one requested document item is required when status=NEED_DOCS.',
         },
       ]);
     }
@@ -1332,7 +1280,7 @@ export class ApplicationsService {
     const updateData: any = {
       currentStatus: newStatusEnum,
     };
-    if (dto.status === 'APPROVED' || dto.status === 'REJECTED' || dto.status === 'IN_REVIEW') {
+    if (dto.status === 'APPROVED' || dto.status === 'REJECTED') {
       updateData.reviewedAt = new Date();
       updateData.reviewedByUserId = adminUserId;
     }
@@ -1341,22 +1289,6 @@ export class ApplicationsService {
     }
     if (dto.customMessage) {
       updateData.adminNote = dto.customMessage;
-    }
-    if (dto.status === 'NEED_DOCS') {
-      // Populate the legacy array so the existing customer /me UI
-      // (which renders requestedDocumentTypes) just works without
-      // any frontend change. Use a derived "key" from each document
-      // name (lower-cased + space→underscore + de-symboled) so
-      // CustomerPortalService.resubmitDocuments can still match
-      // uploads against the request via a string key.
-      updateData.requestedDocumentTypes = (dto.requestedDocuments ?? []).map((d) =>
-        d.name
-          .toLowerCase()
-          .trim()
-          .replace(/[^a-z0-9]+/g, '_')
-          .replace(/^_+|_+$/g, '')
-          .slice(0, 64) || 'document',
-      );
     }
 
     const updatedApplication = await this.prisma.application.update({
@@ -1370,35 +1302,11 @@ export class ApplicationsService {
         applicationId: id,
         oldStatus,
         newStatus: newStatusEnum,
-        note:
-          dto.customMessage ??
-          dto.reason ??
-          (dto.status === 'NEED_DOCS'
-            ? `Requested ${dto.requestedDocuments?.length ?? 0} document(s)`
-            : `Status changed to ${dto.status}`),
+        note: dto.customMessage ?? dto.reason ?? `Status changed to ${dto.status}`,
         changedByUserId: adminUserId,
         changedBySystem: false,
       },
     });
-
-    // For NEED_DOCS: persist the rich DocumentRequest + items rows.
-    if (dto.status === 'NEED_DOCS' && dto.requestedDocuments?.length) {
-      await this.prisma.documentRequest.create({
-        data: {
-          applicationId: id,
-          requestedBy: adminUserId,
-          status: 'pending',
-          customMessage: dto.customMessage ?? null,
-          items: {
-            create: dto.requestedDocuments.map((d) => ({
-              documentName: d.name,
-              acceptedFormats: d.acceptedFormats ?? null,
-              maxSizeMb: d.maxSizeMb,
-            })),
-          },
-        },
-      });
-    }
 
     await this.auditLogsService.logAdminAction(
       adminUserId,
@@ -1412,7 +1320,6 @@ export class ApplicationsService {
         emailMode: dto.emailMode ?? 'template',
         hasCustomMessage: !!dto.customMessage,
         reason: dto.reason,
-        requestedDocumentsCount: dto.requestedDocuments?.length ?? 0,
       },
     );
 
@@ -1450,6 +1357,267 @@ export class ApplicationsService {
     this.logger.log(
       `[BUG P] Status changed: ${id}  ${oldStatus} → ${dto.status}  by admin ${adminUserId}  (email=${sendEmail}, mode=${dto.emailMode ?? 'template'})`,
     );
+    return this.mapToResponse(updatedApplication);
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Stage 3 — FIRST DECISION (accept / cancel)
+  //
+  // Both actions run on a SUBMITTED application whose payment is
+  // AUTHORIZED (funds held). They are the moment money actually moves, so
+  // each one performs the provider call FIRST (an external side effect
+  // that cannot be rolled back) and then writes the payment change, the
+  // application change, the status history and the assignment inside ONE
+  // transaction — a half-applied accept would otherwise leave captured
+  // funds on a SUBMITTED application, or a released authorization on an
+  // application that still looks payable.
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * ACCEPT — capture the held funds, assign an operator (picked at accept
+   * time), move the application to PROCESSING and tell the customer their
+   * visa is being prepared.
+   */
+  async acceptApplication(
+    id: string,
+    dto: AcceptApplicationDto,
+    adminUserId: string,
+    actorPermissions?: string[],
+  ): Promise<ApplicationResponseDto> {
+    const application = await this.getApplicationWithRelations(id);
+
+    if (application.currentStatus !== ApplicationStatus.SUBMITTED) {
+      throw new BadRequestException('Application cannot be accepted', [
+        {
+          reason: ErrorCodes.INVALID_STATUS_TRANSITION,
+          message: `Only a SUBMITTED application can be accepted (current: ${application.currentStatus}).`,
+        },
+      ]);
+    }
+
+    // Funds must actually be held before we promise the customer anything.
+    const payment = await this.paymentsService.getAuthorizedPaymentForApplication(id);
+
+    const assignee = await this.prisma.user.findFirst({
+      where: { id: dto.assigneeId, deletedAt: null, isActive: true },
+      select: { id: true, fullName: true, email: true },
+    });
+    if (!assignee) {
+      throw new BadRequestException('Assignee not found or inactive', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: 'The selected operator is no longer available.',
+        },
+      ]);
+    }
+
+    // Same RBAC split as assignOperator: assigning the work to someone
+    // else needs applications.assign; claiming it yourself does not.
+    if (actorPermissions !== undefined) {
+      const canAssignOthers = actorPermissions.includes('applications.assign');
+      if (!canAssignOthers && dto.assigneeId !== adminUserId) {
+        throw new ForbiddenException('You may only assign this application to yourself.', [
+          {
+            reason: ErrorCodes.FORBIDDEN,
+            message:
+              'Assigning to another operator requires the applications.assign permission.',
+          },
+        ]);
+      }
+    }
+
+    // External side effect first — if the provider declines, nothing in
+    // the database has changed yet.
+    const providerReference = await this.paymentsService.runProviderCapture(payment);
+
+    const oldStatus = application.currentStatus as ApplicationStatus;
+    const previousAssigneeId = (application as any).assignedToUserId ?? null;
+    const now = new Date();
+
+    const updatedApplication = await this.prisma.$transaction(async tx => {
+      await this.paymentsService.recordCaptureWithinTx(
+        tx,
+        payment,
+        adminUserId,
+        providerReference,
+      );
+
+      const updated = await tx.application.update({
+        where: { id },
+        data: {
+          currentStatus: ApplicationStatus.PROCESSING,
+          // Keep the application's payment dimension in step with the
+          // payment row now that the funds are captured.
+          paymentStatus: PaymentStatus.PAID,
+          reviewedAt: now,
+          reviewedByUserId: adminUserId,
+          assignedToUserId: dto.assigneeId,
+          assignedAt: now,
+          assignedByUserId: adminUserId,
+          ...(dto.note ? { adminNote: dto.note } : {}),
+        },
+        include: this.getApplicationIncludes(),
+      });
+
+      await tx.applicationStatusHistory.create({
+        data: {
+          applicationId: id,
+          oldStatus,
+          newStatus: ApplicationStatus.PROCESSING,
+          note:
+            dto.note ??
+            'Application accepted — payment captured, processing started',
+          changedByUserId: adminUserId,
+          changedBySystem: false,
+        },
+      });
+
+      if (previousAssigneeId !== dto.assigneeId) {
+        await tx.applicationAssignmentHistory.create({
+          data: {
+            applicationId: id,
+            previousAssigneeId,
+            newAssigneeId: dto.assigneeId,
+            changedBy: adminUserId,
+            reason: 'Assigned at accept',
+          },
+        });
+      }
+
+      return updated;
+    });
+
+    await this.auditLogsService.logAdminAction(
+      adminUserId,
+      'application.accept',
+      'Application',
+      id,
+      { status: oldStatus, paymentStatus: PaymentStatus.AUTHORIZED, assignedToUserId: previousAssigneeId },
+      {
+        status: ApplicationStatus.PROCESSING,
+        paymentStatus: PaymentStatus.PAID,
+        assignedToUserId: dto.assigneeId,
+        paymentId: payment.id,
+      },
+    );
+
+    await this.sendStatusNotificationEmail(
+      updatedApplication,
+      'Processing',
+      dto.note || undefined,
+    );
+
+    this.logger.log(
+      `Application accepted: ${id} by ${adminUserId} (payment ${payment.id} captured, assigned to ${dto.assigneeId})`,
+    );
+
+    void this.notificationEmitter.emit('app.event', {
+      kind: 'application.accepted',
+      applicationId: id,
+      applicationCode: updatedApplication.applicants?.[0]?.applicationCode,
+      actorUserId: adminUserId,
+      assigneeId: dto.assigneeId,
+      paymentId: payment.id,
+    });
+
+    return this.mapToResponse(updatedApplication);
+  }
+
+  /**
+   * CANCEL — a disqualifying issue was found. Release the authorization
+   * in full (nothing is charged), move the application to CANCELLED
+   * (terminal) and email the customer the reason plus an invitation to
+   * submit a new application.
+   */
+  async cancelApplication(
+    id: string,
+    dto: CancelApplicationDto,
+    adminUserId: string,
+  ): Promise<ApplicationResponseDto> {
+    const application = await this.getApplicationWithRelations(id);
+
+    if (application.currentStatus !== ApplicationStatus.SUBMITTED) {
+      throw new BadRequestException('Application cannot be cancelled', [
+        {
+          reason: ErrorCodes.INVALID_STATUS_TRANSITION,
+          message: `Only a SUBMITTED application can be cancelled at the first decision (current: ${application.currentStatus}).`,
+        },
+      ]);
+    }
+
+    const payment = await this.paymentsService.getAuthorizedPaymentForApplication(id);
+
+    // External side effect first.
+    const providerReference = await this.paymentsService.runProviderRelease(payment);
+
+    const oldStatus = application.currentStatus as ApplicationStatus;
+    const now = new Date();
+
+    const updatedApplication = await this.prisma.$transaction(async tx => {
+      await this.paymentsService.recordReleaseWithinTx(
+        tx,
+        payment,
+        adminUserId,
+        dto.reason,
+        providerReference,
+      );
+
+      const updated = await tx.application.update({
+        where: { id },
+        data: {
+          currentStatus: ApplicationStatus.CANCELLED,
+          // Nothing was charged — mirror the released authorization.
+          paymentStatus: PaymentStatus.CANCELLED,
+          reviewedAt: now,
+          reviewedByUserId: adminUserId,
+          adminNote: dto.reason,
+        },
+        include: this.getApplicationIncludes(),
+      });
+
+      await tx.applicationStatusHistory.create({
+        data: {
+          applicationId: id,
+          oldStatus,
+          newStatus: ApplicationStatus.CANCELLED,
+          note: dto.reason,
+          changedByUserId: adminUserId,
+          changedBySystem: false,
+        },
+      });
+
+      return updated;
+    });
+
+    await this.auditLogsService.logAdminAction(
+      adminUserId,
+      'application.cancel',
+      'Application',
+      id,
+      { status: oldStatus, paymentStatus: PaymentStatus.AUTHORIZED },
+      {
+        status: ApplicationStatus.CANCELLED,
+        paymentStatus: PaymentStatus.CANCELLED,
+        reason: dto.reason,
+        paymentId: payment.id,
+      },
+    );
+
+    await this.sendStatusNotificationEmail(updatedApplication, 'Cancelled', dto.reason);
+
+    this.logger.log(
+      `Application cancelled: ${id} by ${adminUserId} (payment ${payment.id} released, no charge)`,
+    );
+
+    void this.notificationEmitter.emit('app.event', {
+      kind: 'application.cancelled',
+      applicationId: id,
+      applicationCode: updatedApplication.applicants?.[0]?.applicationCode,
+      actorUserId: adminUserId,
+      reason: dto.reason,
+      paymentId: payment.id,
+    });
+
     return this.mapToResponse(updatedApplication);
   }
 
@@ -1796,13 +1964,15 @@ export class ApplicationsService {
     }
 
     // Template mode — reuse sendStatusNotificationEmail's mapping
-    // logic but drop in the custom message + (for NEED_DOCS) a
-    // bullet list of requested items.
+    // logic but drop in the custom message.
     const STATUS_LABEL: Record<string, string> = {
       APPROVED: 'Approved',
       REJECTED: 'Rejected',
-      NEED_DOCS: 'Additional Documents Required',
-      IN_REVIEW: 'Under Review',
+      // Stage 3 — Processing + Expired have no dedicated template yet
+      // (Step 3 / Step 5 add them); they fall through to the generic
+      // application_status_update template via sendStatusNotificationEmail.
+      PROCESSING: 'Processing',
+      EXPIRED: 'Expired',
       // M11.14 (BUG FF) — drives template selection +
       // INTENT_BY_LABEL ('download') in sendStatusNotificationEmail.
       READY_TO_DOWNLOAD: 'Ready to Download',
@@ -1815,17 +1985,6 @@ export class ApplicationsService {
       composedNote = composedNote
         ? `${composedNote}\n\nReason: ${dto.reason}`
         : `Reason: ${dto.reason}`;
-    }
-    if (dto.status === 'NEED_DOCS' && dto.requestedDocuments?.length) {
-      const items = dto.requestedDocuments
-        .map(
-          (d) =>
-            `• ${d.name}${d.acceptedFormats ? ` (${d.acceptedFormats})` : ''}${d.maxSizeMb ? `, max ${d.maxSizeMb} MB` : ''}`,
-        )
-        .join('\n');
-      composedNote = composedNote
-        ? `${composedNote}\n\nWhat we need:\n${items}`
-        : `What we need:\n${items}`;
     }
 
     await this.sendStatusNotificationEmail(application, label, composedNote || undefined);
@@ -1946,6 +2105,25 @@ export class ApplicationsService {
    * to the deduped union of {portal email, every applicant email},
    * and emit one `notification.email_sent` audit row per recipient.
    */
+  /**
+   * Stage 3 Step 4 — public entry point for surfaces that only hold an
+   * applicationId (e.g. the automatic READY_TO_DOWNLOAD transition in
+   * ApplicantsService). Loads the application with the relations the
+   * templating needs, then reuses the one correct sender — which mints a
+   * per-recipient signed `ctaUrl` and fans out to the portal identity
+   * plus every applicant. Before this existed, the automatic path
+   * hand-rolled its own send with the wrong variables and produced a
+   * dead `href=""` download button for a single recipient.
+   */
+  async notifyStatusChange(
+    applicationId: string,
+    statusLabel: string,
+    notes?: string,
+  ): Promise<void> {
+    const application = await this.getApplicationWithRelations(applicationId);
+    await this.sendStatusNotificationEmail(application, statusLabel, notes);
+  }
+
   private async sendStatusNotificationEmail(
     application: any,
     statusLabel: string,
@@ -1971,6 +2149,12 @@ export class ApplicationsService {
       'Additional Documents Required': 'application.need_docs',
       'Ready to Download': 'application.ready_to_download',
       'Documents Resubmitted': 'application.documents.resubmitted',
+      // Stage 3 — first-decision outcomes. These labels come from
+      // STATUS_LABEL (PROCESSING → 'Processing', CANCELLED → 'Cancelled'),
+      // so an accept/cancel resolves to its own template instead of
+      // silently falling back to application_status_update.
+      Processing: 'application.processing_started',
+      Cancelled: 'application.cancelled',
     };
     const templateKey =
       STATUS_TEMPLATE_KEY[statusLabel] ?? 'application_status_update';

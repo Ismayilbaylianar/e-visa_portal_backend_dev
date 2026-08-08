@@ -53,7 +53,6 @@ export const ErrorCodes = {
   VISA_TYPE_NOT_FOUND: 'visaTypeNotFound',
   APPLICANT_NOT_FOUND: 'applicantNotFound',
   // M9b — customer document resubmission
-  NOT_NEED_DOCS_STATE: 'notNeedDocsState',
   DOCUMENT_TYPE_NOT_REQUESTED: 'documentTypeNotRequested',
   RESUBMIT_FILE_LIMIT_EXCEEDED: 'resubmitFileLimitExceeded',
 
@@ -143,7 +142,6 @@ export const ErrorCodeHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.VISA_TYPE_NOT_FOUND]: 404,
   [ErrorCodes.APPLICANT_NOT_FOUND]: 404,
   // M9b
-  [ErrorCodes.NOT_NEED_DOCS_STATE]: 409,
   [ErrorCodes.DOCUMENT_TYPE_NOT_REQUESTED]: 400,
   [ErrorCodes.RESUBMIT_FILE_LIMIT_EXCEEDED]: 400,
 

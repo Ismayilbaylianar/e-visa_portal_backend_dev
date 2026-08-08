@@ -14,15 +14,12 @@ export class DashboardSummaryDto {
   @ApiProperty({ description: 'Number of submitted applications', example: 100 })
   submittedApplications: number;
 
-  @ApiProperty({ description: 'Number of in-review applications', example: 45 })
-  inReviewApplications: number;
-
   @ApiProperty({
     description:
-      'M11.13 BUG V — Number of applications awaiting customer document upload (NEED_DOCS). Feeds the admin "Pending Action" widget alongside submitted + in-review.',
-    example: 12,
+      'Stage 3 — applications the operator has accepted and is preparing (PROCESSING). Feeds the admin "Pending Action" widget alongside submitted.',
+    example: 45,
   })
-  needDocsApplications: number;
+  processingApplications: number;
 
   @ApiProperty({ description: 'Number of approved applications', example: 800 })
   approvedApplications: number;

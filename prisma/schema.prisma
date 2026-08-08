@@ -48,23 +48,30 @@ enum PaymentStatus {
   PARTIALLY_REFUNDED
 }
 
+// Stage 3 — two-stage operator workflow.
+//   DRAFT → UNPAID → (EXPIRED | SUBMITTED)
+//   SUBMITTED → (CANCELLED | PROCESSING)   ← first operator decision
+//   PROCESSING → (APPROVED → READY_TO_DOWNLOAD | REJECTED)  ← second
+// EXPIRED = the 3h payment window elapsed unpaid (terminal; the
+// customer starts a new application). PROCESSING = accepted + funds
+// captured, visa being prepared. IN_REVIEW + NEED_DOCS were dropped in
+// migration 34: the operator decides straight from SUBMITTED, and
+// extra documents are requested by email, outside the system.
 enum ApplicationStatus {
   DRAFT
   UNPAID
+  EXPIRED
   SUBMITTED
-  IN_REVIEW
-  NEED_DOCS
+  PROCESSING
   APPROVED
-  REJECTED
   READY_TO_DOWNLOAD
+  REJECTED
   CANCELLED
 }
 
 enum ApplicantStatus {
   DRAFT
   SUBMITTED
-  IN_REVIEW
-  NEED_DOCS
   APPROVED
   REJECTED
   READY_TO_DOWNLOAD

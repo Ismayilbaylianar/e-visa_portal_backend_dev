@@ -38,6 +38,14 @@ export const SYSTEM_TEMPLATE_KEYS = [
   'payment.success',
   'otp.send',
   'document_upload_received',
+  // M11.14 — payment-window emails shipped in migration 30 but were
+  // never protected; an admin could delete them and silently kill the
+  // timeout notifications.
+  'payment.window.warning',
+  'payment.window.expired',
+  // Stage 3 — first-decision outcomes (migration 35).
+  'application.processing_started',
+  'application.cancelled',
 ] as const;
 
 export type SystemTemplateKey = (typeof SYSTEM_TEMPLATE_KEYS)[number];

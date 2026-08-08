@@ -6,3 +6,4 @@ export * from './admin-review.dto';
 export * from './update-estimated-time.dto';
 export * from './change-status.dto';
 export * from './assign-application.dto';
+export * from './first-decision.dto';

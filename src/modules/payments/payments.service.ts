@@ -801,7 +801,11 @@ export class PaymentsService {
 
       // Update application status if payment is paid
       if (dto.status === PaymentStatus.PAID) {
-        await this.updateApplicationAfterPayment(prisma, payment.applicationId);
+        await this.updateApplicationAfterPayment(
+          prisma,
+          payment.applicationId,
+          PaymentStatus.PAID,
+        );
       }
 
       return updated;
@@ -951,7 +955,14 @@ export class PaymentsService {
     userId?: string;
     bySystem: boolean;
     txnPayload?: Record<string, any>;
-    flipApplicationOnPaid?: boolean;
+    /**
+     * Stage 3 — cascade the application update (UNPAID→SUBMITTED +
+     * paymentStatus sync). Was `flipApplicationOnPaid` and fired only on
+     * PAID; the customer now pre-authorizes, so AUTHORIZED must flip the
+     * application too or every submission stalls in UNPAID (and the
+     * payment-window sweep would expire it while funds are held).
+     */
+    flipApplication?: boolean;
   }): Promise<void> {
     await this.prisma.$transaction(async prisma => {
       const current = await prisma.payment.findUnique({ where: { id: opts.paymentId } });
@@ -985,8 +996,11 @@ export class PaymentsService {
         },
       });
 
-      if (opts.flipApplicationOnPaid && opts.newStatus === PaymentStatus.PAID) {
-        await this.updateApplicationAfterPayment(prisma, opts.applicationId);
+      if (
+        opts.flipApplication &&
+        (opts.newStatus === PaymentStatus.AUTHORIZED || opts.newStatus === PaymentStatus.PAID)
+      ) {
+        await this.updateApplicationAfterPayment(prisma, opts.applicationId, opts.newStatus);
       }
     });
 
@@ -1065,7 +1079,25 @@ export class PaymentsService {
       reason: 'Mock payment authorized (funds held)',
       bySystem: false,
       txnPayload: { providerReference: res.providerReference },
+      // Stage 3 — authorization is the moment the application becomes
+      // SUBMITTED (funds held, operator queue). Capture happens later at
+      // Accept and finds the application already out of UNPAID.
+      flipApplication: true,
     });
+
+    // Post-commit, best-effort: this is the customer-visible "payment
+    // received" moment, so the confirmation email + the Telegram ping
+    // live here now. They deliberately do NOT fire again on capture —
+    // capture goes through recordPaymentAction, which sends nothing.
+    void this.notificationEmitter.emit('payment.received', {
+      paymentId,
+      applicationId: payment.applicationId,
+      paymentReference: payment.paymentReference,
+      amount: payment.totalAmount?.toString?.(),
+      currency: payment.currencyCode,
+      provider: payment.paymentProviderKey,
+    });
+    void this.sendPaymentSuccessEmail(paymentId);
 
     return this.findByIdForPortal(paymentId, portalIdentityId);
   }
@@ -1109,7 +1141,7 @@ export class PaymentsService {
       userId,
       bySystem: false,
       txnPayload: { providerReference: res.providerReference },
-      flipApplicationOnPaid: true,
+      flipApplication: true,
     });
 
     return this.findById(paymentId);
@@ -1157,12 +1189,353 @@ export class PaymentsService {
     return this.findById(paymentId);
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // Stage 3 — first-decision helpers (Accept / Cancel)
+  //
+  // Accept and Cancel must change the payment AND the application in ONE
+  // transaction. `recordPaymentAction` opens its own transaction, so the
+  // work is split here: the provider call (an external side effect that
+  // cannot be rolled back) runs first, then the caller does every DB
+  // write inside its own tx via the record*WithinTx helpers below.
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * Load the application's live AUTHORIZED payment. Throws when there
+   * isn't one — this is the "has the customer actually paid?" gate for
+   * both first-decision actions.
+   */
+  async getAuthorizedPaymentForApplication(applicationId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: {
+        applicationId,
+        deletedAt: null,
+        paymentStatus: PaymentStatus.AUTHORIZED,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!payment) {
+      throw new BadRequestException('No authorized payment for this application', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message:
+            'This application has no payment with funds held (AUTHORIZED), so it cannot be accepted or cancelled.',
+        },
+      ]);
+    }
+    return payment;
+  }
+
+  /** External provider capture. No DB writes. Returns the provider ref. */
+  async runProviderCapture(payment: {
+    id: string;
+    paymentProviderKey: string;
+    providerPaymentId?: string | null;
+    totalAmount: any;
+    currencyCode: string;
+  }): Promise<string | undefined> {
+    const provider = this.getProvider(payment.paymentProviderKey);
+    const res = await provider.capture({
+      paymentId: payment.id,
+      providerPaymentId: payment.providerPaymentId ?? undefined,
+      amount: Number(payment.totalAmount),
+      currency: payment.currencyCode,
+    });
+    if (!res.success) {
+      throw new BadRequestException('Capture failed', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: res.errorMessage || 'Provider declined the capture.',
+        },
+      ]);
+    }
+    return res.providerReference;
+  }
+
+  /** External provider release/void. No DB writes. Returns the ref. */
+  async runProviderRelease(payment: {
+    id: string;
+    paymentProviderKey: string;
+    providerPaymentId?: string | null;
+  }): Promise<string | undefined> {
+    const provider = this.getProvider(payment.paymentProviderKey);
+    const res = await provider.release({
+      paymentId: payment.id,
+      providerPaymentId: payment.providerPaymentId ?? undefined,
+    });
+    if (!res.success) {
+      throw new BadRequestException('Release failed', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: res.errorMessage || 'Provider declined the release.',
+        },
+      ]);
+    }
+    return res.providerReference;
+  }
+
+  /**
+   * Capture DB writes inside the CALLER's transaction: payment → PAID
+   * (+paidAt/capturedAt), status history, CAPTURE transaction. The
+   * application update is the caller's job in the same tx, which is why
+   * this deliberately does NOT call updateApplicationAfterPayment — that
+   * would risk a second status-history row.
+   */
+  async recordCaptureWithinTx(
+    tx: any,
+    payment: { id: string; paymentStatus: PaymentStatus },
+    userId: string,
+    providerReference?: string,
+  ): Promise<void> {
+    const now = new Date();
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: { paymentStatus: PaymentStatus.PAID, paidAt: now, capturedAt: now },
+    });
+    await tx.paymentStatusHistory.create({
+      data: {
+        paymentId: payment.id,
+        oldStatus: payment.paymentStatus,
+        newStatus: PaymentStatus.PAID,
+        changeReason: 'Payment captured (operator accepted the application)',
+        changedByUserId: userId,
+        changedBySystem: false,
+      },
+    });
+    await tx.paymentTransaction.create({
+      data: {
+        paymentId: payment.id,
+        transactionType: 'CAPTURE' as any,
+        transactionStatus: 'SUCCESS',
+        internalTransactionReference: this.generateTransactionReference(),
+        requestPayloadJson: { providerReference },
+        processedAt: now,
+      },
+    });
+  }
+
+  /**
+   * Release DB writes inside the CALLER's transaction: payment →
+   * CANCELLED (+cancelledAt), status history, VOID transaction. Nothing
+   * is charged.
+   */
+  async recordReleaseWithinTx(
+    tx: any,
+    payment: { id: string; paymentStatus: PaymentStatus },
+    userId: string,
+    reason: string,
+    providerReference?: string,
+  ): Promise<void> {
+    const now = new Date();
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: { paymentStatus: PaymentStatus.CANCELLED, cancelledAt: now },
+    });
+    await tx.paymentStatusHistory.create({
+      data: {
+        paymentId: payment.id,
+        oldStatus: payment.paymentStatus,
+        newStatus: PaymentStatus.CANCELLED,
+        changeReason: `Authorization released (no charge): ${reason}`,
+        changedByUserId: userId,
+        changedBySystem: false,
+      },
+    });
+    await tx.paymentTransaction.create({
+      data: {
+        paymentId: payment.id,
+        transactionType: 'VOID' as any,
+        transactionStatus: 'SUCCESS',
+        internalTransactionReference: this.generateTransactionReference(),
+        requestPayloadJson: { providerReference, reason },
+        processedAt: now,
+      },
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Stage 3 Step 4 — second-decision refund helpers.
+  //
+  // Same split as capture/release: the caller validates, runs the
+  // provider refund OUTSIDE its transaction, then records every DB write
+  // INSIDE it. `selectiveRefund` below stays as the standalone admin
+  // action (it opens its own transaction via recordPaymentAction), so it
+  // must NOT be called from inside another transaction.
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * Load the application's captured payment (PAID or already partially
+   * refunded). This is the "was the money actually taken?" gate for the
+   * reject-with-refund path.
+   */
+  async getCapturedPaymentForApplication(applicationId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: {
+        applicationId,
+        deletedAt: null,
+        paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!payment) {
+      throw new BadRequestException('No captured payment for this application', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message:
+            'This application has no captured (PAID) payment, so there is nothing to refund.',
+        },
+      ]);
+    }
+    return payment;
+  }
+
+  /**
+   * Reject a double refund of the same portion. Kept separate from the
+   * provider call so the caller can validate before anything external
+   * happens.
+   */
+  assertRefundablePortions(
+    payment: { governmentFeeRefundedAt?: Date | null; serviceFeeRefundedAt?: Date | null },
+    portions: { government?: boolean; service?: boolean },
+  ): void {
+    if (portions.government && payment.governmentFeeRefundedAt) {
+      throw new BadRequestException('Government portion already refunded', [
+        {
+          reason: ErrorCodes.BAD_REQUEST,
+          message: 'The government fee has already been refunded.',
+        },
+      ]);
+    }
+    if (portions.service && payment.serviceFeeRefundedAt) {
+      throw new BadRequestException('Service portion already refunded', [
+        { reason: ErrorCodes.BAD_REQUEST, message: 'The service fee has already been refunded.' },
+      ]);
+    }
+  }
+
+  /** External provider refund per selected portion. No DB writes. */
+  async runProviderRefund(
+    payment: {
+      id: string;
+      paymentProviderKey: string;
+      governmentFeeAmount: any;
+      serviceFeeAmount: any;
+      currencyCode: string;
+    },
+    portions: { government?: boolean; service?: boolean },
+  ): Promise<void> {
+    const provider = this.getProvider(payment.paymentProviderKey);
+    if (portions.government) {
+      const r = await provider.refund({
+        paymentId: payment.id,
+        amount: Number(payment.governmentFeeAmount),
+        currency: payment.currencyCode,
+      });
+      if (!r.success) {
+        throw new BadRequestException('Government refund failed', [
+          {
+            reason: ErrorCodes.BAD_REQUEST,
+            message: r.errorMessage || 'Provider declined the refund.',
+          },
+        ]);
+      }
+    }
+    if (portions.service) {
+      const r = await provider.refund({
+        paymentId: payment.id,
+        amount: Number(payment.serviceFeeAmount),
+        currency: payment.currencyCode,
+      });
+      if (!r.success) {
+        throw new BadRequestException('Service refund failed', [
+          {
+            reason: ErrorCodes.BAD_REQUEST,
+            message: r.errorMessage || 'Provider declined the refund.',
+          },
+        ]);
+      }
+    }
+  }
+
+  /**
+   * Refund DB writes inside the CALLER's transaction: portion
+   * timestamps, payment status (PARTIALLY_REFUNDED or REFUNDED), status
+   * history and a REFUND transaction row. Returns the resulting payment
+   * status so the caller can sync `application.paymentStatus` in the
+   * same transaction.
+   */
+  async recordRefundWithinTx(
+    tx: any,
+    payment: {
+      id: string;
+      paymentStatus: PaymentStatus;
+      governmentFeeAmount: any;
+      serviceFeeAmount: any;
+      governmentFeeRefundedAt?: Date | null;
+      serviceFeeRefundedAt?: Date | null;
+    },
+    portions: { government?: boolean; service?: boolean },
+    userId: string,
+    reason?: string,
+  ): Promise<PaymentStatus> {
+    const now = new Date();
+    const wantGov = portions.government === true;
+    const wantSvc = portions.service === true;
+
+    const govRefunded = !!payment.governmentFeeRefundedAt || wantGov;
+    const svcRefunded = !!payment.serviceFeeRefundedAt || wantSvc;
+    // government + service are the two split portions; both refunded →
+    // fully REFUNDED, otherwise PARTIALLY_REFUNDED.
+    const newStatus =
+      govRefunded && svcRefunded ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED;
+
+    const data: Record<string, any> = { paymentStatus: newStatus };
+    if (wantGov) data.governmentFeeRefundedAt = now;
+    if (wantSvc) data.serviceFeeRefundedAt = now;
+
+    await tx.payment.update({ where: { id: payment.id }, data });
+
+    const label = [wantGov && 'government', wantSvc && 'service'].filter(Boolean).join(', ');
+    await tx.paymentStatusHistory.create({
+      data: {
+        paymentId: payment.id,
+        oldStatus: payment.paymentStatus,
+        newStatus,
+        changeReason: reason
+          ? `Selective refund (${label}): ${reason}`
+          : `Selective refund (${label})`,
+        changedByUserId: userId,
+        changedBySystem: false,
+      },
+    });
+
+    await tx.paymentTransaction.create({
+      data: {
+        paymentId: payment.id,
+        transactionType: 'REFUND' as any,
+        transactionStatus: 'SUCCESS',
+        internalTransactionReference: this.generateTransactionReference(),
+        requestPayloadJson: {
+          portions: { government: wantGov, service: wantSvc },
+          governmentAmount: wantGov ? Number(payment.governmentFeeAmount) : undefined,
+          serviceAmount: wantSvc ? Number(payment.serviceFeeAmount) : undefined,
+          reason,
+        },
+        processedAt: now,
+      },
+    });
+
+    return newStatus;
+  }
+
   /**
    * Selective refund — refund the government and/or service fee portion(s)
    * in FULL (no arbitrary partial amounts). Valid only from a captured
    * payment (PAID or PARTIALLY_REFUNDED). Stamps the per-portion marker;
    * status becomes REFUNDED once both split portions are refunded, else
    * PARTIALLY_REFUNDED. Expedited fee is not separately refundable here.
+   *
+   * Standalone admin action — opens its own transaction. The reject flow
+   * uses the tx-aware helpers above instead.
    */
   async selectiveRefund(
     paymentId: string,
@@ -1292,7 +1665,11 @@ export class PaymentsService {
       });
 
       if (newStatus === PaymentStatus.PAID) {
-        await this.updateApplicationAfterPayment(prisma, payment.applicationId);
+        await this.updateApplicationAfterPayment(
+          prisma,
+          payment.applicationId,
+          PaymentStatus.PAID,
+        );
       }
     });
 
@@ -1300,22 +1677,7 @@ export class PaymentsService {
 
     // M11.5 — Telegram notifications. Fired AFTER the transaction
     // commits so a delivery failure can't roll back a real payment.
-    if (newStatus === PaymentStatus.PAID) {
-      void this.notificationEmitter.emit('payment.received', {
-        paymentId,
-        applicationId: payment.applicationId,
-        paymentReference: payment.paymentReference,
-        amount: payment.totalAmount?.toString?.(),
-        currency: payment.currencyCode,
-        provider: payment.paymentProviderKey,
-      });
-      // M11.10 (BUG 3) — Customer payment confirmation email. Fires
-      // post-commit so a delivery failure never rolls back a real
-      // payment; we log + audit the result either way (see
-      // sendPaymentSuccessEmail). Don't await here so a slow SMTP
-      // hop can't bottleneck the callback handler.
-      void this.sendPaymentSuccessEmail(paymentId);
-    } else if (newStatus === PaymentStatus.FAILED) {
+    if (newStatus === PaymentStatus.FAILED) {
       void this.notificationEmitter.emit('payment.failed', {
         paymentId,
         applicationId: payment.applicationId,
@@ -1451,9 +1813,21 @@ export class PaymentsService {
   }
 
   /**
-   * Update application status after successful payment
+   * Update the application after a successful payment step.
+   *
+   * Stage 3 — `paymentStatus` is now a PARAMETER, not a hardcoded PAID.
+   * The customer pre-authorizes (AUTHORIZED) and the operator captures at
+   * Accept (PAID); recording a false PAID at authorize time would tell the
+   * admin panel funds were settled when they are only held.
+   *
+   * The UNPAID→SUBMITTED move fires on either status — that is what takes
+   * the application out of the payment-window sweep's reach.
    */
-  private async updateApplicationAfterPayment(prisma: any, applicationId: string): Promise<void> {
+  private async updateApplicationAfterPayment(
+    prisma: any,
+    applicationId: string,
+    paymentStatus: PaymentStatus = PaymentStatus.PAID,
+  ): Promise<void> {
     const application = await prisma.application.findUnique({
       where: { id: applicationId },
     });
@@ -1462,7 +1836,7 @@ export class PaymentsService {
 
     // Update application payment status and move to SUBMITTED if in UNPAID
     const updateData: any = {
-      paymentStatus: PaymentStatus.PAID,
+      paymentStatus,
     };
 
     // If application is in UNPAID status, move to SUBMITTED.
@@ -1480,20 +1854,27 @@ export class PaymentsService {
       data: updateData,
     });
 
-    // Create application status history if status changed
+    // Create application status history if status changed. Only the
+    // UNPAID→SUBMITTED transition writes a row, so a later capture (the
+    // application is already SUBMITTED by then) cannot duplicate it.
     if (application.currentStatus === ApplicationStatus.UNPAID) {
       await prisma.applicationStatusHistory.create({
         data: {
           applicationId,
           oldStatus: ApplicationStatus.UNPAID,
           newStatus: ApplicationStatus.SUBMITTED,
-          note: 'Payment completed, application submitted',
+          note:
+            paymentStatus === PaymentStatus.AUTHORIZED
+              ? 'Payment authorized (funds held), application submitted'
+              : 'Payment completed, application submitted',
           changedBySystem: true,
         },
       });
     }
 
-    this.logger.log(`Application ${applicationId} updated after payment`);
+    this.logger.log(
+      `Application ${applicationId} updated after payment (${paymentStatus})`,
+    );
   }
 
   /**

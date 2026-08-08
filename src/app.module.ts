@@ -50,7 +50,6 @@ import { ResultFilesModule } from './modules/resultFiles/result-files.module';
 import { FormRendererModule } from './modules/formRenderer/form-renderer.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { CustomerPortalModule } from './modules/customerPortal/customer-portal.module';
-import { StatusWorkflowModule } from './modules/statusWorkflow/status-workflow.module';
 
 // Payment modules
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -143,7 +142,6 @@ import { HelpArticlesModule } from './modules/helpArticles/help-articles.module'
     FormRendererModule,
     DocumentsModule,
     CustomerPortalModule,
-    StatusWorkflowModule,
     ResultFilesModule,
 
     // Payments

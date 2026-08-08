@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { EmailService } from '../email/email.service';
 import { NotificationEmitterService } from '../notifications/notification-emitter.service';
+import { ApplicationsService } from '../applications/applications.service';
 import type {
   CreateApplicantDto,
   UpdateApplicantDto,
@@ -58,6 +59,8 @@ export class ApplicantsService {
     private readonly auditLogsService: AuditLogsService,
     private readonly emailService: EmailService,
     private readonly notificationEmitter: NotificationEmitterService,
+    @Inject(forwardRef(() => ApplicationsService))
+    private readonly applicationsService: ApplicationsService,
   ) {}
 
   /**
@@ -552,13 +555,10 @@ export class ApplicantsService {
     // M11.14 (BUG UU) — When ONE applicant changes status, recompute
     // the booking's aggregate `currentStatus` so the admin list, the
     // customer /track page, and the dashboard tiles all reflect the
-    // mixed-state correctly. Logic: if every applicant agrees, the
-    // application takes that status verbatim. If anyone is still
-    // waiting on docs, NEED_DOCS wins (the most urgent state).
-    // Otherwise: APPROVED if everyone is at or past APPROVED, else
-    // IN_REVIEW for any other mixed state. The recompute is wrapped
-    // in best-effort try/catch so a downstream Prisma error never
-    // unwinds the user-facing status change.
+    // mixed state correctly. See `aggregateApplicantStatuses` for the
+    // mapping. The recompute is wrapped in best-effort try/catch so a
+    // downstream Prisma error never unwinds the user-facing status
+    // change.
     try {
       await this.recomputeApplicationStatus(applicant.applicationId, userId);
     } catch (err) {
@@ -591,19 +591,12 @@ export class ApplicantsService {
    * status change so a mixed-decision booking surfaces the right
    * label without forcing the operator to manage two statuses.
    *
-   * Rules, in priority order:
-   *   1. If every applicant has the same status → that status wins.
-   *   2. Any applicant in NEED_DOCS → application = NEED_DOCS
-   *      (the customer-facing urgency state).
-   *   3. Every applicant is in {APPROVED, READY_TO_DOWNLOAD} →
-   *      application = APPROVED (ready to issue).
-   *   4. Otherwise → IN_REVIEW (mixed states still under operator
-   *      decision).
-   *
-   * The application is left alone (no-op) when its currentStatus is
-   * already the computed value, so the recompute is cheap to call
-   * even on bulk transitions where all applicants land on the same
-   * status one after another.
+   * The mapping itself lives in `aggregateApplicantStatuses`. The
+   * application is left alone (no-op) when its currentStatus already
+   * equals the computed value, so the recompute is cheap to call even
+   * on bulk transitions where every applicant lands on the same status
+   * one after another — and it only ever writes over the operator-owned
+   * statuses (see RECOMPUTABLE_STATUSES).
    */
   private async recomputeApplicationStatus(
     applicationId: string,
@@ -615,50 +608,106 @@ export class ApplicantsService {
     });
     if (applicants.length === 0) return;
 
-    const statuses = applicants.map((a) => a.status);
-    const unique = Array.from(new Set(statuses));
-    let aggregate: ApplicantStatus;
-    if (unique.length === 1) {
-      aggregate = unique[0];
-    } else if (statuses.includes(ApplicantStatus.NEED_DOCS)) {
-      aggregate = ApplicantStatus.NEED_DOCS;
-    } else if (
-      statuses.every(
-        (s) => s === ApplicantStatus.APPROVED || s === ApplicantStatus.READY_TO_DOWNLOAD,
-      )
-    ) {
-      aggregate = ApplicantStatus.APPROVED;
-    } else {
-      aggregate = ApplicantStatus.IN_REVIEW;
-    }
+    const aggregate = this.aggregateApplicantStatuses(applicants.map((a) => a.status));
 
     const application = await this.prisma.application.findFirst({
       where: { id: applicationId, deletedAt: null },
       select: { currentStatus: true },
     });
     if (!application) return;
-    // ApplicantStatus is a strict subset of ApplicationStatus for the
-    // values we use here; a cast through string keeps Prisma happy.
-    const aggregateAsApp = aggregate as unknown as ApplicationStatus;
-    if (application.currentStatus === aggregateAsApp) return;
+
+    // Only recompute once the operator has taken the booking on. The
+    // pre-decision states (DRAFT/UNPAID/EXPIRED/SUBMITTED) belong to the
+    // customer + payment flow, and the terminal CANCELLED must not be
+    // resurrected — a per-applicant edit must never drag an application
+    // forwards past the accept decision or backwards out of it.
+    if (!ApplicantsService.RECOMPUTABLE_STATUSES.includes(application.currentStatus)) {
+      return;
+    }
+    if (application.currentStatus === aggregate) return;
 
     await this.prisma.application.update({
       where: { id: applicationId },
-      data: { currentStatus: aggregateAsApp },
+      data: { currentStatus: aggregate },
     });
     await this.prisma.applicationStatusHistory.create({
       data: {
         applicationId,
         oldStatus: application.currentStatus,
-        newStatus: aggregateAsApp,
-        note: '[BUG UU] aggregate recomputed from applicant statuses',
+        newStatus: aggregate,
+        note: 'Aggregate recomputed from applicant statuses',
         changedByUserId: actorUserId,
         changedBySystem: true,
       },
     });
     this.logger.log(
-      `[BUG UU] application ${applicationId} aggregate: ${application.currentStatus} → ${aggregateAsApp}`,
+      `Application ${applicationId} aggregate: ${application.currentStatus} → ${aggregate}`,
     );
+  }
+
+  /**
+   * Application statuses the aggregate recompute is allowed to write
+   * over. Anything else is owned by the customer/payment flow or is
+   * terminal.
+   */
+  private static readonly RECOMPUTABLE_STATUSES: ApplicationStatus[] = [
+    ApplicationStatus.PROCESSING,
+    ApplicationStatus.APPROVED,
+    ApplicationStatus.REJECTED,
+    ApplicationStatus.READY_TO_DOWNLOAD,
+  ];
+
+  /**
+   * Stage 3 — explicit ApplicantStatus[] → ApplicationStatus mapping.
+   *
+   * Replaces the old `as unknown as` cast, which silently relied on the
+   * two enums sharing member names. They no longer do, so the mapping
+   * is spelled out and the switch is exhaustive: adding a value to
+   * ApplicantStatus without handling it here is a COMPILE error, not a
+   * runtime surprise.
+   *
+   *   any applicant still DRAFT/SUBMITTED   → PROCESSING (work in flight)
+   *   all READY_TO_DOWNLOAD                 → READY_TO_DOWNLOAD
+   *   all APPROVED (or APPROVED + issued)   → APPROVED
+   *   all REJECTED                          → REJECTED
+   *   mixed approve/reject decisions        → PROCESSING
+   */
+  private aggregateApplicantStatuses(statuses: ApplicantStatus[]): ApplicationStatus {
+    let pending = false;
+    let approved = false;
+    let rejected = false;
+    let issued = false;
+
+    for (const status of statuses) {
+      switch (status) {
+        case ApplicantStatus.DRAFT:
+        case ApplicantStatus.SUBMITTED:
+          pending = true;
+          break;
+        case ApplicantStatus.APPROVED:
+          approved = true;
+          break;
+        case ApplicantStatus.REJECTED:
+          rejected = true;
+          break;
+        case ApplicantStatus.READY_TO_DOWNLOAD:
+          issued = true;
+          break;
+        default: {
+          // Exhaustiveness guard — unreachable while the switch covers
+          // every ApplicantStatus member.
+          const unhandled: never = status;
+          throw new Error(`Unhandled ApplicantStatus: ${String(unhandled)}`);
+        }
+      }
+    }
+
+    if (pending) return ApplicationStatus.PROCESSING;
+    if (issued && !approved && !rejected) return ApplicationStatus.READY_TO_DOWNLOAD;
+    if (rejected && !approved && !issued) return ApplicationStatus.REJECTED;
+    if ((approved || issued) && !rejected) return ApplicationStatus.APPROVED;
+    // Mixed approve/reject — still an operator-owned booking.
+    return ApplicationStatus.PROCESSING;
   }
 
   /**
@@ -1039,27 +1088,24 @@ export class ApplicantsService {
       }),
     ]);
 
-    // Send the customer notification email — fire-and-forget; an SMTP
-    // hiccup shouldn't fail the issuance request.
-    if (app.portalIdentity?.email) {
-      const applicationRef = app.applicants[0]?.applicationCode ?? applicationId.slice(0, 8).toUpperCase();
-      this.emailService
-        .sendTemplatedEmail({
-          to: app.portalIdentity.email,
-          templateKey: 'application.ready_to_download',
-          variables: {
-            applicationRef,
-            customerName: app.applicants[0]?.email ?? 'Applicant',
-          },
-          relatedEntity: 'Application',
-          relatedEntityId: applicationId,
-        })
-        .catch((err) =>
-          this.logger.error(
-            `Failed to send ready_to_download email for app ${applicationId}: ${err}`,
-          ),
-        );
-    }
+    // Stage 3 Step 4 — customer notification. This used to hand-roll a
+    // sendTemplatedEmail with `{applicationRef, customerName}`, but the
+    // application.ready_to_download template reads
+    // `{fullName, destinationCountry, visaType, applicationCode, ctaUrl}`
+    // — so every one of those rendered empty and the customer received a
+    // dead `href=""` download button, sent only to the portal identity.
+    // We now reuse the same sender the manual admin path uses: it mints a
+    // per-recipient signed ctaUrl (log in → download; never an
+    // attachment) and fans out to the portal identity PLUS every
+    // applicant, deduped. Fire-and-forget: an SMTP hiccup must not fail
+    // the issuance request.
+    this.applicationsService
+      .notifyStatusChange(applicationId, 'Ready to Download')
+      .catch((err) =>
+        this.logger.error(
+          `Failed to send ready_to_download email for app ${applicationId}: ${err}`,
+        ),
+      );
 
     return ApplicationStatus.READY_TO_DOWNLOAD;
   }

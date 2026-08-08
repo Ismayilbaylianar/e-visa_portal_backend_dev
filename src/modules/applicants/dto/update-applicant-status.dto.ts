@@ -6,7 +6,7 @@ export class UpdateApplicantStatusDto {
   @ApiProperty({
     description: 'New applicant status',
     enum: ApplicantStatus,
-    example: ApplicantStatus.IN_REVIEW,
+    example: ApplicantStatus.SUBMITTED,
   })
   @IsEnum(ApplicantStatus)
   status: ApplicantStatus;

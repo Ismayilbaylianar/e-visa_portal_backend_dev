@@ -303,21 +303,23 @@ export class PaymentsPortalController {
   /**
    * M11.13 (BUG S) — Confirm a mock-provider payment.
    *
-   * Customer-side payment page calls this between `initialize` and
-   * `submit` so the payment row actually flips to PAID (and the
-   * application's paymentStatus cascades + the payment.success email
-   * fires). Real-provider integrations (Payriff) will NOT use this
-   * endpoint — they go through the proper webhook callback path.
-   * Service-layer guard enforces `paymentProviderKey === 'mockProvider'`.
+   * Stage 3 — this now AUTHORIZES (holds funds); it no longer captures.
+   * The customer pre-authorizes, the application moves UNPAID→SUBMITTED,
+   * and the operator captures at Accept. The old straight-to-PAID path
+   * (`confirmMockPayment`) is deliberately no longer reachable from the
+   * portal — a customer must not be able to drive a payment to PAID,
+   * because PAID is what "the operator accepted and took the money"
+   * means. Kept as an alias of `confirm-mock-authorize` so the customer
+   * payment page needs no change.
    */
   @Post(':paymentId/confirm-mock')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Confirm mock payment',
+    summary: 'Confirm (authorize) mock payment',
     description:
-      "Marks a mock-provider payment as PAID. Idempotent (returns the existing row if already PAID). Rejects when the provider isn't 'mockProvider' or the session has expired.",
+      "Marks a mock-provider payment as AUTHORIZED (funds held, not captured) and moves the application UNPAID→SUBMITTED. Idempotent. Rejects when the provider isn't 'mockProvider' or the session has expired.",
   })
-  @ApiResponse({ status: 200, description: 'Payment confirmed', type: PaymentResponseDto })
+  @ApiResponse({ status: 200, description: 'Payment authorized', type: PaymentResponseDto })
   @ApiResponse({ status: 400, description: 'Wrong provider, wrong state, or expired session' })
   @ApiResponse({ status: 403, description: 'Caller does not own the application' })
   @ApiResponse({ status: 404, description: 'Payment not found' })
@@ -325,14 +327,13 @@ export class PaymentsPortalController {
     @Param() params: PaymentIdParamDto,
     @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
   ): Promise<PaymentResponseDto> {
-    return this.paymentsService.confirmMockPayment(params.paymentId, portalIdentity.id);
+    return this.paymentsService.confirmMockAuthorize(params.paymentId, portalIdentity.id);
   }
 
   /**
-   * Payment Stage 2 — dev hook to mock-AUTHORIZE (hold funds) instead of
-   * capturing. The live customer pay path still uses `confirm-mock`
-   * (→ PAID); this exists for the authorize/capture mechanism +
-   * verification. Stage 3 will route the customer pay through here.
+   * Payment Stage 2 — explicit mock-AUTHORIZE endpoint. Stage 3 routes
+   * the customer pay through the same service method (see confirm-mock
+   * above); this remains for direct/mechanism testing.
    */
   @Post(':paymentId/confirm-mock-authorize')
   @HttpCode(HttpStatus.OK)

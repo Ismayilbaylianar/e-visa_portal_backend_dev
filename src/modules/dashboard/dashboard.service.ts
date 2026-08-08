@@ -18,8 +18,7 @@ export class DashboardService {
       draftApplications,
       unpaidApplications,
       submittedApplications,
-      inReviewApplications,
-      needDocsApplications,
+      processingApplications,
       approvedApplications,
       rejectedApplications,
       readyToDownloadApplications,
@@ -43,15 +42,11 @@ export class DashboardService {
       this.prisma.application.count({
         where: { currentStatus: ApplicationStatus.SUBMITTED, deletedAt: null },
       }),
+      // Stage 3 — PROCESSING (operator accepted, visa being prepared)
+      // feeds the admin "Pending Action" widget alongside SUBMITTED,
+      // and READY_TO_DOWNLOAD feeds the "Ready to Send" widget.
       this.prisma.application.count({
-        where: { currentStatus: ApplicationStatus.IN_REVIEW, deletedAt: null },
-      }),
-      // M11.13 (BUG V) — surface NEED_DOCS + READY_TO_DOWNLOAD on the
-      // dashboard summary so the admin home can render the "Pending
-      // Action" widget (SUBMITTED + IN_REVIEW + NEED_DOCS) and a
-      // future "Ready to Send" widget (READY_TO_DOWNLOAD).
-      this.prisma.application.count({
-        where: { currentStatus: ApplicationStatus.NEED_DOCS, deletedAt: null },
+        where: { currentStatus: ApplicationStatus.PROCESSING, deletedAt: null },
       }),
       this.prisma.application.count({
         where: { currentStatus: ApplicationStatus.APPROVED, deletedAt: null },
@@ -96,8 +91,7 @@ export class DashboardService {
       draftApplications,
       unpaidApplications,
       submittedApplications,
-      inReviewApplications,
-      needDocsApplications,
+      processingApplications,
       approvedApplications,
       rejectedApplications,
       readyToDownloadApplications,

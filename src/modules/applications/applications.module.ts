@@ -12,6 +12,7 @@ import { ApplicantsModule } from '../applicants/applicants.module';
 import { CustomerPortalModule } from '../customerPortal/customer-portal.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SettingsModule } from '../settings/settings.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
   imports: [
@@ -30,6 +31,8 @@ import { SettingsModule } from '../settings/settings.module';
     NotificationsModule,
     // M11.10 — read maintenance toggle in applications.create() guard.
     SettingsModule,
+    // Stage 3 — accept captures / cancel releases the held payment.
+    PaymentsModule,
   ],
   controllers: [ApplicationsAdminController, ApplicationsPortalController],
   // PaymentTimeoutService runs the 3-hour payment-window sweep via

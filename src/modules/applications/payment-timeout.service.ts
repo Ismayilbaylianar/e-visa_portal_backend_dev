@@ -114,6 +114,16 @@ export class PaymentTimeoutService implements OnModuleInit {
         deletedAt: null,
         paymentWarningSentAt: null,
         paymentDeadlineAt: { gte: now, lte: horizon },
+        // Stage 3 (defensive) — never chase an application whose funds
+        // are already held or captured. The pay flip moves those to
+        // SUBMITTED so they are out of scope anyway; this makes it
+        // impossible to warn/expire one if that ever regresses.
+        payments: {
+          none: {
+            deletedAt: null,
+            paymentStatus: { in: [PaymentStatus.AUTHORIZED, PaymentStatus.PAID] },
+          },
+        },
       },
       include: this.recipientInclude(),
       take: SWEEP_BATCH,
@@ -149,6 +159,15 @@ export class PaymentTimeoutService implements OnModuleInit {
         currentStatus: ApplicationStatus.UNPAID,
         deletedAt: null,
         paymentDeadlineAt: { lt: now },
+        // Stage 3 (defensive) — an authorized/captured payment must never
+        // be expired: the customer would get "no charge was made" while
+        // the hold stays live on their card.
+        payments: {
+          none: {
+            deletedAt: null,
+            paymentStatus: { in: [PaymentStatus.AUTHORIZED, PaymentStatus.PAID] },
+          },
+        },
       },
       include: this.recipientInclude(),
       take: SWEEP_BATCH,
@@ -157,17 +176,64 @@ export class PaymentTimeoutService implements OnModuleInit {
     let count = 0;
     for (const app of overdue) {
       try {
-        await this.prisma.application.update({
-          where: { id: app.id },
-          data: {
-            deletedAt: new Date(),
-            expiredReason: EXPIRED_REASON,
-            // Reflect the cancellation on the payment dimension too so
-            // admin reports don't show a "PENDING" payment on a
-            // cancelled application. Harmless — the row is soft-deleted.
-            paymentStatus: PaymentStatus.EXPIRED,
-          },
+        // Stage 3 Step 5 — expire to a STATUS instead of soft-deleting.
+        //
+        // The old behaviour set `deletedAt`, so the application simply
+        // vanished: /track and /me showed nothing and the customer was
+        // left guessing. It now becomes EXPIRED and stays visible, where
+        // the customer-facing copy ("your payment window expired —
+        // please start a new application") is already wired up.
+        //
+        // All the writes go in one transaction so an application can
+        // never end up EXPIRED without its history row, or vice versa.
+        await this.prisma.$transaction(async tx => {
+          await tx.application.update({
+            where: { id: app.id },
+            data: {
+              currentStatus: ApplicationStatus.EXPIRED,
+              // Provenance — distinguishes a timeout expiry from any
+              // other route into EXPIRED we might add later.
+              expiredReason: EXPIRED_REASON,
+              // Truthful on both dimensions: nothing was ever held or
+              // captured (the sweep skips AUTHORIZED/PAID), so the
+              // payment attempt expired along with the window.
+              paymentStatus: PaymentStatus.EXPIRED,
+            },
+          });
+
+          // The soft-delete path wrote no history at all. Every other
+          // transition in this lifecycle is auditable, so this one is too.
+          await tx.applicationStatusHistory.create({
+            data: {
+              applicationId: app.id,
+              oldStatus: ApplicationStatus.UNPAID,
+              newStatus: ApplicationStatus.EXPIRED,
+              note: 'Payment window expired before payment was completed',
+              changedBySystem: true,
+            },
+          });
+
+          // Leave no half-open payment attempt behind: an application
+          // reading EXPIRED while its payment row still says CREATED /
+          // PENDING is the kind of mismatch that makes admin reports
+          // lie. Only un-started attempts are touched — anything
+          // AUTHORIZED or PAID is excluded from the sweep entirely.
+          await tx.payment.updateMany({
+            where: {
+              applicationId: app.id,
+              deletedAt: null,
+              paymentStatus: {
+                in: [
+                  PaymentStatus.CREATED,
+                  PaymentStatus.PENDING,
+                  PaymentStatus.PROCESSING,
+                ],
+              },
+            },
+            data: { paymentStatus: PaymentStatus.EXPIRED },
+          });
         });
+
         await this.send(app, 'payment.window.expired');
         count += 1;
       } catch (e) {

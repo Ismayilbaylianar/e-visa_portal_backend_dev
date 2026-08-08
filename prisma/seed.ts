@@ -84,8 +84,6 @@ const PERMISSIONS = [
   { moduleKey: 'applications', actionKey: 'review', description: 'Review and process applications' },
   { moduleKey: 'applications', actionKey: 'approve', description: 'Approve a submitted application' },
   { moduleKey: 'applications', actionKey: 'reject', description: 'Reject a submitted application with a reason' },
-  { moduleKey: 'applications', actionKey: 'request_documents', description: 'Request additional or corrected documents from applicant' },
-  { moduleKey: 'applications', actionKey: 'start_review', description: 'Move application from SUBMITTED to IN_REVIEW (claim ownership)' },
 
   // Documents module (Modul 6b prep — admin endpoints exist but were unguarded
   // before the Permission Hardening Pack. PII-sensitive surface.)
@@ -163,7 +161,6 @@ const ROLES = [
       'applications.read', 'applications.update', 'applications.review',
       // Modul 6b prep — review-action permissions (admin can approve/reject/request docs/start review)
       'applications.approve', 'applications.reject',
-      'applications.request_documents', 'applications.start_review',
       // Modul 6b prep — documents (admin can read/download/review/verify; hard_delete is super-only)
       'documents.read', 'documents.download', 'documents.review', 'documents.verify',
       'payments.read', 'payments.update', 'payments.manage',
@@ -198,7 +195,6 @@ const ROLES = [
       'applications.read', 'applications.update', 'applications.review',
       // Modul 6b prep — operator can run day-to-day review actions
       // (request docs, claim a queue item) but NOT approve / reject final.
-      'applications.request_documents', 'applications.start_review',
       // Modul 6b prep — operator works documents during review
       // (read/download/review). hard_delete + verify stay above operator.
       'documents.read', 'documents.download', 'documents.review',
@@ -1065,6 +1061,47 @@ async function main() {
         <p style="font-size:13px;color:#6b7280;">{{applicationCode}} — müştəri tələb olunan sənədləri yenidən təqdim etdi: {{documentsList}}.</p>`,
       ),
       bodyText: `Hi {{adminName}},\n\nThe customer has resubmitted the documents you requested for application {{applicationCode}}. The application is now back in the review queue.\n\nApplicant(s): {{applicantNames}}\nResubmitted: {{documentsList}}\n\nOpen in admin: {{appLink}}\n\n— E-Visa Global system`,
+    },
+    {
+      templateKey: 'application.processing_started',
+      subject: "We've started processing your visa — {{applicationCode}}",
+      description:
+        'Stage 3 — sent when an operator accepts an application (payment captured, status PROCESSING). Variables: fullName, applicationCode, destinationCountry, visaType, ctaUrl, notes',
+      variables: ['fullName', 'applicationCode', 'destinationCountry', 'visaType', 'ctaUrl', 'notes'],
+      bodyHtml: wrap(
+        'Processing started',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#1d4ed8;">Your visa is being prepared</h1>
+        <p>Hi {{fullName}},</p>
+        <p>Good news — we&rsquo;ve accepted your application for <strong>{{destinationCountry}}</strong> ({{visaType}}) and started preparing your visa. Your payment has now been processed.</p>
+        <p style="background-color:#eff6ff;border-left:4px solid #1d4ed8;padding:12px 16px;font-family:monospace;font-size:16px;color:#0f172a;"><strong>{{applicationCode}}</strong></p>
+        <p>We&rsquo;ll email you again as soon as your visa is ready to download. No action is needed from you right now.</p>
+        <p>{{notes}}</p>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="{{ctaUrl}}" style="display:inline-block;background-color:#1d4ed8;color:#ffffff;font-weight:600;padding:12px 24px;border-radius:6px;text-decoration:none;">Track your application</a>
+        </p>`,
+      ),
+      bodyText: `Hi {{fullName}},\n\nGood news - we have accepted your application for {{destinationCountry}} ({{visaType}}) and started preparing your visa. Your payment has now been processed.\n\nApplication: {{applicationCode}}\n\nWe will email you again as soon as your visa is ready to download.\n\n{{notes}}\n\nTrack your application: {{ctaUrl}}`,
+    },
+    {
+      templateKey: 'application.cancelled',
+      subject: 'Your application could not be processed — {{applicationCode}}',
+      description:
+        'Stage 3 — sent when an operator cancels at the first decision: authorization released in full, nothing charged. Variables: fullName, applicationCode, destinationCountry, visaType, ctaUrl, notes (the reason)',
+      variables: ['fullName', 'applicationCode', 'destinationCountry', 'visaType', 'ctaUrl', 'notes'],
+      bodyHtml: wrap(
+        'Application cancelled',
+        `<h1 style="margin:0 0 16px;font-size:22px;color:#b91c1c;">We couldn&rsquo;t process this application</h1>
+        <p>Hi {{fullName}},</p>
+        <p>We reviewed your application for <strong>{{destinationCountry}}</strong> ({{visaType}}) and found an issue that prevents us from processing it.</p>
+        <p style="background-color:#fef2f2;border-left:4px solid #b91c1c;padding:12px 16px;color:#0f172a;"><strong>Reason:</strong><br/>{{notes}}</p>
+        <p style="background-color:#ecfdf5;border-left:4px solid #059669;padding:12px 16px;color:#065f46;"><strong>You have not been charged.</strong> The full amount held on your card has been released.</p>
+        <p>You&rsquo;re welcome to correct the issue and submit a <strong>new application</strong> — this one can&rsquo;t be reopened.</p>
+        <p style="font-family:monospace;font-size:14px;color:#6b7280;">Reference: {{applicationCode}}</p>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="{{ctaUrl}}" style="display:inline-block;background-color:#0f172a;color:#ffffff;font-weight:600;padding:12px 24px;border-radius:6px;text-decoration:none;">Start a new application</a>
+        </p>`,
+      ),
+      bodyText: `Hi {{fullName}},\n\nWe reviewed your application for {{destinationCountry}} ({{visaType}}) and found an issue that prevents us from processing it.\n\nReason:\n{{notes}}\n\nYou have NOT been charged - the full amount held on your card has been released.\n\nYou are welcome to correct the issue and submit a NEW application; this one cannot be reopened.\n\nReference: {{applicationCode}}\nStart a new application: {{ctaUrl}}`,
     },
     {
       templateKey: 'payment.success',

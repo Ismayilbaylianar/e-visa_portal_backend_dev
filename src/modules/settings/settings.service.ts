@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { UpdateSettingsDto, SettingsResponseDto } from './dto';
+import { DEFAULT_PAYMENT_TIMEOUT_HOURS } from '@/common/constants';
 
 /**
  * Module 4 — Settings (singleton).
@@ -69,6 +70,27 @@ export class SettingsService {
     };
     this.maintenanceCache = { state, cachedAtMs: now };
     return state;
+  }
+
+  /**
+   * Stage 3 Step 5 — the payment-window length, in hours.
+   *
+   * This is the ONE source of truth for how long a customer has to pay.
+   * It was previously a hardcoded `3 * 60 * 60 * 1000` at the call site,
+   * which meant the admin-editable `Setting.paymentTimeoutHours` was
+   * silently ignored: an operator could set 6 hours in the admin UI and
+   * applications would still expire after 3. Falls back to
+   * DEFAULT_PAYMENT_TIMEOUT_HOURS when no settings row exists yet.
+   */
+  async getPaymentTimeoutHours(): Promise<number> {
+    const row = await this.prisma.setting.findFirst({
+      orderBy: { createdAt: 'desc' },
+      select: { paymentTimeoutHours: true },
+    });
+    const hours = row?.paymentTimeoutHours ?? DEFAULT_PAYMENT_TIMEOUT_HOURS;
+    // Guard against a nonsensical stored value (0 or negative would
+    // expire every application on the next sweep).
+    return hours > 0 ? hours : DEFAULT_PAYMENT_TIMEOUT_HOURS;
   }
 
   /** Force the next getMaintenanceState() call to hit the DB. */

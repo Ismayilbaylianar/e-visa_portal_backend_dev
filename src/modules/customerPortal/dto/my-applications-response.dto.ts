@@ -65,12 +65,12 @@ export class MyApplicationApplicantDto {
 /**
  * M9b — extended application item.
  *
- * Adds: applicationCode (from the main applicant), requestedDocumentTypes
- * (drives the NEED_DOCS card), estimatedProcessingDays + updatedAt
- * (drives the "estimated time" pill), rejectionReason (drives the
- * REJECTED card), adminNote (last admin message — useful when status
- * is NEED_DOCS or REJECTED). All optional so existing callers keep
- * working.
+ * Adds: applicationCode (from the main applicant), estimatedProcessingDays
+ * + updatedAt (drives the "estimated time" pill), rejectionReason
+ * (drives the REJECTED card), adminNote (last admin message — useful
+ * on a rejection or cancellation). requestedDocumentTypes is a legacy
+ * leftover of the retired document-request flow and is always empty.
+ * All optional so existing callers keep working.
  */
 export class MyApplicationItemDto {
   @ApiProperty({
@@ -120,7 +120,7 @@ export class MyApplicationItemDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'Document type keys the admin has requested. Empty unless status === NEED_DOCS.',
+    description: 'LEGACY — the in-system document-request flow was retired in Stage 3. Always empty; kept so older clients keep parsing.',
   })
   requestedDocumentTypes?: string[];
 
@@ -140,7 +140,7 @@ export class MyApplicationItemDto {
 
   @ApiPropertyOptional({
     description:
-      'Most recent admin note. Useful for NEED_DOCS apps to show what the reviewer asked for.',
+      'Most recent admin note — e.g. the reason attached to a rejection or cancellation.',
   })
   adminNote?: string;
 

@@ -12,18 +12,16 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
-  UploadedFiles,
   Res,
   Req,
   BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiConsumes } from '@nestjs/swagger';
 import type { Response, Request } from 'express';
 import { ApplicationsService } from './applications.service';
 import { ApplicantsService } from '../applicants/applicants.service';
 import { CustomerPortalService } from '../customerPortal/customer-portal.service';
-import { ResubmitDocumentsResponseDto } from '../customerPortal/dto';
 import {
   CreateApplicationDto,
   UpdateApplicationDto,
@@ -31,11 +29,12 @@ import {
   GetApplicationsQueryDto,
   ApproveApplicationDto,
   RejectApplicationDto,
-  RequestDocumentsDto,
   UpdateEstimatedTimeDto,
   EstimatedTimeChangeEntryDto,
   ChangeApplicationStatusDto,
   AssignApplicationDto,
+  AcceptApplicationDto,
+  CancelApplicationDto,
   CreateInternalNoteDto,
   UpdateInternalNoteDto,
 } from './dto';
@@ -128,7 +127,7 @@ export class ApplicationsAdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Approve application',
-    description: 'Approve a submitted application. Status must be SUBMITTED or IN_REVIEW.',
+    description: 'Approve a submitted application. Status must be SUBMITTED or PROCESSING.',
   })
   @ApiResponse({
     status: 200,
@@ -179,70 +178,14 @@ export class ApplicationsAdminController {
     return this.applicationsService.rejectApplication(params.applicationId, dto, user.id);
   }
 
-  @Post(':applicationId/request-documents')
-  @RequirePermissions('applications.request_documents')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Request additional documents',
-    description: 'Request applicant to provide additional or corrected documents.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Documents requested successfully',
-    type: ApplicationResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Cannot request documents for application in current status',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Application not found',
-  })
-  async requestDocuments(
-    @Param() params: ApplicationIdParamDto,
-    @Body() dto: RequestDocumentsDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<ApplicationResponseDto> {
-    return this.applicationsService.requestDocuments(params.applicationId, dto, user.id);
-  }
-
-  @Post(':applicationId/start-review')
-  @RequirePermissions('applications.start_review')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Start application review',
-    description: 'Move application from SUBMITTED to IN_REVIEW status.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Application moved to IN_REVIEW status',
-    type: ApplicationResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Application cannot be moved to review in current status',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Application not found',
-  })
-  async startReview(
-    @Param() params: ApplicationIdParamDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<ApplicationResponseDto> {
-    return this.applicationsService.startReview(params.applicationId, user.id);
-  }
-
   /**
    * M11.12 (BUG P) — Unified status change.
    *
    * One endpoint that handles every transition (APPROVED, REJECTED,
-   * NEED_DOCS, IN_REVIEW, CANCELLED) with rich body params:
+   * READY_TO_DOWNLOAD, CANCELLED) with rich body params:
    * sendEmail toggle, emailMode (template / custom), customMessage
    * appended block, customSubject + customBody for full override,
-   * required reason for REJECTED, requestedDocuments[] for
-   * NEED_DOCS. The legacy approve / reject / request-documents
+   * required reason for REJECTED. The legacy approve / reject
    * endpoints stay for back-compat.
    *
    * Permission: applications.update — covers every transition.
@@ -271,6 +214,75 @@ export class ApplicationsAdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ApplicationResponseDto> {
     return this.applicationsService.changeStatus(params.applicationId, dto, user.id);
+  }
+
+  // ========================================================
+  // Stage 3 — FIRST DECISION (accept / cancel)
+  // ========================================================
+
+  /**
+   * ACCEPT a SUBMITTED application: capture the held funds, assign the
+   * operator picked in the request, move to PROCESSING and email the
+   * customer that processing has started. Atomic — see the service.
+   *
+   * Permission: applications.update, with the same split as /assign —
+   * assigning to anyone other than yourself also requires
+   * applications.assign (enforced in the service).
+   */
+  @Post(':applicationId/accept')
+  @RequirePermissions('applications.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Accept an application (first decision)',
+    description:
+      'Captures the AUTHORIZED payment, assigns the chosen operator, moves the application SUBMITTED → PROCESSING and sends the "processing started" email. Requires a SUBMITTED application with funds held.',
+  })
+  @ApiResponse({ status: 200, description: 'Application accepted', type: ApplicationResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'Not SUBMITTED, no authorized payment, or unknown assignee',
+  })
+  @ApiResponse({ status: 403, description: 'Operator may only assign to themselves' })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  async accept(
+    @Param() params: ApplicationIdParamDto,
+    @Body() dto: AcceptApplicationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ApplicationResponseDto> {
+    return this.applicationsService.acceptApplication(
+      params.applicationId,
+      dto,
+      user.id,
+      user.permissions ?? [],
+    );
+  }
+
+  /**
+   * CANCEL a SUBMITTED application (disqualifying issue): release the
+   * authorization in full — nothing is charged — move to CANCELLED
+   * (terminal) and email the customer the reason. The customer may then
+   * submit a NEW application; there is no re-apply on this one.
+   */
+  @Post(':applicationId/cancel')
+  @RequirePermissions('applications.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Cancel an application (first decision)',
+    description:
+      'Releases the AUTHORIZED payment in full (no charge), moves the application SUBMITTED → CANCELLED and emails the customer the reason. Requires a SUBMITTED application with funds held.',
+  })
+  @ApiResponse({ status: 200, description: 'Application cancelled', type: ApplicationResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'Not SUBMITTED, no authorized payment, or missing reason',
+  })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  async cancel(
+    @Param() params: ApplicationIdParamDto,
+    @Body() dto: CancelApplicationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ApplicationResponseDto> {
+    return this.applicationsService.cancelApplication(params.applicationId, dto, user.id);
   }
 
   // ========================================================
@@ -759,68 +771,6 @@ export class ApplicationsPortalController {
       applicationId,
       applicantId,
       portalIdentity.id,
-    );
-  }
-
-  // ========================================================
-  // Module 9b — Customer document resubmission
-  // ========================================================
-
-  /**
-   * Resubmit one or more documents the admin requested via
-   * /admin/applications/:id/request-documents (which left the
-   * application in NEED_DOCS).
-   *
-   * Multipart shape:
-   *   files[]  — uploaded files (PDF/JPG/PNG, max 10MB each, max 10)
-   *   types[]  — parallel array of documentTypeKey strings, one per
-   *              file in the same order. Each MUST appear in the
-   *              application's requestedDocumentTypes list.
-   *
-   * `types` arrives either as a string (single value) or string[]
-   * depending on how the client encodes it; we coerce here so the
-   * service always sees an array.
-   */
-  @Post('applications/:applicationId/applicants/:applicantId/documents/resubmit')
-  @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FilesInterceptor('files', 10))
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({
-    summary: 'Resubmit requested documents',
-    description:
-      'Customer-side resubmission for an application in NEED_DOCS. Replaces existing documents of the matching type (soft-delete + insert). When every requested type is satisfied, atomically flips the application back to SUBMITTED and notifies admin.',
-  })
-  @ApiParam({ name: 'applicationId', description: 'Application UUID' })
-  @ApiParam({ name: 'applicantId', description: 'Applicant UUID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Resubmission processed',
-    type: ResubmitDocumentsResponseDto,
-  })
-  @ApiResponse({ status: 400, description: 'Invalid file or document type not requested' })
-  @ApiResponse({ status: 403, description: 'Application does not belong to current portal user' })
-  @ApiResponse({ status: 409, description: 'Application is not in NEED_DOCS state' })
-  async resubmitDocuments(
-    @Param('applicationId') applicationId: string,
-    @Param('applicantId') applicantId: string,
-    @UploadedFiles() files: MulterFile[],
-    @Body('types') typesRaw: string | string[] | undefined,
-    @CurrentPortalIdentity() portalIdentity: PortalIdentityUser,
-    @Req() req: Request,
-  ): Promise<ResubmitDocumentsResponseDto> {
-    if (typesRaw === undefined) {
-      throw new BadRequestException('Missing types[]');
-    }
-    const types = Array.isArray(typesRaw) ? typesRaw : [typesRaw];
-
-    return this.customerPortalService.resubmitDocuments(
-      applicationId,
-      applicantId,
-      portalIdentity.id,
-      files ?? [],
-      types,
-      req.ip,
-      req.get('user-agent') ?? undefined,
     );
   }
 }

@@ -41,7 +41,7 @@ export class TrackingResponseDto {
 
   @ApiProperty({
     description: 'Current applicant status',
-    example: 'IN_REVIEW',
+    example: 'PROCESSING',
   })
   currentStatus: string;
 

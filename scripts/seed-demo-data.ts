@@ -8,7 +8,7 @@
  * Creates one verified portal identity + three applications covering
  * the three visually distinct /me card states the demo wants to show:
  *
- *   1. NEED_DOCS      — orange "Action Required" card, opens resubmit modal
+ *   1. PROCESSING     — blue "Being prepared" card (operator accepted)
  *   2. READY_TO_DOWNLOAD — green card with download button(s)
  *   3. APPROVED       — green "Visa being prepared" card, no download
  *
@@ -60,12 +60,11 @@ interface AppSpec {
 
 const APPS: AppSpec[] = [
   {
-    status: ApplicationStatus.NEED_DOCS,
+    status: ApplicationStatus.PROCESSING,
     destinationIso: 'TR',
     visaTypePurpose: 'tourism',
     applicant: { firstName: 'Ali', lastName: 'Demo', dob: '1990-01-15' },
-    requestedDocumentTypes: ['bank_statement', 'hotel_booking', 'return_ticket'],
-    adminNote: 'Please provide additional supporting documents.',
+    adminNote: 'Accepted by the operator — visa being prepared.',
   },
   {
     status: ApplicationStatus.READY_TO_DOWNLOAD,
@@ -299,11 +298,9 @@ async function main() {
             status:
               spec.status === ApplicationStatus.READY_TO_DOWNLOAD
                 ? ApplicantStatus.READY_TO_DOWNLOAD
-                : spec.status === ApplicationStatus.NEED_DOCS
-                  ? ApplicantStatus.NEED_DOCS
-                  : spec.status === ApplicationStatus.APPROVED
-                    ? ApplicantStatus.APPROVED
-                    : ApplicantStatus.SUBMITTED,
+                : spec.status === ApplicationStatus.APPROVED
+                  ? ApplicantStatus.APPROVED
+                  : ApplicantStatus.SUBMITTED,
             applicationCode,
           },
         },
