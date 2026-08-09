@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -478,6 +479,32 @@ export class ApplicantsService {
       }
     }
 
+    /*
+     * DEFECT 1 — PATCH used to REPLACE formDataJson wholesale, so a
+     * partial patch silently dropped every key it didn't send (a
+     * two-field probe wiped 35 others). It only ever looked correct
+     * because the UI always posts the whole form.
+     *
+     * Now it MERGES, i.e. JSON Merge Patch (RFC 7396) semantics:
+     *   • a key that is absent  → left exactly as it was
+     *   • a key sent with a value → overwritten
+     *   • a key sent as null / "" → cleared
+     *
+     * Merge is chosen over replace precisely because clearing a field
+     * is still expressible: the client sends it explicitly as null
+     * rather than by omission. Omission is never a reliable way to
+     * signal "delete" — it's indistinguishable from "didn't touch it".
+     * The existing full-form submit sends every key, so it behaves
+     * identically to before.
+     */
+    const mergedFormData: Prisma.InputJsonValue | undefined =
+      dto.formDataJson !== undefined
+        ? ({
+            ...((applicant.formDataJson ?? {}) as Record<string, unknown>),
+            ...(dto.formDataJson as Record<string, unknown>),
+          } as Prisma.InputJsonValue)
+        : undefined;
+
     const updatedApplicant = await this.prisma.applicationApplicant.update({
       where: { id: applicantId },
       data: {
@@ -486,7 +513,7 @@ export class ApplicantsService {
         }),
         ...(dto.email !== undefined && { email: dto.email }),
         ...(dto.phone !== undefined && { phone: dto.phone }),
-        ...(dto.formDataJson !== undefined && { formDataJson: dto.formDataJson }),
+        ...(mergedFormData !== undefined && { formDataJson: mergedFormData }),
       },
       include: {
         documents: {

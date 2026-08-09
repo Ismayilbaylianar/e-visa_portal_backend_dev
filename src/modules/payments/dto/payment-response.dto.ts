@@ -289,6 +289,21 @@ export class PaymentResponseDto {
   })
   paidAt?: Date;
 
+  /**
+   * DEFECT 2 — these were written to the DB by the two-stage payment
+   * flow but never mapped into the response, so the customer-facing
+   * payment view had no way to show when funds were held or taken.
+   */
+  @ApiPropertyOptional({
+    description: 'When the funds were authorized (held) on the card',
+  })
+  authorizedAt?: Date;
+
+  @ApiPropertyOptional({
+    description: 'When the held funds were captured (charged)',
+  })
+  capturedAt?: Date;
+
   @ApiPropertyOptional({
     description: 'Payment failure timestamp',
   })

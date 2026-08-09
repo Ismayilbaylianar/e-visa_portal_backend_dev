@@ -90,7 +90,11 @@ export class VisaTypeOptionDto {
 export class SelectionOptionsResponseDto {
   @ApiProperty({
     type: [CountryOptionDto],
-    description: 'Available destination countries (active and published)',
+    description:
+      'MARKETING-scoped destinations: countries with a published, active landing page (hence the `slug`). ' +
+      'This is NOT the list a customer can apply to — that one is per-nationality and binding-scoped, from ' +
+      'GET /public/selection/destinations?nationality=<id>. The two legitimately differ (prod: 1 here, 40 there). ' +
+      'Do not build a destination picker on this field.',
   })
   destinationCountries: CountryOptionDto[];
 

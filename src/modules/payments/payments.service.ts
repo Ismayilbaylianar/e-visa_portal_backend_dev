@@ -56,10 +56,14 @@ export class PaymentsService {
    * Generate unique payment reference
    * Format: PAY-YYYY-NNNNNN (e.g., PAY-2026-000001)
    */
-  private async generatePaymentReference(): Promise<string> {
+  private async generatePaymentReference(offset = 0): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `PAY-${year}-`;
 
+    // NOTE: deliberately no `deletedAt` filter — the unique index on
+    // payment_reference covers every row, soft-deleted included, so the
+    // scan must see exactly what the index enforces. Filtering here is
+    // what broke application reference codes on prod (2026-08-08).
     const lastPayment = await this.prisma.payment.findFirst({
       where: {
         paymentReference: {
@@ -79,7 +83,46 @@ export class PaymentsService {
       }
     }
 
-    return `${prefix}${nextNumber.toString().padStart(6, '0')}`;
+    // `offset` is the retry count: without it a retry re-runs the same
+    // query against the same data and returns the identical candidate.
+    return `${prefix}${(nextNumber + offset).toString().padStart(6, '0')}`;
+  }
+
+  /**
+   * DEFECT 3 — payment creation called the generator once with no
+   * retry, so two concurrent submissions computing the same number
+   * surfaced a raw P2002 to the customer. Mirrors
+   * `withReferenceCodeRetry` in ApplicationsService: each attempt asks
+   * for the next number up, so a genuine race resolves instead of
+   * repeating one doomed candidate.
+   */
+  private async withPaymentReferenceRetry<T>(
+    operation: (paymentReference: string) => Promise<T>,
+    maxAttempts = 5,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const paymentReference = await this.generatePaymentReference(attempt - 1);
+      try {
+        return await operation(paymentReference);
+      } catch (err) {
+        const code = (err as any)?.code;
+        const target = (err as any)?.meta?.target;
+        const isReferenceCollision =
+          code === 'P2002' &&
+          (target === undefined ||
+            (Array.isArray(target)
+              ? target.includes('payment_reference')
+              : String(target).includes('payment_reference')));
+        // Anything that isn't this specific collision bubbles untouched.
+        if (!isReferenceCollision) throw err;
+        lastError = err;
+        this.logger.warn(
+          `paymentReference collision on ${paymentReference} (attempt ${attempt}/${maxAttempts}); retrying`,
+        );
+      }
+    }
+    throw lastError;
   }
 
   private generateIdempotencyKey(): string {
@@ -469,37 +512,38 @@ export class PaymentsService {
       ? new Date(application.paymentDeadlineAt)
       : new Date(Date.now() + this.paymentTimeoutHours * 60 * 60 * 1000);
 
-    // Generate payment reference
-    const paymentReference = await this.generatePaymentReference();
-
-    const payment = await this.prisma.payment.create({
-      data: {
-        applicationId: dto.applicationId,
-        paymentReference,
-        paymentProviderKey: 'mockProvider',
-        currencyCode: nationalityFee.currencyCode,
-        governmentFeeAmount: governmentFee,
-        serviceFeeAmount: serviceFee,
-        expeditedFeeAmount: expeditedFee > 0 ? expeditedFee : null,
-        totalAmount,
-        payableAmount,
-        paymentStatus: PaymentStatus.CREATED,
-        idempotencyKey: this.generateIdempotencyKey(),
-        expiresAt,
-      },
-      include: {
-        application: {
-          select: {
-            id: true,
-            portalIdentityId: true,
-            currentStatus: true,
-            paymentStatus: true,
-            totalFeeAmount: true,
-            currencyCode: true,
+    // DEFECT 3 — generate + insert inside the retry, so a collision
+    // regenerates rather than 500-ing at the customer.
+    const payment = await this.withPaymentReferenceRetry((paymentReference) =>
+      this.prisma.payment.create({
+        data: {
+          applicationId: dto.applicationId,
+          paymentReference,
+          paymentProviderKey: 'mockProvider',
+          currencyCode: nationalityFee.currencyCode,
+          governmentFeeAmount: governmentFee,
+          serviceFeeAmount: serviceFee,
+          expeditedFeeAmount: expeditedFee > 0 ? expeditedFee : null,
+          totalAmount,
+          payableAmount,
+          paymentStatus: PaymentStatus.CREATED,
+          idempotencyKey: this.generateIdempotencyKey(),
+          expiresAt,
+        },
+        include: {
+          application: {
+            select: {
+              id: true,
+              portalIdentityId: true,
+              currentStatus: true,
+              paymentStatus: true,
+              totalFeeAmount: true,
+              currencyCode: true,
+            },
           },
         },
-      },
-    });
+      }),
+    );
 
     // Create initial status history
     await this.prisma.paymentStatusHistory.create({
@@ -513,7 +557,7 @@ export class PaymentsService {
     });
 
     this.logger.log(
-      `Payment created: ${payment.id} (${paymentReference}) for application: ${dto.applicationId}`,
+      `Payment created: ${payment.id} (${payment.paymentReference}) for application: ${dto.applicationId}`,
     );
     return this.mapToResponse(payment);
   }
@@ -2272,6 +2316,10 @@ export class PaymentsService {
       providerOrderId: payment.providerOrderId || undefined,
       idempotencyKey: payment.idempotencyKey || undefined,
       expiresAt: payment.expiresAt || undefined,
+      // DEFECT 2 — set on the payment row by authorize/capture but
+      // previously dropped here, so both read as null to every caller.
+      authorizedAt: payment.authorizedAt || undefined,
+      capturedAt: payment.capturedAt || undefined,
       paidAt: payment.paidAt || undefined,
       failedAt: payment.failedAt || undefined,
       cancelledAt: payment.cancelledAt || undefined,
