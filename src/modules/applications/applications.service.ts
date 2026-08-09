@@ -2592,16 +2592,27 @@ export class ApplicationsService {
    * NaN-poison the max), pick max+1, retry on P2002 unique
    * collisions (race between two concurrent submissions).
    */
-  private async generateReferenceCode(): Promise<string> {
+  private async generateReferenceCode(offset = 0): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `REF-${year}-`;
     const recent = await this.prisma.application.findMany({
       where: {
         referenceCode: { startsWith: prefix },
-        deletedAt: null,
+        // NO `deletedAt` filter — deliberately.
+        //
+        // 2026-08-08 prod incident: this scan filtered `deletedAt: null`
+        // while the unique index on `reference_code` covers EVERY row,
+        // soft-deleted included. REF-2026-000005 had been soft-deleted
+        // by the old timeout sweep, so the scan saw max 000004, produced
+        // 000005, and every application create 500'd on P2002. The scan
+        // must see exactly what the index enforces.
       },
       select: { referenceCode: true },
-      orderBy: { createdAt: 'desc' },
+      // Order by the code itself, not createdAt: the suffix is
+      // zero-padded to a fixed width, so lexical desc == numeric desc,
+      // and the highest codes are guaranteed to be inside the window
+      // even if rows were backdated or imported out of order.
+      orderBy: { referenceCode: 'desc' },
       take: 200,
     });
 
@@ -2615,7 +2626,11 @@ export class ApplicationsService {
       const n = parseInt(suffix, 10);
       if (Number.isFinite(n) && n > maxNum) maxNum = n;
     }
-    const nextNumber = maxNum + 1;
+    // `offset` is the retry count. Without it a retry re-runs the same
+    // query against the same data and hands back the identical code, so
+    // all attempts fail for one reason — which is exactly how a single
+    // stale row took down application creation.
+    const nextNumber = maxNum + 1 + offset;
     return `${prefix}${nextNumber.toString().padStart(6, '0')}`;
   }
 
@@ -2625,7 +2640,10 @@ export class ApplicationsService {
   ): Promise<T> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const referenceCode = await this.generateReferenceCode();
+      // Each retry asks for the next number up, so a genuine race
+      // (two submissions landing on the same code) resolves instead of
+      // re-colliding on the same candidate five times.
+      const referenceCode = await this.generateReferenceCode(attempt - 1);
       try {
         return await operation(referenceCode);
       } catch (err) {

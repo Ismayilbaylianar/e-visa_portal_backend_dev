@@ -88,7 +88,7 @@ export class ApplicantsService {
    * a multi-applicant submission) regenerates and retries instead
    * of bubbling P2002 to the user.
    */
-  private async generateApplicationCode(): Promise<string> {
+  private async generateApplicationCode(offset = 0): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `APP-${year}-`;
 
@@ -117,7 +117,7 @@ export class ApplicantsService {
       if (Number.isFinite(n) && n > maxNumber) maxNumber = n;
     }
 
-    const nextNumber = maxNumber + 1;
+    const nextNumber = maxNumber + 1 + offset;
     return `${prefix}${nextNumber.toString().padStart(6, '0')}`;
   }
 
@@ -135,7 +135,12 @@ export class ApplicantsService {
     const MAX_ATTEMPTS = 5;
     let lastError: unknown;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      const code = await this.generateApplicationCode();
+      // Step past the colliding number on each retry. Re-running the
+      // generator unchanged returns the SAME candidate, so the loop
+      // would spend all five attempts on one value and still throw —
+      // the failure mode that took application creation down on
+      // 2026-08-08 (see generateReferenceCode in applications.service).
+      const code = await this.generateApplicationCode(attempt);
       try {
         return await fn(code);
       } catch (e: any) {
