@@ -264,6 +264,57 @@ export class ApplicantsService {
    * - If isMainApplicant is true and a main applicant already exists, throw error
    * - First applicant can be set as main applicant
    */
+  /**
+   * Nationality drives BOTH eligibility and price: the fee row the
+   * customer was quoted is the (nationality, entry) one, keyed off
+   * `Application.nationalityCountryId`. The UI locks the field, but the
+   * lock was client-side only — a PATCH could set `nationality: "FR"`
+   * on an application priced from the Türkiye row (found on prod,
+   * 2026-08-09), leaving a visa issued for a nationality that was never
+   * priced or eligibility-checked.
+   *
+   * `passportIssuingCountry` is locked equal to nationality by product
+   * decision, so it is held to the same value.
+   *
+   * Absent keys are allowed through — the customer may be part-way
+   * through the form, and the required-field check at review/submit
+   * already refuses an incomplete one. Only a PRESENT, non-empty,
+   * mismatched value is rejected.
+   */
+  private async assertCascadeCountriesUnchanged(
+    application: { nationalityCountryId: string },
+    formDataJson: unknown,
+  ): Promise<void> {
+    if (!formDataJson || typeof formDataJson !== 'object') return;
+    const fd = formDataJson as Record<string, unknown>;
+    if (!('nationality' in fd) && !('passportIssuingCountry' in fd)) return;
+
+    const country = await this.prisma.country.findUnique({
+      where: { id: application.nationalityCountryId },
+      select: { isoCode: true, name: true },
+    });
+    if (!country?.isoCode) return; // nothing authoritative to compare against
+
+    const expected = country.isoCode.toUpperCase();
+    const details: { field: string; reason: string; message: string }[] = [];
+
+    for (const field of ['nationality', 'passportIssuingCountry'] as const) {
+      const raw = fd[field];
+      if (raw === undefined || raw === null || raw === '') continue;
+      if (String(raw).toUpperCase() !== expected) {
+        details.push({
+          field: `formDataJson.${field}`,
+          reason: ErrorCodes.VALIDATION_ERROR,
+          message: `${field} must be ${expected} (${country.name}) — the nationality this application was priced for. Start a new application to apply with a different nationality.`,
+        });
+      }
+    }
+
+    if (details.length > 0) {
+      throw new BadRequestException('Nationality cannot be changed', details);
+    }
+  }
+
   async create(
     applicationId: string,
     portalIdentityId: string,
@@ -297,6 +348,8 @@ export class ApplicantsService {
         },
       ]);
     }
+
+    await this.assertCascadeCountriesUnchanged(application, dto.formDataJson);
 
     // Check main applicant rule
     if (dto.isMainApplicant) {
@@ -397,6 +450,11 @@ export class ApplicantsService {
         },
       ]);
     }
+
+    await this.assertCascadeCountriesUnchanged(
+      applicant.application,
+      dto.formDataJson,
+    );
 
     // Check main applicant rule if trying to set as main
     if (dto.isMainApplicant && !applicant.isMainApplicant) {

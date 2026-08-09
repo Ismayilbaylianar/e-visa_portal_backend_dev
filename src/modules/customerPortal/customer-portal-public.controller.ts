@@ -49,6 +49,12 @@ interface MulterFile {
  * this one render. Subsequent actions (upload via /me, download
  * via the visa endpoints) use the standard portal auth flow.
  */
+/**
+ * Document type `ApplicantsService.issueVisa()` writes for an issued
+ * visa. Mirrors `ApplicantsService.ISSUED_VISA_DOC_TYPE`.
+ */
+const ISSUED_VISA_DOC_TYPE = 'issued_visa';
+
 export class RedeemPortalTokenDto {
   @IsString()
   @IsNotEmpty()
@@ -179,6 +185,9 @@ export class CustomerPortalPublicController {
         const first = fd.firstName || fd.first_name || '';
         const last = fd.lastName || fd.last_name || '';
         const fullName = `${first} ${last}`.trim() || null;
+        const issuedVisaDoc = a.documents?.find(
+          (d: any) => d.documentTypeKey === ISSUED_VISA_DOC_TYPE,
+        );
         return {
           id: a.id,
           applicationCode: a.applicationCode ?? null,
@@ -187,8 +196,13 @@ export class CustomerPortalPublicController {
           email: a.email,
           fullName,
           documentTypeKeys: a.documents?.map((d) => d.documentTypeKey) ?? [],
-          hasIssuedVisa: !!a.resultStorageKey,
-          resultFileName: a.resultFileName ?? null,
+          // Read the issued-visa DOCUMENT, not `resultStorageKey`.
+          // `issueVisa()` only ever writes the document row, so this
+          // flag was permanently false and the magic-link page told
+          // customers their visa wasn't ready (prod, 2026-08-09).
+          // `/me` already derives it this way — now both agree.
+          hasIssuedVisa: !!issuedVisaDoc,
+          resultFileName: issuedVisaDoc?.originalFileName ?? a.resultFileName ?? null,
           statusHistory: a.statusHistory.map((h) => ({
             oldStatus: h.oldStatus,
             newStatus: h.newStatus,

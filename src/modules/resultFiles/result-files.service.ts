@@ -12,6 +12,13 @@ import {
 } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 
+/**
+ * Document type that `ApplicantsService.issueVisa()` writes for an
+ * issued visa. Kept in sync with `ApplicantsService.ISSUED_VISA_DOC_TYPE`
+ * and `CustomerPortalService.ISSUED_VISA_DOC_TYPE`.
+ */
+const RESULT_ISSUED_VISA_DOC_TYPE = 'issued_visa';
+
 interface MulterFile {
   fieldname: string;
   originalname: string;
@@ -243,8 +250,76 @@ export class ResultFilesService {
    * Customer-side variant — same shape, but the caller validated
    * the portal token already. Used by the public portal endpoint.
    */
+  /**
+   * Issued visas live in `documents` under the `issued_visa` type —
+   * that is what `issueVisa()` writes, what the authenticated portal
+   * download serves, and what `/me` reads for `hasIssuedVisa`. The
+   * magic-link page listed only `application_result_files`, so a
+   * customer who clicked "your visa is ready" saw nothing to download
+   * (found on prod, 2026-08-09).
+   *
+   * We READ the documents rows rather than also writing a result-file
+   * row per visa: one file means one row, there is nothing to keep in
+   * sync, and every visa issued before this fix works immediately with
+   * no backfill. `application_result_files` keeps its own job —
+   * admin-uploaded supplementary files — and is listed alongside.
+   */
+  private async listIssuedVisaDocuments(applicationId: string) {
+    const docs = await this.prisma.document.findMany({
+      where: {
+        documentTypeKey: RESULT_ISSUED_VISA_DOC_TYPE,
+        deletedAt: null,
+        applicationApplicant: { applicationId, deletedAt: null },
+      },
+      include: {
+        applicationApplicant: {
+          select: { id: true, applicationCode: true, isMainApplicant: true },
+        },
+      },
+    });
+
+    // Main applicant first, then co-applicants by code — the order the
+    // customer expects to see their own visa in.
+    docs.sort((a, b) => {
+      const am = a.applicationApplicant?.isMainApplicant ? 0 : 1;
+      const bm = b.applicationApplicant?.isMainApplicant ? 0 : 1;
+      if (am !== bm) return am - bm;
+      return (a.applicationApplicant?.applicationCode ?? '').localeCompare(
+        b.applicationApplicant?.applicationCode ?? '',
+      );
+    });
+
+    return docs.map((d) => ({
+      id: d.id,
+      applicationId,
+      applicantId: d.applicationApplicantId,
+      fileName: d.originalFileName,
+      fileSize: d.fileSize,
+      mimeType: d.mimeType,
+      description: d.applicationApplicant?.applicationCode
+        ? `Visa — ${d.applicationApplicant.applicationCode}`
+        : 'Issued visa',
+      // The visa is what the customer came for; surface it first.
+      isPrimary: true,
+      uploadedAt: d.createdAt,
+      uploadedBy: undefined,
+      applicant: d.applicationApplicant
+        ? {
+            id: d.applicationApplicant.id,
+            applicationCode: d.applicationApplicant.applicationCode,
+          }
+        : undefined,
+    }));
+  }
+
   async listForPortal(applicationId: string) {
-    return this.listForApplication(applicationId);
+    const [visas, extras] = await Promise.all([
+      this.listIssuedVisaDocuments(applicationId),
+      this.listForApplication(applicationId),
+    ]);
+    // Only one primary card renders on the portal page, so demote the
+    // supplementary files rather than competing with the visa.
+    return [...visas, ...extras.map((f) => ({ ...f, isPrimary: false }))];
   }
 
   async getSignedUrlForPortal(
@@ -252,9 +327,35 @@ export class ResultFilesService {
     fileId: string,
     args: { email: string; ip?: string; userAgent?: string },
   ) {
-    const file = await this.prisma.applicationResultFile.findFirst({
+    // `listForPortal` now also returns issued-visa documents, so an id
+    // arriving here can be either kind. Both models expose a
+    // `storageKey`, so once resolved the rest of the flow is identical.
+    const resultFile = await this.prisma.applicationResultFile.findFirst({
       where: { id: fileId, applicationId, deletedAt: null },
     });
+    let file: { storageKey: string; fileName: string } | null = resultFile
+      ? { storageKey: resultFile.storageKey, fileName: resultFile.fileName }
+      : null;
+    let entityType = 'ApplicationResultFile';
+
+    if (!file) {
+      const visaDoc = await this.prisma.document.findFirst({
+        where: {
+          id: fileId,
+          documentTypeKey: RESULT_ISSUED_VISA_DOC_TYPE,
+          deletedAt: null,
+          // Scope to THIS application — an id from another booking must
+          // not resolve just because the token is valid for this one.
+          applicationApplicant: { applicationId, deletedAt: null },
+        },
+        select: { storageKey: true, originalFileName: true },
+      });
+      if (visaDoc?.storageKey) {
+        file = { storageKey: visaDoc.storageKey, fileName: visaDoc.originalFileName };
+        entityType = 'Document';
+      }
+    }
+
     if (!file) {
       throw new NotFoundException('Result file not found', [
         { reason: ErrorCodes.NOT_FOUND, message: 'File no longer exists.' },
@@ -281,7 +382,9 @@ export class ResultFilesService {
     await this.audit.create({
       actorType: ActorType.PORTAL_IDENTITY,
       actionKey: 'visa.downloaded',
-      entityType: 'ApplicationResultFile',
+      // Truthful about which table the id points at, now that a
+      // download can resolve to either.
+      entityType,
       entityId: fileId,
       newValue: {
         applicationId,

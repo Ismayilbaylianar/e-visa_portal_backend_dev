@@ -33,6 +33,18 @@ export class PublicSelectionService {
       // Destination countries: have a published, active CountryPage. The page
       // join also gives us the URL slug (countries themselves no longer carry
       // a slug after the Module 1.5 split).
+      //
+      // NOTE (2026-08-09) — this list is MARKETING-scoped, not apply-scoped.
+      // It answers "which destinations have a published landing page?" (hence
+      // the slug), NOT "which destinations can this nationality apply to?".
+      // On prod that is currently 1 (Azerbaijan) while the apply cascade
+      // returns 40 for the same nationality — each is right for its question.
+      //
+      // Do NOT wire a destination picker to this list. Use
+      // `getDestinationsForNationality()` (/public/selection/destinations),
+      // which is binding-scoped and per-nationality. M11.10 (BUG 2) already
+      // had to strip exactly this CountryPage filter out of the cascade after
+      // customers saw only 1 of N destinations on /apply.
       this.prisma.country.findMany({
         where: {
           isActive: true,
