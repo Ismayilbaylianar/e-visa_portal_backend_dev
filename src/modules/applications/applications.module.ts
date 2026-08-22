@@ -13,6 +13,7 @@ import { CustomerPortalModule } from '../customerPortal/customer-portal.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SettingsModule } from '../settings/settings.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { ApplicationCompletenessService } from './application-completeness.service';
 
 @Module({
   imports: [
@@ -37,7 +38,7 @@ import { PaymentsModule } from '../payments/payments.module';
   controllers: [ApplicationsAdminController, ApplicationsPortalController],
   // PaymentTimeoutService runs the 3-hour payment-window sweep via
   // OnModuleInit + setInterval (single PM2 fork instance → no double-fire).
-  providers: [ApplicationsService, PaymentTimeoutService],
+  providers: [ApplicationCompletenessService, ApplicationsService, PaymentTimeoutService],
   exports: [ApplicationsService],
 })
 export class ApplicationsModule {}

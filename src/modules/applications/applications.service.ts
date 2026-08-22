@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { computeFeeTotals } from './application-fees';
+import { ApplicationCompletenessService } from './application-completeness.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { EmailService } from '../email/email.service';
@@ -51,6 +53,8 @@ export class ApplicationsService {
     // M11.13 (BUG U + T) — mint signed deep-link tokens so status
     // emails carry per-recipient one-click access to /portal/[code].
     private readonly portalToken: PortalTokenService,
+    // Required-field validation, shared with PaymentsService.
+    private readonly completeness: ApplicationCompletenessService,
     // Stage 3 — the first decision captures or releases the customer's
     // held funds, so the application flow owns the payment trigger.
     private readonly paymentsService: PaymentsService,
@@ -314,14 +318,11 @@ export class ApplicationsService {
       ]);
     }
 
-    const governmentFee = Number(nationalityFee.governmentFeeAmount);
-    const serviceFee = Number(nationalityFee.serviceFeeAmount);
-    const expeditedFee =
-      dto.expedited && nationalityFee.expeditedEnabled
-        ? Number(nationalityFee.expeditedFeeAmount || 0)
-        : 0;
-
-    const totalFeeAmount = governmentFee + serviceFee + expeditedFee;
+    // Per-applicant pricing. No applicant exists yet at create time, so
+    // this is the one-person quote; `recalculateTotalFee` re-derives it
+    // every time an applicant is added or removed, and payment creation
+    // recomputes it again from the real head count.
+    const totalFeeAmount = computeFeeTotals(nationalityFee, 1, !!dto.expedited).totalAmount;
 
     // M11.10 (BUG 4) — Generate booking-level reference code
     // (REF-YYYY-NNNNNN). Same defensive pattern as the M11.6
@@ -442,14 +443,16 @@ export class ApplicationsService {
       );
 
       if (nationalityFee) {
-        const governmentFee = Number(nationalityFee.governmentFeeAmount);
-        const serviceFee = Number(nationalityFee.serviceFeeAmount);
-        const expeditedFee =
-          dto.expedited && nationalityFee.expeditedEnabled
-            ? Number(nationalityFee.expeditedFeeAmount || 0)
-            : 0;
-
-        totalFeeAmount = governmentFee + serviceFee + expeditedFee;
+        // Toggling express re-prices the whole booking, so multiply by
+        // the current head count rather than quoting one person.
+        const count = await this.prisma.applicationApplicant.count({
+          where: { applicationId: id, deletedAt: null },
+        });
+        totalFeeAmount = computeFeeTotals(
+          nationalityFee,
+          count,
+          !!dto.expedited,
+        ).totalAmount;
       }
     }
 
@@ -538,6 +541,16 @@ export class ApplicationsService {
         },
       ]);
     }
+
+    // Required-field validation lives HERE, on the submit gate, not in
+    // the browser. Until 2026-08-22 it was client-side only, so an
+    // applicant with a single field could be pushed through the API,
+    // burn a reference code and become payable.
+    await this.completeness.assertComplete(id);
+
+    // Head count may have changed since the last quote; make sure the
+    // stored total matches before the application becomes payable.
+    await this.recalculateTotalFee(id);
 
     const oldStatus = application.currentStatus;
     const newStatus = ApplicationStatus.UNPAID;
@@ -758,6 +771,16 @@ export class ApplicationsService {
         },
       ]);
     }
+
+    // Required-field validation lives HERE, on the submit gate, not in
+    // the browser. Until 2026-08-22 it was client-side only, so an
+    // applicant with a single field could be pushed through the API,
+    // burn a reference code and become payable.
+    await this.completeness.assertComplete(id);
+
+    // Head count may have changed since the last quote; make sure the
+    // stored total matches before the application becomes payable.
+    await this.recalculateTotalFee(id);
 
     const allowedStatuses: ApplicationStatus[] = [
       ApplicationStatus.UNPAID,
@@ -1994,6 +2017,94 @@ export class ApplicationsService {
     }
 
     await this.sendStatusNotificationEmail(application, label, composedNote || undefined);
+  }
+
+  /**
+   * Re-price an application against its current head count.
+   *
+   * Pricing is per applicant, so adding or removing someone changes
+   * what the booking costs. Called from the applicant add/remove paths;
+   * without it the stored total silently keeps the old head count and
+   * the customer sees one number while the payment charges another.
+   *
+   * Only touches applications that have not been paid for — once a
+   * payment exists the amount is fixed (see the guard in
+   * `assertApplicantCountChangeAllowed`), and re-pricing a captured
+   * booking would make the payment and the application disagree.
+   */
+  async recalculateTotalFee(applicationId: string): Promise<void> {
+    const application = await this.prisma.application.findFirst({
+      where: { id: applicationId, deletedAt: null },
+      include: {
+        templateBinding: { include: { nationalityFees: true } },
+        applicants: { where: { deletedAt: null }, select: { id: true } },
+      },
+    });
+    if (!application) return;
+
+    const editable: string[] = [ApplicationStatus.DRAFT, ApplicationStatus.UNPAID];
+    if (!editable.includes(application.currentStatus as string)) return;
+
+    const fee = application.templateBinding?.nationalityFees?.find(
+      (f) =>
+        f.nationalityCountryId === application.nationalityCountryId &&
+        (!application.visaTypeEntryId || f.entryId === application.visaTypeEntryId) &&
+        f.isActive &&
+        !f.deletedAt,
+    );
+    if (!fee) return;
+
+    const totals = computeFeeTotals(
+      fee,
+      application.applicants.length,
+      application.expedited,
+    );
+    if (Number(application.totalFeeAmount) === totals.totalAmount) return;
+
+    await this.prisma.application.update({
+      where: { id: applicationId },
+      data: { totalFeeAmount: totals.totalAmount },
+    });
+    this.logger.log(
+      `Re-priced ${applicationId}: ${application.applicants.length} applicant(s) -> ${totals.totalAmount}`,
+    );
+  }
+
+  /**
+   * An application must never be payable for an amount that does not
+   * match its head count. Once a payment row exists the amount is
+   * locked, so changing the number of applicants is refused rather than
+   * silently re-pricing behind the payment (or worse, leaving the two
+   * out of step). The customer releases the hold — Cancel, or letting
+   * the window expire — and starts again with the right party size.
+   */
+  async assertApplicantCountChangeAllowed(applicationId: string): Promise<void> {
+    const blocking = await this.prisma.payment.findFirst({
+      where: {
+        applicationId,
+        deletedAt: null,
+        paymentStatus: {
+          in: [
+            PaymentStatus.CREATED,
+            PaymentStatus.PENDING,
+            PaymentStatus.PROCESSING,
+            PaymentStatus.AUTHORIZED,
+            PaymentStatus.PAID,
+            PaymentStatus.PARTIALLY_REFUNDED,
+          ],
+        },
+      },
+      select: { paymentStatus: true },
+    });
+    if (!blocking) return;
+
+    throw new BadRequestException('Applicants cannot be changed after payment has started', [
+      {
+        reason: ErrorCodes.APPLICATION_NOT_EDITABLE,
+        message:
+          'A payment already exists for this application, so the number of applicants is fixed. Cancel the payment (or let the payment window expire) and start a new application to travel with a different number of people.',
+      },
+    ]);
   }
 
   /**

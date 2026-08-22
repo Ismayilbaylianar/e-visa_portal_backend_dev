@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import { EmailService } from '../email/email.service';
 import { NotificationEmitterService } from '../notifications/notification-emitter.service';
+import { ApplicationCompletenessService } from '../applications/application-completeness.service';
+import { computeFeeTotals } from '../applications/application-fees';
 import {
   CreatePaymentDto,
   InitializePaymentDto,
@@ -35,6 +37,8 @@ export class PaymentsService {
     private readonly notificationEmitter: NotificationEmitterService,
     // M11.10 (BUG 3) — needed by sendPaymentSuccessEmail.
     private readonly emailService: EmailService,
+    // An application that cannot be submitted must not be payable.
+    private readonly completeness: ApplicationCompletenessService,
   ) {
     this.paymentTimeoutHours = this.configService.get<number>('PAYMENT_TIMEOUT_HOURS', 3);
 
@@ -435,6 +439,17 @@ export class PaymentsService {
       ]);
     }
 
+    /*
+     * An application that cannot be submitted must not be payable.
+     * Submit and payment are separate endpoints, so validating only at
+     * submit would leave the money path open: the prod defect was
+     * exactly this — an applicant with one field reached UNPAID and a
+     * payment was created for it. Re-checking here closes that door and
+     * also catches an application whose data was emptied after it was
+     * submitted.
+     */
+    await this.completeness.assertComplete(dto.applicationId);
+
     // Check for existing active payments (duplicate prevention)
     const activePaymentStatuses = [
       PaymentStatus.CREATED,
@@ -496,15 +511,31 @@ export class PaymentsService {
       ]);
     }
 
-    // Calculate fee amounts (snapshot at payment creation time)
-    const governmentFee = Number(nationalityFee.governmentFeeAmount);
-    const serviceFee = Number(nationalityFee.serviceFeeAmount);
-    const expeditedFee =
-      application.expedited && nationalityFee.expeditedEnabled
-        ? Number(nationalityFee.expeditedFeeAmount || 0)
-        : 0;
+    /*
+     * Authoritative amount. Computed here from the fee row × the live
+     * head count — never taken from the client, and never trusted from
+     * the application's stored total (which is a quote that can lag).
+     *
+     * Pricing is per applicant, so the columns below hold the MULTIPLIED
+     * amounts: governmentFeeAmount is the government fee for everyone on
+     * the booking, not one person's share. That keeps
+     * gov + service + expedited = totalAmount, which is what the admin
+     * split displays and what selective refund refunds "in full" — so
+     * refunding the government portion returns it for every applicant.
+     */
+    const applicantCount = await this.prisma.applicationApplicant.count({
+      where: { applicationId: dto.applicationId, deletedAt: null },
+    });
+    const totals = computeFeeTotals(
+      nationalityFee,
+      applicantCount,
+      application.expedited,
+    );
+    const governmentFee = totals.governmentFeeTotal;
+    const serviceFee = totals.serviceFeeTotal;
+    const expeditedFee = totals.expeditedFeeTotal;
 
-    const totalAmount = governmentFee + serviceFee + expeditedFee;
+    const totalAmount = totals.totalAmount;
     const payableAmount = totalAmount;
 
     // Calculate expiration time

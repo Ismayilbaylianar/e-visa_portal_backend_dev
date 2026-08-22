@@ -352,6 +352,11 @@ export class ApplicantsService {
 
     await this.assertCascadeCountriesUnchanged(application, dto.formDataJson);
 
+    // Pricing is per applicant, so adding one changes the price. If a
+    // payment already exists the amount is locked — refuse rather than
+    // let the booking and the payment disagree.
+    await this.applicationsService.assertApplicantCountChangeAllowed(applicationId);
+
     // Check main applicant rule
     if (dto.isMainApplicant) {
       const existingMain = await this.prisma.applicationApplicant.findFirst({
@@ -411,6 +416,8 @@ export class ApplicantsService {
     this.logger.log(
       `Applicant created: ${applicant.id} with code: ${applicant.applicationCode}`,
     );
+    // Re-price: one more person on the booking.
+    await this.applicationsService.recalculateTotalFee(applicationId);
     return this.mapToResponse(applicant);
   }
 
@@ -560,12 +567,18 @@ export class ApplicantsService {
       ]);
     }
 
+    await this.applicationsService.assertApplicantCountChangeAllowed(
+      applicant.applicationId,
+    );
+
     await this.prisma.applicationApplicant.update({
       where: { id: applicantId },
       data: { deletedAt: new Date() },
     });
 
     this.logger.log(`Applicant soft deleted: ${applicantId}`);
+    // Re-price: one fewer person on the booking.
+    await this.applicationsService.recalculateTotalFee(applicant.applicationId);
   }
 
   /**

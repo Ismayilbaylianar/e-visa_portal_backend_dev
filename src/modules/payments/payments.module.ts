@@ -11,6 +11,7 @@ import { AuditLogsModule } from '../auditLogs/audit-logs.module';
 import { PortalAuthModule } from '../portalAuth/portal-auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { EmailModule } from '../email/email.module';
+import { ApplicationCompletenessService } from '../applications/application-completeness.service';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { EmailModule } from '../email/email.module';
     EmailModule,
   ],
   controllers: [PaymentsAdminController, PaymentsPortalController, PaymentsPublicController],
-  providers: [PaymentsService, MockPaymentProvider],
+  providers: [ApplicationCompletenessService, PaymentsService, MockPaymentProvider],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}
