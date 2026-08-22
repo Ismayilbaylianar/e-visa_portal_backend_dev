@@ -1952,7 +1952,7 @@ async function main() {
       metaDescription:
         'E-Visa Global helps travelers worldwide apply for electronic visas quickly, securely, and transparently.',
       contentHtml: `<h1>About E-Visa Global</h1>
-<p>E-Visa Global is your trusted partner for fast, reliable electronic visa applications. We simplify international travel by providing a streamlined platform that connects travelers with official e-visa services for destinations worldwide.</p>
+<p>E-Visa Global is your trusted partner for fast, reliable electronic visa applications. We simplify international travel by providing a streamlined platform for applying to e-visa programmes for destinations worldwide.</p>
 <h2>Our Mission</h2>
 <p>To make international travel accessible by removing the friction from visa applications. We handle the paperwork so you can focus on your journey.</p>
 <h2>Why Choose Us</h2>

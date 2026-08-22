@@ -93,6 +93,24 @@ export class MyApplicationItemDto {
   })
   currentStatus: ApplicationStatus;
 
+  /**
+   * Payment-window fields, exposed only on this OTP-authenticated
+   * endpoint so the customer can resume an unpaid application and pay.
+   * `resumeToken` is a bearer capability — it is deliberately NOT
+   * returned by the public /track lookup, which authenticates with only
+   * an application code and an email address.
+   */
+  @ApiPropertyOptional({
+    description: 'End of the payment window while the application is UNPAID.',
+  })
+  paymentDeadlineAt?: Date | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Resume token for this application. Lets the authenticated owner pick the application back up and pay. Never exposed publicly.',
+  })
+  resumeToken?: string;
+
   @ApiProperty({
     description: 'Payment status',
     enum: PaymentStatus,

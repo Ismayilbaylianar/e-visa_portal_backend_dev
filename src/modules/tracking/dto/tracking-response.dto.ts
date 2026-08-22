@@ -96,6 +96,20 @@ export class BookingTrackingResponseDto {
   @ApiPropertyOptional({ description: 'Application-level current status (raw enum).' })
   currentStatus?: string;
 
+  /**
+   * Deliberately the ONLY payment-window field exposed here. The track
+   * lookup authenticates with just (application code + email), so it
+   * must never return `resumeToken` — that is a bearer capability over
+   * the whole application. The deadline alone lets the track page
+   * decide whether the window is still open and render the countdown,
+   * without granting any access.
+   */
+  @ApiPropertyOptional({
+    description:
+      'End of the payment window for an UNPAID application; null once paid or if never set. Gates the "continue to payment" CTA and drives the countdown.',
+  })
+  paymentDeadlineAt?: Date | null;
+
   @ApiPropertyOptional({ description: 'Total fee amount as decimal string.' })
   totalAmount?: string | null;
 

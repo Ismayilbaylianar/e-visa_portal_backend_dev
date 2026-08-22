@@ -99,6 +99,14 @@ export class CustomerPortalService {
         applicationCode,
         currentStatus: app.currentStatus,
         paymentStatus: app.paymentStatus,
+        // Payment-window fields. Safe HERE and only here: this endpoint
+        // sits behind the portal JWT, which is only issued after an OTP
+        // sent to the registered address — i.e. the caller has proven
+        // they own the mailbox on the booking. That is the same trust
+        // level the emailed visa-download link relies on. The public
+        // /track lookup (code + email) must never receive resumeToken.
+        paymentDeadlineAt: app.paymentDeadlineAt ?? null,
+        resumeToken: app.resumeToken,
         totalFeeAmount: app.totalFeeAmount.toString(),
         currencyCode: app.currencyCode,
         expedited: app.expedited,

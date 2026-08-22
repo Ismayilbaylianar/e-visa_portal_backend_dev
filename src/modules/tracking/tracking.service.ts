@@ -202,6 +202,14 @@ export class TrackingService {
           }
         : null,
       currentStatus: application.currentStatus,
+      // Track is a PUBLIC lookup keyed only on (application code +
+      // email), so it must not hand out anything that grants access —
+      // notably never `resumeToken`, which is a bearer capability over
+      // the whole application. The deadline is safe to return: it is a
+      // timestamp for a record the caller has already identified, and
+      // the track page needs it to decide whether the payment window is
+      // still open and to render the countdown.
+      paymentDeadlineAt: application.paymentDeadlineAt ?? null,
       totalAmount: application.totalFeeAmount?.toString() ?? null,
       currencyCode: application.currencyCode ?? null,
       primaryEmail: application.portalIdentity?.email ?? null,
