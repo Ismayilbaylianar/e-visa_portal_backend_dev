@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CountryPageAutocreateService } from '../countryPages/country-page-autocreate.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import {
   CreateTemplateBindingDto,
@@ -45,6 +46,8 @@ export class TemplateBindingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    // Keeps a sellable destination from being invisible on /countries.
+    private readonly countryPageAutocreate: CountryPageAutocreateService,
   ) {}
 
   /**
@@ -314,6 +317,15 @@ export class TemplateBindingsService {
     }
 
     this.logger.log(`Template binding created: ${binding.id}`);
+
+    // A destination with a binding is on its way to being sellable —
+    // make sure it has a country page, so it can never end up
+    // purchasable via /apply yet invisible on /countries. No-op when a
+    // page already exists; never fails the binding save.
+    await this.countryPageAutocreate.ensurePageForDestination(
+      binding.destinationCountryId,
+    );
+
     return this.mapToResponse(binding);
   }
 

@@ -378,9 +378,47 @@ export class CountryPagesService {
   // Public read methods
   // ============================================================
 
+  /**
+   * Destinations catalogue for /countries.
+   *
+   * Listed when the destination has a published page AND is actually
+   * bookable by somebody: an active, non-deleted fee under an active,
+   * date-valid binding with an active visa type. Same destination-level
+   * definition the page's own "Available Visas" card uses, so the grid
+   * and the page agree.
+   *
+   * Deliberately NOT nationality-aware. This is a catalogue, not a
+   * personalised list. The previous behaviour intersected it with the
+   * apply cascade for an IP-detected nationality — from Baku that
+   * resolved to Azerbaijan, whose own cascade excludes Azerbaijan by
+   * the same-country rule, so the grid came out empty. Nationality
+   * filtering still happens in the cascade, which is untouched: that is
+   * the sales path, this is the shop window.
+   */
   async findAllPublic(): Promise<PublicCountryPageListResponseDto> {
+    const now = new Date();
+
     const pages = await this.prisma.countryPage.findMany({
-      where: { deletedAt: null, isActive: true, isPublished: true },
+      where: {
+        deletedAt: null,
+        isActive: true,
+        isPublished: true,
+        // Sellable to at least one nationality.
+        country: {
+          templateBindingsDestination: {
+            some: {
+              isActive: true,
+              deletedAt: null,
+              AND: [
+                { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
+                { OR: [{ validTo: null }, { validTo: { gte: now } }] },
+              ],
+              visaType: { isActive: true, deletedAt: null },
+              nationalityFees: { some: { isActive: true, deletedAt: null } },
+            },
+          },
+        },
+      },
       include: {
         country: { select: { id: true, isoCode: true, name: true, flagEmoji: true } },
         sections: {

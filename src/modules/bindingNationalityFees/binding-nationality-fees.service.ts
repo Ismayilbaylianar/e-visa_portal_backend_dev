@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CountryPageAutocreateService } from '../countryPages/country-page-autocreate.service';
 import { AuditLogsService } from '../auditLogs/audit-logs.service';
 import {
   CreateBindingNationalityFeeDto,
@@ -34,6 +35,8 @@ export class BindingNationalityFeesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    // Keeps a sellable destination from being invisible on /countries.
+    private readonly countryPageAutocreate: CountryPageAutocreateService,
   ) {}
 
   /**
@@ -188,6 +191,14 @@ export class BindingNationalityFeesService {
     }
 
     this.logger.log(`Binding nationality fee created: ${fee.id} for binding: ${bindingId}`);
+
+    // The fee is what actually makes the destination sellable, so this
+    // is the second (and more meaningful) trigger point. Idempotent —
+    // if the binding already created the page this is a cheap no-op.
+    await this.countryPageAutocreate.ensurePageForDestination(
+      binding.destinationCountryId,
+    );
+
     return this.mapToResponse(fee);
   }
 
