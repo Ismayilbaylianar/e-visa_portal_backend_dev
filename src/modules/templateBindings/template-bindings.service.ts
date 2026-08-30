@@ -1089,6 +1089,15 @@ export class TemplateBindingsService {
       `bulk_upsert template=${templateId} destination=${dto.destinationCountryId} visa=${dto.visaTypeId} → +${created} ~${updated} -${deleted} (${skipped} skipped)`,
     );
 
+    // This is how the catalog is actually built in practice: one bulk
+    // upsert configures a destination for hundreds of nationalities at
+    // once. Hooking only create() missed it — Ethiopia went live on
+    // 2026-08-30 with 246 fees and no country page, exactly the
+    // purchasable-but-invisible state this is meant to prevent.
+    await this.countryPageAutocreate.ensurePageForDestination(
+      dto.destinationCountryId,
+    );
+
     return { created, updated, deleted, skipped };
   }
 }
