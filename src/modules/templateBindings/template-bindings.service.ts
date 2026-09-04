@@ -10,6 +10,9 @@ import {
   GetTemplateBindingsQueryDto,
   BulkUpsertNationalitiesDto,
   BulkUpsertNationalitiesResponseDto,
+  BulkDeleteDestinationsDto,
+  BulkDeleteDestinationsPreviewDto,
+  BulkDeleteDestinationsResponseDto,
 } from './dto';
 import { BadRequestException, NotFoundException, ConflictException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
@@ -31,10 +34,13 @@ import type { Prisma } from '@prisma/client';
  *     them silently re-routes every Application that references this
  *     binding to the wrong product, so we block it (caller must delete
  *     and recreate).
- *   • DELETE is hard-blocked when any Application still references
- *     the binding (cascade safety). Soft-deleting fees + binding under
- *     live applications would orphan the application's `templateBindingId`
- *     FK from the admin UI even though the row still exists.
+ *   • Single-binding DELETE is hard-blocked when any Application still
+ *     references the binding (cascade safety).
+ *   • `bulkDeleteDestinations` deliberately does NOT block on
+ *     applications: it is an explicit, counted, typed-confirmation
+ *     action where the admin is shown the application count first.
+ *     Soft delete keeps the row and its FK, so those applications
+ *     still load — verified against admin + portal read paths.
  *   • Every mutation emits an audit entry. Toggling `isActive` emits
  *     `templateBinding.activate` / `.deactivate` instead of a generic
  *     update so the audit trail clearly shows publish/unpublish events.
@@ -522,15 +528,19 @@ export class TemplateBindingsService {
     });
 
     await this.prisma.$transaction([
-      // Soft delete all nationality fees
+      // Soft delete all nationality fees. `isActive` goes false with
+      // `deletedAt` — a row that is deleted must not still read as
+      // active. This path only stamped `deletedAt` until now, which is
+      // where the bulk of the catalog's active-but-deleted rows came
+      // from; `bulkUpsertNationalities` has always written both.
       this.prisma.bindingNationalityFee.updateMany({
         where: { templateBindingId: id, deletedAt: null },
-        data: { deletedAt: now },
+        data: { isActive: false, deletedAt: now },
       }),
       // Soft delete binding
       this.prisma.templateBinding.update({
         where: { id },
-        data: { deletedAt: now },
+        data: { isActive: false, deletedAt: now },
       }),
     ]);
 
@@ -554,6 +564,181 @@ export class TemplateBindingsService {
     this.logger.log(
       `Template binding soft deleted: ${id} (cascaded ${feeCount} fees)`,
     );
+  }
+
+  /**
+   * What deleting every destination under a template would destroy.
+   *
+   * The confirmation dialog is only meaningful if its numbers are the
+   * database's numbers, so they are counted here rather than tallied
+   * from whatever the browser happens to have cached.
+   */
+  async previewBulkDeleteDestinations(
+    templateId: string,
+  ): Promise<BulkDeleteDestinationsPreviewDto> {
+    const template = await this.prisma.template.findFirst({
+      where: { id: templateId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+
+    if (!template) {
+      throw new NotFoundException('Template not found', [
+        {
+          reason: ErrorCodes.TEMPLATE_NOT_FOUND,
+          message: 'Template does not exist or has been deleted',
+        },
+      ]);
+    }
+
+    const bindings = await this.prisma.templateBinding.findMany({
+      where: { templateId, deletedAt: null },
+      select: {
+        id: true,
+        destinationCountryId: true,
+        visaTypeId: true,
+        destinationCountry: { select: { name: true, isoCode: true } },
+        visaType: { select: { label: true } },
+        nationalityFees: {
+          where: { deletedAt: null },
+          select: { nationalityCountryId: true },
+        },
+        _count: { select: { applications: { where: { deletedAt: null } } } },
+      },
+      orderBy: { destinationCountry: { name: 'asc' } },
+    });
+
+    const destinations = bindings.map((binding) => ({
+      bindingId: binding.id,
+      destinationCountryId: binding.destinationCountryId,
+      destinationCountryName: binding.destinationCountry.name,
+      destinationCountryIso: binding.destinationCountry.isoCode,
+      visaTypeId: binding.visaTypeId,
+      visaTypeName: binding.visaType.label,
+      feeCount: binding.nationalityFees.length,
+      nationalityCount: new Set(
+        binding.nationalityFees.map((f) => f.nationalityCountryId),
+      ).size,
+      applicationCount: binding._count.applications,
+    }));
+
+    return {
+      templateId: template.id,
+      templateName: template.name,
+      bindingCount: bindings.length,
+      feeCount: destinations.reduce((sum, d) => sum + d.feeCount, 0),
+      // Distinct across the whole template — the same passport market
+      // usually appears under several destinations and must be counted
+      // once, or the dialog inflates its own blast radius.
+      nationalityCount: new Set(
+        bindings.flatMap((b) => b.nationalityFees.map((f) => f.nationalityCountryId)),
+      ).size,
+      destinationCount: new Set(bindings.map((b) => b.destinationCountryId)).size,
+      applicationCount: destinations.reduce((sum, d) => sum + d.applicationCount, 0),
+      destinations,
+    };
+  }
+
+  /**
+   * Soft-delete every destination binding under a template, cascading
+   * to their nationality fee rows, in one transaction.
+   *
+   * The destructive peer of the bulk fee editor: that screen turns
+   * connections off, this removes them from the admin lists entirely.
+   *
+   * Applications are deliberately NOT a blocker here, unlike the
+   * single-binding `delete()`. Soft delete leaves the binding row and
+   * its non-nullable FK intact, so an application that references a
+   * deleted binding still loads; the confirmation dialog states how
+   * many are affected so the admin decides with that in front of them.
+   *
+   * Idempotent by construction: every write is scoped to
+   * `deletedAt: null`, so a repeat call matches nothing, returns zeros
+   * and does not error.
+   */
+  async bulkDeleteDestinations(
+    templateId: string,
+    dto: BulkDeleteDestinationsDto,
+    actorUserId?: string,
+  ): Promise<BulkDeleteDestinationsResponseDto> {
+    const preview = await this.previewBulkDeleteDestinations(templateId);
+
+    // Guard against the dialog's numbers having gone stale while it was
+    // open. Deleting more than the admin agreed to is the failure mode
+    // worth a hard stop.
+    if (
+      dto.expectedBindingCount !== undefined &&
+      dto.expectedBindingCount !== preview.bindingCount
+    ) {
+      throw new ConflictException('Destination list changed', [
+        {
+          field: 'expectedBindingCount',
+          reason: ErrorCodes.CONFLICT,
+          message: `This template now has ${preview.bindingCount} destination(s), not ${dto.expectedBindingCount}. Reopen the dialog to confirm against current numbers.`,
+        },
+      ]);
+    }
+
+    if (preview.bindingCount === 0) {
+      return {
+        deletedBindings: 0,
+        deletedFees: 0,
+        affectedNationalities: 0,
+        affectedDestinations: 0,
+        preservedApplications: 0,
+      };
+    }
+
+    const bindingIds = preview.destinations.map((d) => d.bindingId);
+    const now = new Date();
+
+    const [feeResult, bindingResult] = await this.prisma.$transaction([
+      this.prisma.bindingNationalityFee.updateMany({
+        where: { templateBindingId: { in: bindingIds }, deletedAt: null },
+        data: { isActive: false, deletedAt: now },
+      }),
+      this.prisma.templateBinding.updateMany({
+        where: { id: { in: bindingIds }, deletedAt: null },
+        data: { isActive: false, deletedAt: now },
+      }),
+    ]);
+
+    if (actorUserId) {
+      await this.auditLogsService.logAdminAction(
+        actorUserId,
+        'templateBinding.bulk_delete',
+        'Template',
+        templateId,
+        {
+          templateName: preview.templateName,
+          bindingCount: preview.bindingCount,
+          feeCount: preview.feeCount,
+          nationalityCount: preview.nationalityCount,
+          destinationCount: preview.destinationCount,
+          applicationCount: preview.applicationCount,
+          destinations: preview.destinations.map((d) => ({
+            destination: d.destinationCountryIso,
+            visaType: d.visaTypeName,
+            fees: d.feeCount,
+          })),
+        },
+        {
+          deletedBindings: bindingResult.count,
+          deletedFees: feeResult.count,
+        },
+      );
+    }
+
+    this.logger.warn(
+      `Bulk delete destinations: template=${templateId} bindings=${bindingResult.count} fees=${feeResult.count} by=${actorUserId ?? 'system'}`,
+    );
+
+    return {
+      deletedBindings: bindingResult.count,
+      deletedFees: feeResult.count,
+      affectedNationalities: preview.nationalityCount,
+      affectedDestinations: preview.destinationCount,
+      preservedApplications: preview.applicationCount,
+    };
   }
 
   /**

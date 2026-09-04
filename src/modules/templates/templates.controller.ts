@@ -22,6 +22,9 @@ import {
   // destinations/bulk-upsert callers still land here.
   BulkUpsertNationalitiesDto,
   BulkUpsertNationalitiesResponseDto,
+  BulkDeleteDestinationsDto,
+  BulkDeleteDestinationsPreviewDto,
+  BulkDeleteDestinationsResponseDto,
 } from '../templateBindings/dto';
 import {
   CreateTemplateDto,
@@ -242,6 +245,51 @@ export class TemplatesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<TemplateResponseDto> {
     return this.templatesService.update(params.templateId, dto, user.id);
+  }
+
+  @Get(':templateId/destinations/delete-preview')
+  @RequirePermissions('templateBindings.delete')
+  @ApiOperation({
+    summary: 'Preview what deleting every destination under a template would remove',
+    description:
+      'Read-only. Returns the counts the destructive confirmation dialog renders — bindings, nationality fee rows, distinct nationalities, destinations, and how many applications reference the bindings. Counted server-side so the admin confirms against the database, not against a cached browser tally.',
+  })
+  @ApiParam({ name: 'templateId', description: 'Template UUID' })
+  @ApiResponse({ status: 200, type: BulkDeleteDestinationsPreviewDto })
+  @ApiResponse({ status: 404, description: 'Template not found' })
+  async previewBulkDeleteDestinations(
+    @Param() params: TemplateIdParamDto,
+  ): Promise<BulkDeleteDestinationsPreviewDto> {
+    return this.templateBindingsService.previewBulkDeleteDestinations(
+      params.templateId,
+    );
+  }
+
+  @Post(':templateId/destinations/bulk-delete')
+  @RequirePermissions('templateBindings.delete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Delete every destination binding under a template',
+    description:
+      'Destructive peer of bulk-upsert. Soft-deletes every live binding on the template and cascades to its nationality fee rows, setting BOTH `is_active = false` and `deleted_at` in one transaction. Applications are preserved and never touched. Idempotent — a repeat call matches nothing and returns zeros. Pass `expectedBindingCount` to be rejected with 409 if the destination list changed while the confirmation dialog was open.',
+  })
+  @ApiParam({ name: 'templateId', description: 'Template UUID' })
+  @ApiResponse({ status: 200, type: BulkDeleteDestinationsResponseDto })
+  @ApiResponse({ status: 404, description: 'Template not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Destination count changed since the dialog was opened',
+  })
+  async bulkDeleteDestinations(
+    @Param() params: TemplateIdParamDto,
+    @Body() dto: BulkDeleteDestinationsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<BulkDeleteDestinationsResponseDto> {
+    return this.templateBindingsService.bulkDeleteDestinations(
+      params.templateId,
+      dto,
+      user.id,
+    );
   }
 
   @Delete(':templateId')
