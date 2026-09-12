@@ -13,6 +13,8 @@ import {
   BulkDeleteDestinationsDto,
   BulkDeleteDestinationsPreviewDto,
   BulkDeleteDestinationsResponseDto,
+  DeleteBindingPreviewDto,
+  DeleteBindingResponseDto,
 } from './dto';
 import { BadRequestException, NotFoundException, ConflictException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
@@ -34,13 +36,14 @@ import type { Prisma } from '@prisma/client';
  *     them silently re-routes every Application that references this
  *     binding to the wrong product, so we block it (caller must delete
  *     and recreate).
- *   • Single-binding DELETE is hard-blocked when any Application still
- *     references the binding (cascade safety).
- *   • `bulkDeleteDestinations` deliberately does NOT block on
- *     applications: it is an explicit, counted, typed-confirmation
- *     action where the admin is shown the application count first.
- *     Soft delete keeps the row and its FK, so those applications
- *     still load — verified against admin + portal read paths.
+ *   • Neither DELETE path blocks on applications. Soft delete keeps the
+ *     row and its non-nullable FK, so a referencing application still
+ *     loads in admin and in the portal (verified end to end). Both the
+ *     row-level and whole-template confirmations show the application
+ *     count instead, so the admin decides with the number in front of
+ *     them.
+ *   • Both DELETE paths are idempotent and write `isActive = false`
+ *     alongside `deletedAt`, so a deleted row never reads as active.
  *   • Every mutation emits an audit entry. Toggling `isActive` emits
  *     `templateBinding.activate` / `.deactivate` instead of a generic
  *     update so the audit trail clearly shows publish/unpublish events.
@@ -482,18 +485,26 @@ export class TemplateBindingsService {
   }
 
   /**
-   * Soft delete a template binding and its fees in one transaction —
-   * but ONLY when no Application still references it. Apps store
-   * `templateBindingId` as a non-nullable FK; soft-deleting a binding
-   * with live apps would orphan the lookup ("binding not found")
-   * across the admin UI even though the row still exists.
+   * What deleting a single binding would destroy.
    *
-   * Returns the audit-relevant before-snapshot to the caller via the
-   * AuditLogs entry; the controller doesn't need anything back.
+   * Same contract as `previewBulkDeleteDestinations`, scoped to one
+   * binding, so the row-level confirmation can show real numbers
+   * instead of a generic warning.
    */
-  async delete(id: string, actorUserId?: string): Promise<void> {
+  async previewDelete(id: string): Promise<DeleteBindingPreviewDto> {
     const binding = await this.prisma.templateBinding.findFirst({
       where: { id, deletedAt: null },
+      select: {
+        id: true,
+        destinationCountry: { select: { name: true, isoCode: true } },
+        visaType: { select: { label: true } },
+        template: { select: { name: true } },
+        nationalityFees: {
+          where: { deletedAt: null },
+          select: { nationalityCountryId: true, entryId: true },
+        },
+        _count: { select: { applications: { where: { deletedAt: null } } } },
+      },
     });
 
     if (!binding) {
@@ -505,41 +516,93 @@ export class TemplateBindingsService {
       ]);
     }
 
-    // Cascade safety — block when applications reference this binding.
-    // Excluding soft-deleted apps is fine because once an app is
-    // soft-deleted it's already out of every customer-facing flow.
-    const applicationCount = await this.prisma.application.count({
-      where: { templateBindingId: id, deletedAt: null },
+    return {
+      bindingId: binding.id,
+      destinationCountryName: binding.destinationCountry.name,
+      destinationCountryIso: binding.destinationCountry.isoCode,
+      visaTypeName: binding.visaType.label,
+      templateName: binding.template.name,
+      feeCount: binding.nationalityFees.length,
+      nationalityCount: new Set(
+        binding.nationalityFees.map((f) => f.nationalityCountryId),
+      ).size,
+      entryCount: new Set(binding.nationalityFees.map((f) => f.entryId)).size,
+      applicationCount: binding._count.applications,
+    };
+  }
+
+  /**
+   * Soft delete a template binding and its nationality fees in one
+   * transaction, setting BOTH `isActive = false` and `deletedAt`.
+   *
+   * Applications are never touched and never block the delete. This
+   * used to throw 409 when any application referenced the binding, on
+   * the theory that soft-deleting would orphan the admin lookup. That
+   * turned out not to hold: the application read paths join the binding
+   * without a `deletedAt` filter, so a referencing application still
+   * opens in both admin and the portal with its stored details intact
+   * (verified end to end). Blocking only made the button useless on
+   * exactly the destinations that have orders, so the count is now
+   * surfaced in the confirmation instead and the delete proceeds — the
+   * same policy as `bulkDeleteDestinations`.
+   *
+   * Idempotent: a binding that is already deleted returns zeros rather
+   * than throwing, so a double-submit or a stale row is harmless. A
+   * binding id that never existed is still a 404.
+   */
+  async delete(
+    id: string,
+    actorUserId?: string,
+  ): Promise<DeleteBindingResponseDto> {
+    const binding = await this.prisma.templateBinding.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        destinationCountryId: true,
+        visaTypeId: true,
+        templateId: true,
+        isActive: true,
+        deletedAt: true,
+      },
     });
 
-    if (applicationCount > 0) {
-      throw new ConflictException('Binding has active applications', [
+    if (!binding) {
+      throw new NotFoundException('Template binding not found', [
         {
-          field: 'id',
-          reason: ErrorCodes.CONFLICT,
-          message: `${applicationCount} application(s) reference this binding. Resolve them (complete, cancel, or refund) before deleting.`,
+          reason: ErrorCodes.BINDING_NOT_FOUND,
+          message: 'Template binding does not exist',
         },
       ]);
     }
 
-    const now = new Date();
-    const feeCount = await this.prisma.bindingNationalityFee.count({
-      where: { templateBindingId: id, deletedAt: null },
-    });
+    if (binding.deletedAt) {
+      return { deletedBinding: false, deletedFees: 0, preservedApplications: 0 };
+    }
 
-    await this.prisma.$transaction([
+    const now = new Date();
+    const [feeCount, applicationCount] = await Promise.all([
+      this.prisma.bindingNationalityFee.count({
+        where: { templateBindingId: id, deletedAt: null },
+      }),
+      this.prisma.application.count({
+        where: { templateBindingId: id, deletedAt: null },
+      }),
+    ]);
+
+    const [feeResult] = await this.prisma.$transaction([
       // Soft delete all nationality fees. `isActive` goes false with
       // `deletedAt` — a row that is deleted must not still read as
-      // active. This path only stamped `deletedAt` until now, which is
-      // where the bulk of the catalog's active-but-deleted rows came
-      // from; `bulkUpsertNationalities` has always written both.
+      // active. This path only stamped `deletedAt` until recently,
+      // which is where the bulk of the catalog's active-but-deleted
+      // rows came from; the bulk paths have always written both.
       this.prisma.bindingNationalityFee.updateMany({
         where: { templateBindingId: id, deletedAt: null },
         data: { isActive: false, deletedAt: now },
       }),
-      // Soft delete binding
-      this.prisma.templateBinding.update({
-        where: { id },
+      // Soft delete binding. Scoped to `deletedAt: null` so a racing
+      // duplicate request cannot re-stamp a newer timestamp.
+      this.prisma.templateBinding.updateMany({
+        where: { id, deletedAt: null },
         data: { isActive: false, deletedAt: now },
       }),
     ]);
@@ -556,14 +619,21 @@ export class TemplateBindingsService {
           templateId: binding.templateId,
           isActive: binding.isActive,
           cascadedFeeCount: feeCount,
+          applicationCount,
         },
-        undefined,
+        { deletedBinding: true, deletedFees: feeResult.count },
       );
     }
 
-    this.logger.log(
-      `Template binding soft deleted: ${id} (cascaded ${feeCount} fees)`,
+    this.logger.warn(
+      `Template binding soft deleted: ${id} (cascaded ${feeResult.count} fees, ${applicationCount} application(s) preserved) by=${actorUserId ?? 'system'}`,
     );
+
+    return {
+      deletedBinding: true,
+      deletedFees: feeResult.count,
+      preservedApplications: applicationCount,
+    };
   }
 
   /**

@@ -19,6 +19,8 @@ import {
   TemplateBindingResponseDto,
   TemplateBindingListItemResponseDto,
   GetTemplateBindingsQueryDto,
+  DeleteBindingPreviewDto,
+  DeleteBindingResponseDto,
 } from './dto';
 import { BindingIdParamDto } from '@/common/dto';
 import { RequirePermissions, ApiPaginatedResponse, CurrentUser } from '@/common/decorators';
@@ -122,31 +124,44 @@ export class TemplateBindingsController {
     return this.templateBindingsService.update(params.bindingId, dto, user.id);
   }
 
+  @Get(':bindingId/delete-preview')
+  @RequirePermissions('templateBindings.delete')
+  @ApiOperation({
+    summary: 'Preview what deleting this binding would remove',
+    description:
+      'Read-only. Returns the counts the row-level confirmation renders — nationality fee rows, distinct nationalities, distinct entries, and how many applications reference the binding.',
+  })
+  @ApiParam({ name: 'bindingId', description: 'Template binding UUID' })
+  @ApiResponse({ status: 200, type: DeleteBindingPreviewDto })
+  @ApiResponse({ status: 404, description: 'Template binding not found' })
+  async previewDelete(
+    @Param() params: BindingIdParamDto,
+  ): Promise<DeleteBindingPreviewDto> {
+    return this.templateBindingsService.previewDelete(params.bindingId);
+  }
+
   @Delete(':bindingId')
   @RequirePermissions('templateBindings.delete')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Delete template binding',
     description:
-      'Soft-deletes a template binding and cascades the soft-delete to its nationality fees in one transaction. Hard-blocked (409) when any Application still references the binding — caller must complete/cancel/refund those apps first.',
+      'Soft-deletes a template binding and cascades to its nationality fee rows in one transaction, setting BOTH `is_active = false` and `deleted_at`. Applications are preserved and never block the delete — the confirmation surfaces the count instead. Idempotent: an already-deleted binding returns zeros rather than erroring.',
   })
   @ApiParam({ name: 'bindingId', description: 'Template binding UUID' })
   @ApiResponse({
-    status: 204,
-    description: 'Template binding deleted successfully',
+    status: 200,
+    type: DeleteBindingResponseDto,
+    description: 'Template binding deleted (or already was — see deletedBinding)',
   })
   @ApiResponse({
     status: 404,
     description: 'Template binding not found',
   })
-  @ApiResponse({
-    status: 409,
-    description: 'Binding has active applications — cannot delete',
-  })
   async delete(
     @Param() params: BindingIdParamDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<void> {
+  ): Promise<DeleteBindingResponseDto> {
     return this.templateBindingsService.delete(params.bindingId, user.id);
   }
 }

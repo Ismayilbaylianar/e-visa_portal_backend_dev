@@ -12,6 +12,21 @@ import {
 import { Transform, Type } from 'class-transformer';
 import { PaginationQueryDto } from '@/common/dto';
 
+/**
+ * Parse a boolean query-string parameter from its raw value.
+ *
+ * Returning `undefined` for an absent/blank parameter matters: paired
+ * with `@IsOptional()` it means "no filter", which is what the All tab
+ * needs. Anything unrecognised is returned as-is so `@IsBoolean()`
+ * rejects it with a 400 rather than being silently read as `false`.
+ */
+function parseBooleanParam(raw: unknown): boolean | undefined | unknown {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  if (raw === true || raw === 'true' || raw === '1') return true;
+  if (raw === false || raw === 'false' || raw === '0') return false;
+  return raw;
+}
+
 export class GetTemplateBindingsQueryDto extends PaginationQueryDto {
   // Bindings are admin-managed reference data — the list is small
   // enough that the standard 100-cap forces unnecessary pagination on
@@ -45,9 +60,20 @@ export class GetTemplateBindingsQueryDto extends PaginationQueryDto {
 
   @ApiPropertyOptional({
     description: 'Filter by active status',
+    example: true,
   })
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
+  // Read the RAW query value off `obj`, not the `value` argument.
+  //
+  // The global ValidationPipe runs with `enableImplicitConversion`, and
+  // class-transformer applies that conversion BEFORE any @Transform:
+  // for a boolean-typed property it does `!!value`, so the string
+  // 'false' arrives here already coerced to `true`. Comparing the
+  // post-conversion `value` against strings therefore cannot
+  // distinguish the two tabs no matter how it is written — which is
+  // why `?isActive=false` was silently filtering on `isActive: true`.
+  // `obj` still holds the untouched query string.
+  @Transform(({ obj, key }) => parseBooleanParam(obj?.[key]))
   @IsBoolean()
   isActive?: boolean;
 
@@ -80,7 +106,8 @@ export class GetTemplateBindingsQueryDto extends PaginationQueryDto {
     default: false,
   })
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
+  // Same implicit-conversion trap as `isActive` above.
+  @Transform(({ obj, key }) => parseBooleanParam(obj?.[key]))
   @IsBoolean()
   includeRelations?: boolean;
 }
