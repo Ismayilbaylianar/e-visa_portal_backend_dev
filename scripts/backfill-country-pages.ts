@@ -16,6 +16,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { CountryPageAutocreateService } from '../src/modules/countryPages/country-page-autocreate.service';
+import { sellableDestinationWhere } from '../src/modules/countryPages/destination-sellability';
 
 async function main() {
   const apply = process.argv.includes('--apply');
@@ -28,18 +29,7 @@ async function main() {
     where: {
       deletedAt: null,
       isActive: true,
-      templateBindingsDestination: {
-        some: {
-          isActive: true,
-          deletedAt: null,
-          AND: [
-            { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
-            { OR: [{ validTo: null }, { validTo: { gte: now } }] },
-          ],
-          visaType: { isActive: true, deletedAt: null },
-          nationalityFees: { some: { isActive: true, deletedAt: null } },
-        },
-      },
+      ...sellableDestinationWhere(now),
     },
     select: { id: true, name: true, isoCode: true, page: { select: { id: true, deletedAt: true, isPublished: true } } },
     orderBy: { name: 'asc' },

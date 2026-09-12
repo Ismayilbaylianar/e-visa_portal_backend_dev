@@ -15,6 +15,11 @@ import {
 import { NotFoundException, ConflictException } from '@/common/exceptions';
 import { ErrorCodes } from '@/common/constants';
 import { DEFAULT_COUNTRY_SECTIONS } from './default-sections';
+import {
+  activeBindingWhere,
+  eligibleFeeWhere,
+  sellableDestinationWhere,
+} from './destination-sellability';
 
 /**
  * Module 1.5 — manages publishable marketing pages per Country.
@@ -404,20 +409,7 @@ export class CountryPagesService {
         isActive: true,
         isPublished: true,
         // Sellable to at least one nationality.
-        country: {
-          templateBindingsDestination: {
-            some: {
-              isActive: true,
-              deletedAt: null,
-              AND: [
-                { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
-                { OR: [{ validTo: null }, { validTo: { gte: now } }] },
-              ],
-              visaType: { isActive: true, deletedAt: null },
-              nationalityFees: { some: { isActive: true, deletedAt: null } },
-            },
-          },
-        },
+        country: sellableDestinationWhere(now),
       },
       include: {
         country: { select: { id: true, isoCode: true, name: true, flagEmoji: true } },
@@ -490,13 +482,7 @@ export class CountryPagesService {
     const bindings = await this.prisma.templateBinding.findMany({
       where: {
         destinationCountryId: page.country.id,
-        isActive: true,
-        deletedAt: null,
-        AND: [
-          { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
-          { OR: [{ validTo: null }, { validTo: { gte: now } }] },
-        ],
-        visaType: { isActive: true, deletedAt: null },
+        ...activeBindingWhere(now),
       },
       select: {
         visaType: {
@@ -583,7 +569,38 @@ export class CountryPagesService {
       .sort((a, b) => a._sortOrder - b._sortOrder)
       .map(({ _sortOrder, ...rest }) => rest);
 
-    return this.mapToPublicResponse(page, visaTypes);
+    // Eligible Countries — every nationality that can actually buy this
+    // destination, straight from the fee table. This used to be a
+    // hand-authored CMS section, which meant it was written once and
+    // then silently went stale every time pricing changed.
+    //
+    // One query, no N+1: `distinct` on the nationality plus an ordered
+    // join, so 246 nationalities cost the same round-trip as 11. It
+    // rides along on the existing page response rather than a second
+    // request — the client needs it to render the page body, so a
+    // separate fetch would only add a waterfall.
+    const eligibleFees = await this.prisma.bindingNationalityFee.findMany({
+      where: eligibleFeeWhere(page.country.id, now),
+      distinct: ['nationalityCountryId'],
+      select: {
+        nationalityCountry: {
+          select: { id: true, isoCode: true, name: true, flagEmoji: true },
+        },
+      },
+      orderBy: { nationalityCountry: { name: 'asc' } },
+    });
+
+    const eligibleNationalities = eligibleFees
+      .map((f) => f.nationalityCountry)
+      .filter((c): c is NonNullable<typeof c> => !!c)
+      .map((c) => ({
+        id: c.id,
+        isoCode: c.isoCode,
+        name: c.name,
+        flagEmoji: c.flagEmoji ?? undefined,
+      }));
+
+    return this.mapToPublicResponse(page, visaTypes, eligibleNationalities);
   }
 
   // ============================================================
@@ -625,6 +642,7 @@ export class CountryPagesService {
   private mapToPublicResponse(
     page: any,
     visaTypes?: PublicCountryPageResponseDto['visaTypes'],
+    eligibleNationalities?: PublicCountryPageResponseDto['eligibleNationalities'],
   ): PublicCountryPageResponseDto {
     return {
       id: page.id,
@@ -658,6 +676,8 @@ export class CountryPagesService {
         displayOrder: img.displayOrder,
       })),
       visaTypes: visaTypes,
+      // Absent (not empty) on the list endpoint, which stays lean.
+      eligibleNationalities,
     };
   }
 

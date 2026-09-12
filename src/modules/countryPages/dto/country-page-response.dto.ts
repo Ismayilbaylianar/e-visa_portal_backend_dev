@@ -147,6 +147,26 @@ export class PublicCountryPageImageDto {
  * Public response shape (no admin-only fields like isActive). Includes the
  * embedded country and active sections for public detail rendering.
  */
+/**
+ * One nationality that can buy this destination.
+ *
+ * Derived from the fee table at request time, never authored. See
+ * `destination-sellability.ts` for the rule that decides membership.
+ */
+export class PublicEligibleNationalityDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'DE' })
+  isoCode: string;
+
+  @ApiProperty({ example: 'Germany' })
+  name: string;
+
+  @ApiPropertyOptional({ example: '🇩🇪' })
+  flagEmoji?: string;
+}
+
 export class PublicCountryPageResponseDto {
   @ApiProperty()
   id: string;
@@ -173,6 +193,18 @@ export class PublicCountryPageResponseDto {
   /** M11.1 — visa types with active bindings for this destination. */
   @ApiPropertyOptional({ type: [PublicCountryPageVisaTypeDto] })
   visaTypes?: PublicCountryPageVisaTypeDto[];
+
+  /**
+   * Every nationality with an active fee for this destination, sorted
+   * by name. Computed from the fee table on every request, so it can
+   * never drift from what is actually purchasable — this replaced a
+   * hand-authored CMS section that did.
+   *
+   * Detail endpoint only; the list endpoint omits it. An empty array
+   * means nothing is priced yet and the section is not rendered.
+   */
+  @ApiPropertyOptional({ type: [PublicEligibleNationalityDto] })
+  eligibleNationalities?: PublicEligibleNationalityDto[];
 }
 
 export class PublicCountryPageListResponseDto {

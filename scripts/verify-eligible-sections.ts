@@ -13,6 +13,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { eligibleFeeWhere } from '../src/modules/countryPages/destination-sellability';
 
 async function main() {
   const ctx = await NestFactory.createApplicationContext(AppModule, { logger: false });
@@ -34,20 +35,7 @@ async function main() {
 
   for (const page of pages) {
     const fees = await prisma.bindingNationalityFee.findMany({
-      where: {
-        isActive: true,
-        deletedAt: null,
-        templateBinding: {
-          destinationCountryId: page.country.id,
-          isActive: true,
-          deletedAt: null,
-          AND: [
-            { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
-            { OR: [{ validTo: null }, { validTo: { gte: now } }] },
-          ],
-          visaType: { isActive: true, deletedAt: null },
-        },
-      },
+      where: eligibleFeeWhere(page.country.id, now),
       select: { nationalityCountryId: true },
       // No take/skip: every matching row, so a cap cannot hide anything.
     });
